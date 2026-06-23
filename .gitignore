@@ -1,5 +1,6 @@
 .worktrees/
 .superpowers/
+.claude/worktrees/
 node_modules/
 dist/
 build/
