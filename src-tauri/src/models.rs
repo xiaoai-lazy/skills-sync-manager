@@ -155,6 +155,22 @@ mod tests {
             json!("notInstalled")
         );
         assert_eq!(
+            serde_json::to_value(SkillInstallState::Installed).unwrap(),
+            json!("installed")
+        );
+        assert_eq!(
+            serde_json::to_value(SkillInstallState::Conflict).unwrap(),
+            json!("conflict")
+        );
+        assert_eq!(
+            serde_json::to_value(SkillInstallState::Missing).unwrap(),
+            json!("missing")
+        );
+        assert_eq!(
+            serde_json::to_value(SkillInstallState::Mismatch).unwrap(),
+            json!("mismatch")
+        );
+        assert_eq!(
             serde_json::to_value(SkillInstallState::SourceMissing).unwrap(),
             json!("sourceMissing")
         );

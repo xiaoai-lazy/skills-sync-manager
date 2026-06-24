@@ -63,8 +63,3 @@ export interface AppState {
   selectedTargetId: string | null;
   selectedTargetSkills: SkillWithTargetState[];
 }
-
-export interface AppErrorDto {
-  code: string;
-  message: string;
-}
