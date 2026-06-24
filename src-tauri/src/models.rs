@@ -115,22 +115,74 @@ pub struct AppState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppError {
-    ConfigRead { path: PathBuf, message: String },
-    ConfigParse { path: PathBuf, message: String },
-    ConfigWrite { path: PathBuf, message: String },
+    ConfigRead {
+        path: PathBuf,
+        message: String,
+    },
+    ConfigParse {
+        path: PathBuf,
+        message: String,
+    },
+    ConfigWrite {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidMainSkillsDir {
+        path: PathBuf,
+        message: String,
+    },
+    Io {
+        path: Option<PathBuf>,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::ConfigRead { path, message } => {
-                write!(formatter, "failed to read config at {}: {}", path.display(), message)
+                write!(
+                    formatter,
+                    "failed to read config at {}: {}",
+                    path.display(),
+                    message
+                )
             }
             AppError::ConfigParse { path, message } => {
-                write!(formatter, "failed to parse config at {}: {}", path.display(), message)
+                write!(
+                    formatter,
+                    "failed to parse config at {}: {}",
+                    path.display(),
+                    message
+                )
             }
             AppError::ConfigWrite { path, message } => {
-                write!(formatter, "failed to write config at {}: {}", path.display(), message)
+                write!(
+                    formatter,
+                    "failed to write config at {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            AppError::InvalidMainSkillsDir { path, message } => {
+                write!(
+                    formatter,
+                    "invalid main skills directory at {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            AppError::Io { path, message } => {
+                if let Some(path) = path {
+                    write!(
+                        formatter,
+                        "filesystem error at {}: {}",
+                        path.display(),
+                        message
+                    )
+                } else {
+                    write!(formatter, "filesystem error: {}", message)
+                }
             }
         }
     }
@@ -157,7 +209,9 @@ mod tests {
         };
 
         let value = serde_json::to_value(installation).expect("installation serializes");
-        let object = value.as_object().expect("installation serializes to object");
+        let object = value
+            .as_object()
+            .expect("installation serializes to object");
 
         assert!(object.contains_key("skillDirName"));
         assert!(object.contains_key("skillName"));
@@ -172,9 +226,18 @@ mod tests {
 
     #[test]
     fn enums_serialize_to_type_script_union_values() {
-        assert_eq!(serde_json::to_value(LinkStrategy::Auto).unwrap(), json!("auto"));
-        assert_eq!(serde_json::to_value(LinkType::Junction).unwrap(), json!("junction"));
-        assert_eq!(serde_json::to_value(LinkType::Symlink).unwrap(), json!("symlink"));
+        assert_eq!(
+            serde_json::to_value(LinkStrategy::Auto).unwrap(),
+            json!("auto")
+        );
+        assert_eq!(
+            serde_json::to_value(LinkType::Junction).unwrap(),
+            json!("junction")
+        );
+        assert_eq!(
+            serde_json::to_value(LinkType::Symlink).unwrap(),
+            json!("symlink")
+        );
         assert_eq!(
             serde_json::to_value(SkillInstallState::NotInstalled).unwrap(),
             json!("notInstalled")
