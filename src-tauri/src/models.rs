@@ -116,6 +116,7 @@ pub struct AppState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppError {
     ConfigRead { path: PathBuf, message: String },
+    ConfigParse { path: PathBuf, message: String },
     ConfigWrite { path: PathBuf, message: String },
 }
 
@@ -124,6 +125,9 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::ConfigRead { path, message } => {
                 write!(formatter, "failed to read config at {}: {}", path.display(), message)
+            }
+            AppError::ConfigParse { path, message } => {
+                write!(formatter, "failed to parse config at {}: {}", path.display(), message)
             }
             AppError::ConfigWrite { path, message } => {
                 write!(formatter, "failed to write config at {}: {}", path.display(), message)
