@@ -47,19 +47,56 @@ impl ConfigStore {
             message: err.to_string(),
         })?;
 
-        if self.config_path.exists() {
-            fs::remove_file(&self.config_path).map_err(|err| AppError::ConfigWrite {
+        self.replace_with_temp(tmp_path)
+    }
+
+    fn replace_with_temp(&self, tmp_path: PathBuf) -> Result<(), AppError> {
+        let backup_path = self.config_path.with_extension("json.bak");
+
+        if backup_path.exists() {
+            fs::remove_file(&backup_path).map_err(|err| AppError::ConfigWrite {
+                path: backup_path.clone(),
+                message: err.to_string(),
+            })?;
+        }
+
+        let had_existing_config = self.config_path.exists();
+        if had_existing_config {
+            fs::rename(&self.config_path, &backup_path).map_err(|err| AppError::ConfigWrite {
                 path: self.config_path.clone(),
                 message: err.to_string(),
             })?;
         }
 
-        fs::rename(&tmp_path, &self.config_path).map_err(|err| AppError::ConfigWrite {
-            path: self.config_path.clone(),
-            message: err.to_string(),
-        })?;
+        match fs::rename(&tmp_path, &self.config_path) {
+            Ok(()) => {
+                if had_existing_config && backup_path.exists() {
+                    fs::remove_file(&backup_path).map_err(|err| AppError::ConfigWrite {
+                        path: backup_path,
+                        message: err.to_string(),
+                    })?;
+                }
+                Ok(())
+            }
+            Err(rename_err) => {
+                if had_existing_config && backup_path.exists() {
+                    if let Err(restore_err) = fs::rename(&backup_path, &self.config_path) {
+                        return Err(AppError::ConfigWrite {
+                            path: self.config_path.clone(),
+                            message: format!(
+                                "failed to replace config: {}; failed to restore backup: {}",
+                                rename_err, restore_err
+                            ),
+                        });
+                    }
+                }
 
-        Ok(())
+                Err(AppError::ConfigWrite {
+                    path: self.config_path.clone(),
+                    message: rename_err.to_string(),
+                })
+            }
+        }
     }
 }
 
@@ -111,6 +148,7 @@ mod tests {
 
         assert_eq!(loaded, config);
         assert!(!store.config_path.with_extension("json.tmp").exists());
+        assert!(!store.config_path.with_extension("json.bak").exists());
     }
 
     #[test]
@@ -128,6 +166,25 @@ mod tests {
 
         assert_eq!(loaded.settings.main_skills_dir, second_config.settings.main_skills_dir);
         assert!(!store.config_path.with_extension("json.tmp").exists());
+        assert!(!store.config_path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn failed_replacement_restores_existing_config_from_backup() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.json");
+        let store = ConfigStore::new(config_path.clone());
+        let old_contents = "{\"version\":1,\"settings\":{\"mainSkillsDir\":null,\"linkStrategy\":\"auto\"},\"targets\":[],\"installations\":[]}";
+        fs::write(&config_path, old_contents).expect("write existing config");
+        let missing_tmp_path = temp.path().join("missing-config.json.tmp");
+
+        let error = store
+            .replace_with_temp(missing_tmp_path)
+            .expect_err("missing temp file should fail replacement");
+
+        assert!(matches!(error, AppError::ConfigWrite { .. }));
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), old_contents);
+        assert!(!store.config_path.with_extension("json.bak").exists());
     }
 
     #[test]
@@ -156,5 +213,6 @@ mod tests {
         assert!(config_path.exists());
         assert!(config_path.parent().unwrap().is_dir());
         assert!(!config_path.with_extension("json.tmp").exists());
+        assert!(!config_path.with_extension("json.bak").exists());
     }
 }
