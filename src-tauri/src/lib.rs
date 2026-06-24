@@ -1,3 +1,4 @@
+pub mod config_store;
 pub mod models;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

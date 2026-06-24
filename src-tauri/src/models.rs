@@ -113,6 +113,27 @@ pub struct AppState {
     pub selected_target_skills: Vec<SkillWithTargetState>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppError {
+    ConfigRead { path: PathBuf, message: String },
+    ConfigWrite { path: PathBuf, message: String },
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppError::ConfigRead { path, message } => {
+                write!(formatter, "failed to read config at {}: {}", path.display(), message)
+            }
+            AppError::ConfigWrite { path, message } => {
+                write!(formatter, "failed to write config at {}: {}", path.display(), message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
