@@ -26,3 +26,5 @@ Run Rust checks from the Tauri crate directory:
 cd src-tauri
 cargo test
 ```
+
+`Cargo.lock` should be generated and committed by the first development environment with Rust/Cargo available.

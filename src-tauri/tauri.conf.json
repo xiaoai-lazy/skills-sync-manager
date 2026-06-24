@@ -17,10 +17,7 @@
         "height": 700,
         "resizable": true
       }
-    ],
-    "security": {
-      "csp": null
-    }
+    ]
   },
   "bundle": {
     "active": true,
