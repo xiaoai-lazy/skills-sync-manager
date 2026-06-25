@@ -78,11 +78,42 @@ pub fn compute_target_skill_states(
 ) -> Result<Vec<SkillWithTargetState>, AppError> {
     let target = find_target(config, target_id)?;
 
+    let skill_dir_names: std::collections::HashSet<&str> =
+        skills.iter().map(|s| s.dir_name.as_str()).collect();
+
     let mut states = Vec::new();
+
+    // Compute states for skills currently in the library
     for skill in skills {
         let state = compute_skill_state(config, target, skill);
         states.push(state);
     }
+
+    // Add sourceMissing states for installation records whose skill is no longer in the library
+    for installation in config
+        .installations
+        .iter()
+        .filter(|i| i.target_id == target_id)
+    {
+        if !skill_dir_names.contains(installation.skill_dir_name.as_str()) {
+            states.push(SkillWithTargetState {
+                skill: SkillView {
+                    dir_name: installation.skill_dir_name.clone(),
+                    name: Some(installation.skill_name.clone()),
+                    description: None,
+                    path: installation.source_path.clone(),
+                    valid: false,
+                    validation_errors: vec!["Source skill no longer exists".to_string()],
+                },
+                state: SkillInstallState::SourceMissing,
+                message: Some(
+                    "Installation record exists but source skill is no longer in library"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
     Ok(states)
 }
 
@@ -165,13 +196,12 @@ fn compute_skill_state(
     let link_path = target.skills_dir.join(&skill.dir_name);
 
     if let Some(installation) = find_installation(config, &target.id, &skill.dir_name) {
-        if !skill_exists_in_library(config, &skill.dir_name) {
+        if !fs_adapter::path_exists(&skill.path) {
             return SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::SourceMissing,
                 message: Some(
-                    "Installation record exists but source skill is no longer in library"
-                        .to_string(),
+                    "Installation record exists but source skill directory is missing".to_string(),
                 ),
             };
         }
@@ -233,13 +263,6 @@ fn compute_skill_state(
             }
         }
     }
-}
-
-fn skill_exists_in_library(config: &AppConfig, skill_dir_name: &str) -> bool {
-    config
-        .installations
-        .iter()
-        .any(|i| i.skill_dir_name == skill_dir_name)
 }
 
 fn current_timestamp() -> String {
@@ -682,5 +705,51 @@ mod tests {
             .find(|s| s.skill.dir_name == "mismatch-skill")
             .unwrap();
         assert_eq!(mismatch_state.state, SkillInstallState::Mismatch);
+    }
+
+    #[test]
+    fn compute_states_returns_source_missing_when_source_skill_deleted() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let skill = create_valid_skill(&main_dir, "deleted-skill");
+        let target_dir = temp.path().join("target-skills");
+        fs::create_dir_all(&target_dir).expect("create target dir");
+
+        let mut config = AppConfig {
+            version: 1,
+            settings: Settings::default(),
+            targets: vec![Target {
+                id: "target-1".to_string(),
+                name: "Target One".to_string(),
+                skills_dir: target_dir.clone(),
+                created_at: "1".to_string(),
+                updated_at: "1".to_string(),
+            }],
+            installations: Vec::new(),
+        };
+
+        // Install the skill first
+        install_skill(&mut config, "target-1", "deleted-skill", &[skill.clone()])
+            .expect("install skill");
+
+        // Now delete the source skill directory from disk
+        fs::remove_dir_all(&skill.path).expect("delete source skill directory");
+        assert!(!fs_adapter::path_exists(&skill.path));
+
+        // The skills list is now empty because the source was deleted
+        let skills: Vec<SkillView> = vec![];
+
+        let states =
+            compute_target_skill_states(&config, "target-1", &skills).expect("compute states");
+
+        assert_eq!(states.len(), 1);
+        let source_missing_state = states
+            .iter()
+            .find(|s| s.skill.dir_name == "deleted-skill")
+            .unwrap();
+        assert_eq!(source_missing_state.state, SkillInstallState::SourceMissing);
+        assert_eq!(source_missing_state.skill.path, skill.path);
     }
 }
