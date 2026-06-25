@@ -1,4 +1,5 @@
 pub mod config_store;
+pub mod fs_adapter;
 pub mod models;
 pub mod skill_library;
 pub mod target_registry;
