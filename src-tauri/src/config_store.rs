@@ -161,10 +161,15 @@ mod tests {
         second_config.settings.main_skills_dir = Some(temp.path().join("second-main-skills"));
 
         store.save(&first_config).expect("save first config");
-        store.save(&second_config).expect("overwrite with second config");
+        store
+            .save(&second_config)
+            .expect("overwrite with second config");
         let loaded = store.load().expect("load overwritten config");
 
-        assert_eq!(loaded.settings.main_skills_dir, second_config.settings.main_skills_dir);
+        assert_eq!(
+            loaded.settings.main_skills_dir,
+            second_config.settings.main_skills_dir
+        );
         assert!(!store.config_path.with_extension("json.tmp").exists());
         assert!(!store.config_path.with_extension("json.bak").exists());
     }
@@ -203,7 +208,11 @@ mod tests {
     #[test]
     fn save_creates_parent_directories() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("nested").join("settings").join("config.json");
+        let config_path = temp
+            .path()
+            .join("nested")
+            .join("settings")
+            .join("config.json");
         let store = ConfigStore::new(config_path.clone());
 
         store

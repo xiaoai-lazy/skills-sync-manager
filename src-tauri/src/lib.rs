@@ -1,6 +1,7 @@
 pub mod config_store;
 pub mod models;
 pub mod skill_library;
+pub mod target_registry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

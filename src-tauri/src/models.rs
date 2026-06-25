@@ -131,6 +131,18 @@ pub enum AppError {
         path: PathBuf,
         message: String,
     },
+    TargetNotFound {
+        target_id: String,
+    },
+    InvalidTargetName,
+    InvalidTargetDir {
+        path: PathBuf,
+        message: String,
+    },
+    TargetHasInstallations {
+        target_id: String,
+        installation_count: usize,
+    },
     Io {
         path: Option<PathBuf>,
         message: String,
@@ -172,6 +184,26 @@ impl std::fmt::Display for AppError {
                     message
                 )
             }
+            AppError::TargetNotFound { target_id } => {
+                write!(formatter, "target not found: {}", target_id)
+            }
+            AppError::InvalidTargetName => write!(formatter, "target name must not be blank"),
+            AppError::InvalidTargetDir { path, message } => {
+                write!(
+                    formatter,
+                    "invalid target directory at {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            AppError::TargetHasInstallations {
+                target_id,
+                installation_count,
+            } => write!(
+                formatter,
+                "target {} still has {} installation record(s)",
+                target_id, installation_count
+            ),
             AppError::Io { path, message } => {
                 if let Some(path) = path {
                     write!(
