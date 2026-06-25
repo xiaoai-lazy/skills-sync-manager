@@ -131,6 +131,14 @@ pub enum AppError {
         path: PathBuf,
         message: String,
     },
+    InvalidSkill {
+        skill_dir_name: String,
+        message: String,
+    },
+    Conflict {
+        path: PathBuf,
+        message: String,
+    },
     TargetNotFound {
         target_id: String,
     },
@@ -183,6 +191,13 @@ impl std::fmt::Display for AppError {
                     path.display(),
                     message
                 )
+            }
+            AppError::InvalidSkill {
+                skill_dir_name,
+                message,
+            } => write!(formatter, "invalid skill '{}': {}", skill_dir_name, message),
+            AppError::Conflict { path, message } => {
+                write!(formatter, "conflict at {}: {}", path.display(), message)
             }
             AppError::TargetNotFound { target_id } => {
                 write!(formatter, "target not found: {}", target_id)
