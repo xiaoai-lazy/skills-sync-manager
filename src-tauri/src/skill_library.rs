@@ -137,12 +137,20 @@ fn parse_skill_frontmatter(raw: &str) -> Result<SkillMetadata, Vec<String>> {
 }
 
 fn split_frontmatter(raw_after_opening_delimiter: &str) -> Option<(&str, &str)> {
-    for delimiter in ["\n---\r\n", "\n---\n", "\r\n---\r\n", "\r\n---\n"] {
-        if let Some(delimiter_start) = raw_after_opening_delimiter.find(delimiter) {
-            let frontmatter = &raw_after_opening_delimiter[..delimiter_start];
-            let body_start = delimiter_start + delimiter.len();
-            return Some((frontmatter, &raw_after_opening_delimiter[body_start..]));
+    let mut body_start = 0;
+
+    for segment in raw_after_opening_delimiter.split_inclusive('\n') {
+        let line = segment.strip_suffix('\n').unwrap_or(segment);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+
+        if line == "---" {
+            return Some((
+                &raw_after_opening_delimiter[..body_start],
+                &raw_after_opening_delimiter[body_start + segment.len()..],
+            ));
         }
+
+        body_start += segment.len();
     }
 
     None
@@ -251,6 +259,23 @@ mod tests {
         assert_eq!(skills.len(), 1);
         assert!(!skills[0].valid);
         assert_eq!(skills[0].validation_errors, vec![MISSING_FRONTMATTER]);
+    }
+
+    #[test]
+    fn closing_frontmatter_delimiter_at_eof_is_accepted() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        create_skill(
+            temp.path(),
+            "eof-frontmatter",
+            Some("---\nname: Test\ndescription: Test skill.\n---"),
+        );
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert_eq!(skills.len(), 1);
+        assert!(skills[0].valid);
+        assert_eq!(skills[0].name.as_deref(), Some("Test"));
+        assert_eq!(skills[0].description.as_deref(), Some("Test skill."));
     }
 
     #[test]
