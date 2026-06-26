@@ -417,4 +417,20 @@ describe('App', () => {
     expect(await screen.findByText('Confirm Deletion')).toBeInTheDocument();
     expect(screen.getByText(/1 recorded target link\(s\) will be removed/)).toBeInTheDocument();
   });
+
+  it('target detail does not show delete skill button', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    render(<App />);
+
+    // First select a target from the sidebar
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Claude Global' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
 });
