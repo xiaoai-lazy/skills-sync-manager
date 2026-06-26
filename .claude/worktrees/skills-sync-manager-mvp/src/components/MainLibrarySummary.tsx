@@ -28,6 +28,7 @@ function MainLibrarySummary(props: MainLibrarySummaryProps) {
         </div>
       ) : (
         <div className="empty-state">
+          <p>No main skills directory configured.</p>
           <button onClick={props.onSetMainSkillsDir}>Set Main Directory</button>
         </div>
       )}

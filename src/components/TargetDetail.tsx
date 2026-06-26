@@ -7,7 +7,6 @@ export interface TargetDetailProps {
   skills: SkillWithTargetState[];
   pendingSkillKey: string | null;
   onToggleSkill: (skillDirName: string, state: import('../model/types').SkillInstallState) => void;
-  onDeleteMainSkill: (skillDirName: string) => void;
 }
 
 function TargetDetail(props: TargetDetailProps) {
@@ -46,7 +45,6 @@ function TargetDetail(props: TargetDetailProps) {
                   item={item}
                   pending={props.pendingSkillKey === item.skill.dirName}
                   onToggle={props.onToggleSkill}
-                  onDeleteMainSkill={props.onDeleteMainSkill}
                 />
               </li>
             ))}
@@ -64,7 +62,6 @@ function TargetDetail(props: TargetDetailProps) {
                   item={item}
                   pending={props.pendingSkillKey === item.skill.dirName}
                   onToggle={props.onToggleSkill}
-                  onDeleteMainSkill={props.onDeleteMainSkill}
                 />
               </li>
             ))}

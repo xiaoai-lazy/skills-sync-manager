@@ -5,7 +5,6 @@ export interface SkillRowProps {
   item: SkillWithTargetState;
   pending: boolean;
   onToggle: (skillDirName: string, state: SkillInstallState) => void;
-  onDeleteMainSkill: (skillDirName: string) => void;
 }
 
 const statusLabelMap: Record<SkillInstallState, string> = {
@@ -43,7 +42,6 @@ function SkillRow(props: SkillRowProps) {
   const isInvalid = !skill.valid || state === 'invalidSkill';
   const toggleEnabled = canToggle(state) && !pending;
   const isInstalled = state === 'installed';
-  const canDelete = skill.valid && state !== 'invalidSkill' && !pending;
 
   const explanation = stateExplanationMap[state];
   const detailMessage =
@@ -80,14 +78,6 @@ function SkillRow(props: SkillRowProps) {
           onChange={() => props.onToggle(skill.dirName, state)}
           title={toggleEnabled ? (isInstalled ? '卸载' : '安装') : '无法切换'}
         />
-        <button
-          className="danger-button"
-          disabled={!canDelete}
-          onClick={() => props.onDeleteMainSkill(skill.dirName)}
-          title="Delete from main library"
-        >
-          Delete
-        </button>
       </div>
     </div>
   );
