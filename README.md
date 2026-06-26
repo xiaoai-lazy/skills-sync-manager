@@ -27,4 +27,7 @@ cd src-tauri
 cargo test
 ```
 
-`Cargo.lock` should be generated and committed by the first development environment with Rust/Cargo available.
+## Manual testing
+
+See [docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md](docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md) for the cross-platform verification checklist.
+
