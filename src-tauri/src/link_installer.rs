@@ -170,7 +170,7 @@ fn link_matches_record(link_path: &Path, installation: &Installation) -> bool {
     }
 }
 
-fn same_path(left: &Path, right: &Path) -> bool {
+pub fn same_path(left: &Path, right: &Path) -> bool {
     match (left.canonicalize(), right.canonicalize()) {
         (Ok(left_canon), Ok(right_canon)) => left_canon == right_canon,
         _ => left == right,

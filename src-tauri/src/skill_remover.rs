@@ -1,5 +1,4 @@
 use crate::models::{AppConfig, AppError, DeleteMainSkillResult, Installation};
-use std::path::Path;
 
 pub fn delete_main_skill(
     config: &mut AppConfig,
@@ -13,6 +12,8 @@ pub fn delete_main_skill(
         });
     }
 
+    validate_skill_dir_name(skill_dir_name)?;
+
     let main_dir = config
         .settings
         .main_skills_dir
@@ -23,6 +24,20 @@ pub fn delete_main_skill(
         })?;
 
     let source_path = main_dir.join(skill_dir_name);
+
+    // Check for symlinks before is_dir to avoid following junctions/symlinks
+    match std::fs::symlink_metadata(&source_path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(AppError::Io {
+                path: Some(source_path.clone()),
+                message: format!(
+                    "source skill path '{}' is a symlink, not a real directory",
+                    skill_dir_name
+                ),
+            });
+        }
+        _ => {}
+    }
 
     if !source_path.is_dir() {
         return Err(AppError::Io {
@@ -36,7 +51,7 @@ pub fn delete_main_skill(
         .iter()
         .filter(|i| {
             i.skill_dir_name == skill_dir_name
-                || i.source_path == source_path
+                || crate::link_installer::same_path(&i.source_path, &source_path)
         })
         .cloned()
         .collect();
@@ -53,7 +68,8 @@ pub fn delete_main_skill(
     config
         .installations
         .retain(|i| {
-            i.skill_dir_name != skill_dir_name && i.source_path != source_path
+            i.skill_dir_name != skill_dir_name
+                && !crate::link_installer::same_path(&i.source_path, &source_path)
         });
 
     Ok(DeleteMainSkillResult {
@@ -62,34 +78,34 @@ pub fn delete_main_skill(
     })
 }
 
+fn validate_skill_dir_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: name.to_string(),
+            message: "skill directory name must not be empty".to_string(),
+        });
+    }
+    if name == "." || name == ".." {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: name.to_string(),
+            message: "skill directory name must not be '.' or '..'".to_string(),
+        });
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: name.to_string(),
+            message: "skill directory name must not contain path separators".to_string(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AppConfig, Installation, Settings, SkillView, Target};
+    use crate::models::{AppConfig, Installation, SkillView, Target};
     use std::fs;
     use std::path::Path;
-
-    fn create_target_config(
-        temp: &Path,
-        target_id: &str,
-        target_name: &str,
-    ) -> (AppConfig, std::path::PathBuf) {
-        let target_dir = temp.join(format!("target-{}", target_id));
-        fs::create_dir_all(&target_dir).expect("create target dir");
-        let config = AppConfig {
-            version: 1,
-            settings: Settings::default(),
-            targets: vec![Target {
-                id: target_id.to_string(),
-                name: target_name.to_string(),
-                skills_dir: target_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            }],
-            installations: Vec::new(),
-        };
-        (config, target_dir)
-    }
 
     fn create_valid_skill(main_dir: &Path, dir_name: &str) -> SkillView {
         let skill_dir = main_dir.join(dir_name);
@@ -348,5 +364,23 @@ mod tests {
         // Only the unrelated installation record should remain
         assert_eq!(config.installations.len(), 1);
         assert_eq!(config.installations[0].skill_dir_name, "other-skill");
+    }
+
+    #[test]
+    fn rejects_invalid_skill_dir_names() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (mut config, _main_dir) = create_config_with_main_dir(temp.path());
+
+        let invalid_names = vec!["", ".", "..", "foo/bar", "foo\\bar"];
+        for name in invalid_names {
+            let error = delete_main_skill(&mut config, name, true)
+                .expect_err(&format!("should reject invalid name '{}'", name));
+            assert!(
+                matches!(error, AppError::InvalidSkill { ref skill_dir_name, .. } if skill_dir_name == name),
+                "expected InvalidSkill for name '{}', got {:?}",
+                name,
+                error
+            );
+        }
     }
 }
