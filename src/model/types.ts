@@ -11,6 +11,11 @@ export type SkillInstallState =
   | 'sourceMissing'
   | 'invalidSkill';
 
+export interface AppErrorDto {
+  code: string;
+  message: string;
+}
+
 export interface Settings {
   mainSkillsDir: string | null;
   linkStrategy: LinkStrategy;

@@ -164,6 +164,76 @@ pub enum AppError {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppErrorDto {
+    pub code: String,
+    pub message: String,
+}
+
+impl AppError {
+    pub fn to_dto(&self) -> AppErrorDto {
+        match self {
+            AppError::ConfigRead { path, message } => AppErrorDto {
+                code: "configRead".to_string(),
+                message: format!("Failed to read config at {}: {}", path.display(), message),
+            },
+            AppError::ConfigParse { path, message } => AppErrorDto {
+                code: "configParse".to_string(),
+                message: format!("Failed to parse config at {}: {}", path.display(), message),
+            },
+            AppError::ConfigWrite { path, message } => AppErrorDto {
+                code: "configWrite".to_string(),
+                message: format!("Failed to write config at {}: {}", path.display(), message),
+            },
+            AppError::InvalidMainSkillsDir { path, message } => AppErrorDto {
+                code: "invalidMainSkillsDir".to_string(),
+                message: format!("Invalid main skills directory at {}: {}", path.display(), message),
+            },
+            AppError::InvalidSkill {
+                skill_dir_name,
+                message,
+            } => AppErrorDto {
+                code: "invalidSkill".to_string(),
+                message: format!("Invalid skill '{}': {}", skill_dir_name, message),
+            },
+            AppError::Conflict { path, message } => AppErrorDto {
+                code: "conflict".to_string(),
+                message: format!("Conflict at {}: {}", path.display(), message),
+            },
+            AppError::TargetNotFound { target_id } => AppErrorDto {
+                code: "targetNotFound".to_string(),
+                message: format!("Target not found: {}", target_id),
+            },
+            AppError::InvalidTargetName => AppErrorDto {
+                code: "invalidTargetName".to_string(),
+                message: "Target name must not be blank".to_string(),
+            },
+            AppError::InvalidTargetDir { path, message } => AppErrorDto {
+                code: "invalidTargetDir".to_string(),
+                message: format!("Invalid target directory at {}: {}", path.display(), message),
+            },
+            AppError::TargetHasInstallations {
+                target_id,
+                installation_count,
+            } => AppErrorDto {
+                code: "targetHasInstallations".to_string(),
+                message: format!(
+                    "Target {} still has {} installation record(s)",
+                    target_id, installation_count
+                ),
+            },
+            AppError::Io { path, message } => AppErrorDto {
+                code: "io".to_string(),
+                message: match path {
+                    Some(path) => format!("Filesystem error at {}: {}", path.display(), message),
+                    None => format!("Filesystem error: {}", message),
+                },
+            },
+        }
+    }
+}
+
 impl std::fmt::Display for AppError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
