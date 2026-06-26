@@ -1,5 +1,7 @@
 # Skills Sync Manager
 
+[中文文档](README.zh.md)
+
 A cross-platform desktop app for managing one main skills directory and syncing selected skills into multiple target directories through directory links.
 
 ## What the app does
