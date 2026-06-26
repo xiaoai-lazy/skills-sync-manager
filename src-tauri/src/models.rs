@@ -106,6 +106,13 @@ pub struct SkillWithTargetState {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct DeleteMainSkillResult {
+    pub deleted_skill_dir_name: String,
+    pub removed_link_count: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub config: AppConfig,
     pub skills: Vec<SkillView>,
