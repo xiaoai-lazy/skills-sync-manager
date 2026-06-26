@@ -71,13 +71,13 @@ pub fn set_main_skills_dir(
     if !path.exists() {
         return Err(AppError::InvalidMainSkillsDir {
             path: path.clone(),
-            message: "路径不存在".to_string(),
+            message: "路径不存在：{}".to_string(),
         }.to_dto());
     }
     if !path.is_dir() {
         return Err(AppError::InvalidMainSkillsDir {
             path: path.clone(),
-            message: "路径不是目录".to_string(),
+            message: "路径不是目录：{}".to_string(),
         }.to_dto());
     }
 
@@ -391,7 +391,7 @@ mod tests {
         let invalid_target_name = AppError::InvalidTargetName;
         let dto = invalid_target_name.to_dto();
         assert_eq!(dto.code, "invalidTargetName");
-        assert!(dto.message.contains("blank"));
+        assert!(dto.message.contains("不能为空"));
 
         let target_has_installs = AppError::TargetHasInstallations {
             target_id: "target-1".to_string(),
@@ -416,7 +416,7 @@ mod tests {
         let dto = io_no_path.to_dto();
         assert_eq!(dto.code, "io");
         assert!(dto.message.contains("generic error"));
-        assert!(!dto.message.contains("at "));
+        assert!(!dto.message.contains("错误 "));
     }
 
     #[test]

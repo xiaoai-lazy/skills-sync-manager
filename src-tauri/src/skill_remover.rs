@@ -20,7 +20,7 @@ pub fn delete_main_skill(
         .as_ref()
         .ok_or_else(|| AppError::Io {
             path: None,
-            message: "main skills directory is not configured".to_string(),
+            message: "未配置主 skill 目录".to_string(),
         })?;
 
     let source_path = main_dir.join(skill_dir_name);
@@ -31,7 +31,7 @@ pub fn delete_main_skill(
             return Err(AppError::Io {
                 path: Some(source_path.clone()),
                 message: format!(
-                    "source skill path '{}' is a symlink, not a real directory",
+                    "源 skill 路径是链接，无法删除：{}",
                     skill_dir_name
                 ),
             });

@@ -62,7 +62,7 @@ function SkillRow(props: SkillRowProps) {
       </div>
       <div className="skill-status">
         <span className={`status-badge status-${state}`}>
-          {statusLabelMap[state]}
+          {stateLabel(state)}
         </span>
         {(explanation || detailMessage) && (
           <div className="skill-message">
@@ -78,7 +78,7 @@ function SkillRow(props: SkillRowProps) {
           checked={isInstalled}
           disabled={!toggleEnabled}
           onChange={() => props.onToggle(skill.dirName, state)}
-          title={toggleEnabled ? (isInstalled ? 'Uninstall' : 'Install') : 'Cannot toggle'}
+          title={toggleEnabled ? (isInstalled ? '卸载' : '安装') : '无法切换'}
         />
         <button
           className="danger-button"

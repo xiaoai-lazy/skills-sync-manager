@@ -298,7 +298,6 @@ select {
   font-weight: 600;
   padding: 0.25rem 0.625rem;
   border-radius: 9999px;
-  text-transform: capitalize;
   white-space: nowrap;
 }
 

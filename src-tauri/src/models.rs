@@ -176,26 +176,26 @@ impl AppError {
         match self {
             AppError::ConfigRead { path, message } => AppErrorDto {
                 code: "configRead".to_string(),
-                message: format!("Failed to read config at {}: {}", path.display(), message),
+                message: format!("无法读取配置文件 {}: {}", path.display(), message),
             },
             AppError::ConfigParse { path, message } => AppErrorDto {
                 code: "configParse".to_string(),
-                message: format!("Failed to parse config at {}: {}", path.display(), message),
+                message: format!("无法解析配置文件 {}: {}", path.display(), message),
             },
             AppError::ConfigWrite { path, message } => AppErrorDto {
                 code: "configWrite".to_string(),
-                message: format!("Failed to write config at {}: {}", path.display(), message),
+                message: format!("无法写入配置文件 {}: {}", path.display(), message),
             },
             AppError::InvalidMainSkillsDir { path, message } => AppErrorDto {
                 code: "invalidMainSkillsDir".to_string(),
-                message: format!("Invalid main skills directory at {}: {}", path.display(), message),
+                message: format!("主 skill 目录无效 {}: {}", path.display(), message),
             },
             AppError::InvalidSkill {
                 skill_dir_name,
                 message,
             } => AppErrorDto {
                 code: "invalidSkill".to_string(),
-                message: format!("Invalid skill '{}': {}", skill_dir_name, message),
+                message: format!("Skill 无效 '{}': {}", skill_dir_name, message),
             },
             AppError::Conflict { path, message } => AppErrorDto {
                 code: "conflict".to_string(),
@@ -207,15 +207,15 @@ impl AppError {
             },
             AppError::TargetNotFound { target_id } => AppErrorDto {
                 code: "targetNotFound".to_string(),
-                message: format!("Target not found: {}", target_id),
+                message: format!("找不到目标 {}", target_id),
             },
             AppError::InvalidTargetName => AppErrorDto {
                 code: "invalidTargetName".to_string(),
-                message: "Target name must not be blank".to_string(),
+                message: "目标名称不能为空".to_string(),
             },
             AppError::InvalidTargetDir { path, message } => AppErrorDto {
                 code: "invalidTargetDir".to_string(),
-                message: format!("Invalid target directory at {}: {}", path.display(), message),
+                message: format!("目标目录无效 {}: {}", path.display(), message),
             },
             AppError::TargetHasInstallations {
                 target_id,
@@ -223,15 +223,15 @@ impl AppError {
             } => AppErrorDto {
                 code: "targetHasInstallations".to_string(),
                 message: format!(
-                    "Target {} still has {} installation record(s)",
+                    "目标 {} 仍有 {} 条安装记录",
                     target_id, installation_count
                 ),
             },
             AppError::Io { path, message } => AppErrorDto {
                 code: "io".to_string(),
                 message: match path {
-                    Some(path) => format!("Filesystem error at {}: {}", path.display(), message),
-                    None => format!("Filesystem error: {}", message),
+                    Some(path) => format!("文件系统错误 {}: {}", path.display(), message),
+                    None => format!("文件系统错误：{}", message),
                 },
             },
         }
