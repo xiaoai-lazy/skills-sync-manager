@@ -43,7 +43,10 @@ pub fn remove_recorded_link(link_path: &Path, expected_target: &Path) -> Result<
     let Some(actual_target) = link_target(link_path)? else {
         return Err(io_error(
             Some(link_path),
-            "refusing to remove path because it is not a link".to_string(),
+            format!(
+                "无法删除：{} 不是链接，软件不会删除未知内容",
+                link_path.display()
+            ),
         ));
     };
 
@@ -51,7 +54,8 @@ pub fn remove_recorded_link(link_path: &Path, expected_target: &Path) -> Result<
         return Err(io_error(
             Some(link_path),
             format!(
-                "refusing to remove link because target mismatch: expected {}, found {}",
+                "无法删除：{} 指向的目标与记录不符（期望 {}，实际 {}）",
+                link_path.display(),
                 expected_target.display(),
                 actual_target.display()
             ),

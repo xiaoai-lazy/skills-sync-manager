@@ -27,7 +27,7 @@ pub fn install_skill(
     if fs_adapter::path_exists(&link_path) {
         return Err(AppError::Conflict {
             path: link_path,
-            message: "target path already exists with different content".to_string(),
+            message: "目标路径已存在同名内容，无法安装".to_string(),
         });
     }
 
@@ -103,11 +103,11 @@ pub fn compute_target_skill_states(
                     description: None,
                     path: installation.source_path.clone(),
                     valid: false,
-                    validation_errors: vec!["Source skill no longer exists".to_string()],
+                    validation_errors: vec!["源 skill 已不存在".to_string()],
                 },
                 state: SkillInstallState::SourceMissing,
                 message: Some(
-                    "Installation record exists but source skill is no longer in library"
+                    "安装记录存在，但源 skill 已不在库中"
                         .to_string(),
                 ),
             });
@@ -187,7 +187,7 @@ fn compute_skill_state(
             skill: skill.clone(),
             state: SkillInstallState::InvalidSkill,
             message: Some(format!(
-                "Invalid skill: {}",
+                "无效 skill：{}",
                 skill.validation_errors.join(", ")
             )),
         };
@@ -201,7 +201,7 @@ fn compute_skill_state(
                 skill: skill.clone(),
                 state: SkillInstallState::SourceMissing,
                 message: Some(
-                    "Installation record exists but source skill directory is missing".to_string(),
+                    "安装记录存在，但源 skill 目录已缺失".to_string(),
                 ),
             };
         }
@@ -210,7 +210,7 @@ fn compute_skill_state(
             return SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::Missing,
-                message: Some("Installation record exists but link path is missing".to_string()),
+                message: Some("安装记录存在，但链接已不存在".to_string()),
             };
         }
 
@@ -220,14 +220,15 @@ fn compute_skill_state(
                     SkillWithTargetState {
                         skill: skill.clone(),
                         state: SkillInstallState::Installed,
-                        message: Some("Skill is installed".to_string()),
+                        message: Some("Skill 已安装".to_string()),
                     }
                 } else {
                     SkillWithTargetState {
                         skill: skill.clone(),
                         state: SkillInstallState::Mismatch,
                         message: Some(format!(
-                            "Link path points to {} instead of recorded source {}",
+                            "链接目标与记录不符：{} 指向 {}，但记录为 {}",
+                            link_path.display(),
                             actual_target.display(),
                             installation.source_path.display()
                         )),
@@ -237,12 +238,12 @@ fn compute_skill_state(
             Ok(None) => SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::Mismatch,
-                message: Some("Path exists but is not a link".to_string()),
+                message: Some("路径存在，但不是链接".to_string()),
             },
             Err(err) => SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::Mismatch,
-                message: Some(format!("Failed to resolve link target: {}", err)),
+                message: Some(format!("无法解析链接目标：{}", err)),
             },
         }
     } else {
@@ -251,7 +252,7 @@ fn compute_skill_state(
                 skill: skill.clone(),
                 state: SkillInstallState::Conflict,
                 message: Some(format!(
-                    "Target path {} already exists but is not a recorded installation",
+                    "目标路径已存在同名内容：{}",
                     link_path.display()
                 )),
             }
@@ -259,7 +260,7 @@ fn compute_skill_state(
             SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::NotInstalled,
-                message: Some("Skill is not installed".to_string()),
+                message: Some("Skill 未安装".to_string()),
             }
         }
     }
@@ -401,9 +402,9 @@ mod tests {
         let main_dir = temp.path().join("main-skills");
         fs::create_dir_all(&main_dir).expect("create main dir");
         let skill = create_valid_skill(&main_dir, "brainstorming");
-        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+        let (mut config, _target_dir) = create_target_config(temp.path(), "target-1", "Target One");
 
-        let existing_file = target_dir.join("brainstorming");
+        let existing_file = _target_dir.join("brainstorming");
         fs::write(&existing_file, "existing file content").expect("write existing file");
 
         let error = install_skill(&mut config, "target-1", "brainstorming", &[skill.clone()])

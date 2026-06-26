@@ -71,13 +71,13 @@ pub fn set_main_skills_dir(
     if !path.exists() {
         return Err(AppError::InvalidMainSkillsDir {
             path: path.clone(),
-            message: "Path does not exist".to_string(),
+            message: "路径不存在".to_string(),
         }.to_dto());
     }
     if !path.is_dir() {
         return Err(AppError::InvalidMainSkillsDir {
             path: path.clone(),
-            message: "Path is not a directory".to_string(),
+            message: "路径不是目录".to_string(),
         }.to_dto());
     }
 

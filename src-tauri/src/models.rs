@@ -199,7 +199,11 @@ impl AppError {
             },
             AppError::Conflict { path, message } => AppErrorDto {
                 code: "conflict".to_string(),
-                message: format!("Conflict at {}: {}", path.display(), message),
+                message: format!(
+                    "目标路径已存在，无法安装：{} ({})",
+                    path.display(),
+                    message
+                ),
             },
             AppError::TargetNotFound { target_id } => AppErrorDto {
                 code: "targetNotFound".to_string(),

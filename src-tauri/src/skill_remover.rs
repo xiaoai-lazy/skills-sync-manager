@@ -8,7 +8,7 @@ pub fn delete_main_skill(
     if !confirmed {
         return Err(AppError::Io {
             path: None,
-            message: "main skill deletion requires confirmation".to_string(),
+            message: "删除主目录 skill 需要确认".to_string(),
         });
     }
 
@@ -42,7 +42,7 @@ pub fn delete_main_skill(
     if !source_path.is_dir() {
         return Err(AppError::Io {
             path: Some(source_path.clone()),
-            message: format!("source skill directory '{}' does not exist", skill_dir_name),
+            message: format!("源 skill 目录不存在：{}", skill_dir_name),
         });
     }
 
@@ -146,7 +146,7 @@ mod tests {
             .expect_err("should reject without confirmation");
 
         assert!(
-            matches!(error, AppError::Io { ref message, .. } if message.contains("requires confirmation"))
+            matches!(error, AppError::Io { ref message, .. } if message.contains("需要确认"))
         );
     }
 
