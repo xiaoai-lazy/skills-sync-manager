@@ -60,6 +60,27 @@ cd src-tauri
 cargo test
 ```
 
+## 下载与安装
+
+预编译的安装包可以在 [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) 页面下载。
+
+按平台选择对应的安装包：
+
+- **Windows**：`.msi` 或 `.exe`
+- **macOS**：`.dmg`
+- **Linux**：`.AppImage` 或 `.deb`
+
+> 当前安装包**未签名**。Windows 可能会显示 SmartScreen 警告，macOS 可能需要右键 → 打开。后续版本会补充代码签名。
+
+要手动发布新版本，可以打一个 tag 并推送：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions 会自动构建各平台安装包，并创建一个草稿 Release。
+
 ## 链接行为
 
 - Windows：默认使用 junction。
