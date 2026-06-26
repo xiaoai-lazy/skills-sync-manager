@@ -103,14 +103,12 @@ pub fn add_target(
         skills_dir,
     };
 
-    run_with_config(
-        app,
-        |config| {
-            crate::target_registry::add_target(config, request.clone())?;
-            Ok(())
-        },
-        None,
-    )
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    let target = crate::target_registry::add_target(&mut config, request).map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    build_app_state(config, Some(target.id)).map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
