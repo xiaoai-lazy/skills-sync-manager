@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Target } from '../model/types';
-import MainLibraryPanel from './MainLibraryPanel';
+import MainLibrarySummary from './MainLibrarySummary';
 import TargetList from './TargetList';
 
 export interface SidebarProps {
@@ -14,16 +14,18 @@ export interface SidebarProps {
   onEditTarget: (target: Target) => void;
   onDeleteTarget: (target: Target) => void;
   onSetMainSkillsDir: () => void;
+  onManageSkills: () => void;
 }
 
 function Sidebar(props: SidebarProps) {
   return (
     <aside className="sidebar">
-      <MainLibraryPanel
+      <MainLibrarySummary
         mainSkillsDir={props.mainSkillsDir}
         validSkillCount={props.validSkillCount}
         invalidSkillCount={props.invalidSkillCount}
         onSetMainSkillsDir={props.onSetMainSkillsDir}
+        onManageSkills={props.onManageSkills}
       />
       <TargetList
         targets={props.targets}

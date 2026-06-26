@@ -208,12 +208,13 @@ describe('App', () => {
     cleanup();
   });
 
-  it('renders app title and main directory section', async () => {
+  it('renders app title, main directory section and manage skills button', async () => {
     vi.mocked(getAppState).mockResolvedValue(baseAppState);
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Main Library' })).toBeInTheDocument();
     expect(await screen.findByText('/tmp/main-skills')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /manage skills/i })).toBeInTheDocument();
   });
 
   it('renders target list from mocked app state', async () => {
