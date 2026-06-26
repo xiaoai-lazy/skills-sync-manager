@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod fixtures {
-    use crate::models::{AppConfig, Installation, Settings, SkillView, Target};
+    use crate::models::{AppConfig, Settings, SkillView, Target};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -25,7 +25,7 @@ pub mod fixtures {
         }
     }
 
-    pub fn create_invalid_skill(main_dir: &Path, dir_name: &str, _reason: &str) -> SkillView {
+    pub fn create_invalid_skill(main_dir: &Path, dir_name: &str) -> SkillView {
         let skill_dir = main_dir.join(dir_name);
         fs::create_dir_all(&skill_dir).expect("create skill dir");
         SkillView {
@@ -67,24 +67,5 @@ pub mod fixtures {
                 .collect(),
             installations: Vec::new(),
         }
-    }
-
-    pub fn add_installation_record(
-        config: &mut AppConfig,
-        target_id: &str,
-        skill: &SkillView,
-        link_path: &Path,
-    ) {
-        let installation = Installation {
-            id: format!("install-{}", config.installations.len()),
-            skill_dir_name: skill.dir_name.clone(),
-            skill_name: skill.name.clone().unwrap_or_else(|| skill.dir_name.clone()),
-            source_path: skill.path.clone(),
-            target_id: target_id.to_string(),
-            link_path: link_path.to_path_buf(),
-            link_type: crate::fs_adapter::default_link_type(),
-            created_at: "1".to_string(),
-        };
-        config.installations.push(installation);
     }
 }
