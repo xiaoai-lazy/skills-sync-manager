@@ -18,13 +18,22 @@ const statusLabelMap: Record<SkillInstallState, string> = {
   invalidSkill: 'Invalid',
 };
 
+export function canToggle(state: SkillInstallState): boolean {
+  return state === 'notInstalled' || state === 'installed';
+}
+
+export function stateLabel(state: SkillInstallState): string {
+  return statusLabelMap[state];
+}
+
 function SkillRow(props: SkillRowProps) {
   const { item, pending } = props;
   const { skill, state } = item;
 
   const isInvalid = !skill.valid || state === 'invalidSkill';
-  const canToggle = !isInvalid && !pending;
+  const toggleEnabled = canToggle(state) && !pending;
   const isInstalled = state === 'installed';
+  const canDelete = skill.valid && state !== 'invalidSkill' && !pending;
 
   return (
     <div className={`skill-row ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}>
@@ -41,17 +50,16 @@ function SkillRow(props: SkillRowProps) {
         </span>
       </div>
       <div className="skill-actions">
-        <button
-          className="toggle-button"
-          disabled={!canToggle}
-          onClick={() => props.onToggle(skill.dirName, state)}
-          title={canToggle ? (isInstalled ? 'Uninstall' : 'Install') : 'Cannot toggle'}
-        >
-          {isInstalled ? 'Uninstall' : 'Install'}
-        </button>
+        <input
+          type="checkbox"
+          checked={isInstalled}
+          disabled={!toggleEnabled}
+          onChange={() => props.onToggle(skill.dirName, state)}
+          title={toggleEnabled ? (isInstalled ? 'Uninstall' : 'Install') : 'Cannot toggle'}
+        />
         <button
           className="danger-button"
-          disabled={pending}
+          disabled={!canDelete}
           onClick={() => props.onDeleteMainSkill(skill.dirName)}
           title="Delete from main library"
         >
