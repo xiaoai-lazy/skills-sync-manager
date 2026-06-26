@@ -88,6 +88,8 @@ describe('MainLibrarySummary', () => {
       />
     );
 
+    expect(screen.getByText('No main skills directory configured.')).toBeInTheDocument();
+
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /set main directory/i }));
 
