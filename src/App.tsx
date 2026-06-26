@@ -12,6 +12,7 @@ import {
 } from './api/commands';
 import Sidebar from './components/Sidebar';
 import TargetDetail from './components/TargetDetail';
+import ConfirmDialog from './components/ConfirmDialog';
 
 function errorMessage(err: unknown): string {
   if (typeof err === 'string') return err;
@@ -27,6 +28,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingSkillKey, setPendingSkillKey] = useState<string | null>(null);
+  const [deleteSkillDirName, setDeleteSkillDirName] = useState<string | null>(null);
 
   const refresh = useCallback(
     async (nextSelectedTargetId: string | null = selectedTargetId): Promise<void> => {
@@ -162,20 +164,29 @@ function App() {
     }
   };
 
-  const handleDeleteMainSkill = async (skillDirName: string) => {
-    if (!appState) return;
-    if (!window.confirm(`Delete main skill "${skillDirName}"?`)) return;
-    setPendingSkillKey(`delete-skill-${skillDirName}`);
+  const handleDeleteMainSkill = (skillDirName: string) => {
+    setDeleteSkillDirName(skillDirName);
+  };
+
+  const handleConfirmDeleteMainSkill = async () => {
+    if (!deleteSkillDirName || !appState) return;
+    setPendingSkillKey(`delete-skill-${deleteSkillDirName}`);
+    setDeleteSkillDirName(null);
     try {
-      const next = await deleteMainSkill(skillDirName, true);
+      const next = await deleteMainSkill(deleteSkillDirName, true);
       setAppState(next);
       setSelectedTargetId(next.selectedTargetId);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
+      await refresh(selectedTargetId);
     } finally {
       setPendingSkillKey(null);
     }
+  };
+
+  const handleCancelDeleteMainSkill = () => {
+    setDeleteSkillDirName(null);
   };
 
   const mainSkillsDir = appState?.config.settings.mainSkillsDir ?? null;
@@ -183,6 +194,18 @@ function App() {
   const invalidSkills = appState?.skills.filter((s) => !s.valid) ?? [];
   const selectedTarget =
     appState?.config.targets.find((t) => t.id === selectedTargetId) ?? null;
+
+  const deleteLinkCount = deleteSkillDirName
+    ? appState?.config.installations.filter(
+        (i) => i.skillDirName === deleteSkillDirName
+      ).length ?? 0
+    : 0;
+
+  const deleteMessage = deleteSkillDirName
+    ? deleteLinkCount > 0
+      ? `Skill '${deleteSkillDirName}' will be permanently deleted. ${deleteLinkCount} recorded target link(s) will be removed first. This action cannot be undone.`
+      : `Skill '${deleteSkillDirName}' will be permanently deleted. This action cannot be undone.`
+    : '';
 
   return (
     <div className="app-shell">
@@ -218,6 +241,16 @@ function App() {
           pendingSkillKey={pendingSkillKey}
           onToggleSkill={handleToggleSkill}
           onDeleteMainSkill={handleDeleteMainSkill}
+        />
+        <ConfirmDialog
+          open={!!deleteSkillDirName}
+          title="Confirm Deletion"
+          message={deleteMessage}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          danger
+          onConfirm={handleConfirmDeleteMainSkill}
+          onCancel={handleCancelDeleteMainSkill}
         />
       </main>
     </div>
