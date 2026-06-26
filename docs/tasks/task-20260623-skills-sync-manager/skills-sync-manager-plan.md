@@ -266,16 +266,16 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Initialize a Vite React TypeScript project in the repository root.
-- [ ] Initialize Tauri 2 in `src-tauri/` without adding feature logic.
-- [ ] Add npm scripts: `dev`, `build`, `test`, `tauri`, and `tauri:dev`.
-- [ ] Add a placeholder React screen titled `Skills Sync Manager`.
-- [ ] Register a no-op Tauri window with app name `Skills Sync Manager`.
-- [ ] Run `npm install`.
-- [ ] Run `npm run build` and fix TypeScript or Vite issues.
-- [ ] Run `cd src-tauri && cargo test` and confirm the backend builds.
-- [ ] Run `npm run tauri:dev` and confirm the desktop window opens.
-- [ ] Commit with message `chore: scaffold tauri react app`.
+- [x] Initialize a Vite React TypeScript project in the repository root.
+- [x] Initialize Tauri 2 in `src-tauri/` without adding feature logic.
+- [x] Add npm scripts: `dev`, `build`, `test`, `tauri`, and `tauri:dev`.
+- [x] Add a placeholder React screen titled `Skills Sync Manager`.
+- [x] Register a no-op Tauri window with app name `Skills Sync Manager`.
+- [x] Run `npm install`.
+- [x] Run `npm run build` and fix TypeScript or Vite issues.
+- [x] Run `cd src-tauri && cargo test` and confirm the backend builds.
+- [x] Run `npm run tauri:dev` and confirm the desktop window opens.
+- [x] Commit with message `chore: scaffold tauri react app`.
 
 **Expected result:** A blank but runnable cross-platform Tauri app exists.
 
@@ -350,15 +350,15 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add Serde dependencies in `src-tauri/Cargo.toml` if not already present.
-- [ ] Define Rust models with `Serialize`, `Deserialize`, `Clone`, `Debug`, `PartialEq` where useful.
-- [ ] Add `#[serde(rename_all = "camelCase")]` on structs where appropriate.
-- [ ] Add explicit enum serialization names in lower camel case, for example `notInstalled`, `installed`, `conflict`.
-- [ ] Define matching TypeScript interfaces and union types.
-- [ ] Add a small Rust test that serializes an `Installation` and asserts JSON uses camelCase fields.
-- [ ] Run `cd src-tauri && cargo test`.
-- [ ] Run `npm run build`.
-- [ ] Commit with message `feat: define shared domain models`.
+- [x] Add Serde dependencies in `src-tauri/Cargo.toml` if not already present.
+- [x] Define Rust models with `Serialize`, `Deserialize`, `Clone`, `Debug`, `PartialEq` where useful.
+- [x] Add `#[serde(rename_all = "camelCase")]` on structs where appropriate.
+- [x] Add explicit enum serialization names in lower camel case, for example `notInstalled`, `installed`, `conflict`.
+- [x] Define matching TypeScript interfaces and union types.
+- [x] Add a small Rust test that serializes an `Installation` and asserts JSON uses camelCase fields.
+- [x] Run `cd src-tauri && cargo test`.
+- [x] Run `npm run build`.
+- [x] Commit with message `feat: define shared domain models`.
 
 **Expected result:** Backend and frontend share a stable contract before commands are implemented.
 
@@ -390,16 +390,16 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add a `ConfigStore` struct that owns a `config_path: PathBuf`.
-- [ ] Add `ConfigStore::new(config_path: PathBuf) -> Self` for tests and command wiring.
-- [ ] Add `ConfigStore::load(&self) -> Result<AppConfig, AppError>`.
-- [ ] Add `ConfigStore::save(&self, config: &AppConfig) -> Result<(), AppError>`.
-- [ ] Add `AppError` or a simple backend error type that can later be converted for Tauri commands.
-- [ ] Add unit test: missing config returns default config.
-- [ ] Add unit test: valid config round-trips through save/load.
-- [ ] Add unit test: malformed JSON returns an error and keeps the file unchanged.
-- [ ] Run `cd src-tauri && cargo test config_store`.
-- [ ] Commit with message `feat: add json config store`.
+- [x] Add a `ConfigStore` struct that owns a `config_path: PathBuf`.
+- [x] Add `ConfigStore::new(config_path: PathBuf) -> Self` for tests and command wiring.
+- [x] Add `ConfigStore::load(&self) -> Result<AppConfig, AppError>`.
+- [x] Add `ConfigStore::save(&self, config: &AppConfig) -> Result<(), AppError>`.
+- [x] Add `AppError` or a simple backend error type that can later be converted for Tauri commands.
+- [x] Add unit test: missing config returns default config.
+- [x] Add unit test: valid config round-trips through save/load.
+- [x] Add unit test: malformed JSON returns an error and keeps the file unchanged.
+- [x] Run `cd src-tauri && cargo test config_store`.
+- [x] Commit with message `feat: add json config store`.
 
 **Expected result:** The app can safely persist and reload local state.
 
@@ -428,17 +428,17 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add a frontmatter parser for simple YAML frontmatter.
-- [ ] Use `serde_yaml` or a small parser; if using `serde_yaml`, add it to `Cargo.toml`.
-- [ ] Implement `list_skills(main_dir: Option<&Path>) -> Result<Vec<SkillView>, AppError>`.
-- [ ] Add fixture helper to create skill directories in temporary directories.
-- [ ] Add unit test: valid skill with `name` and `description` is returned as valid.
-- [ ] Add unit test: missing `SKILL.md` returns invalid skill with `Missing SKILL.md`.
-- [ ] Add unit test: missing `name` returns invalid skill with `Missing frontmatter.name`.
-- [ ] Add unit test: missing `description` returns invalid skill with `Missing frontmatter.description`.
-- [ ] Add unit test: regular files in main directory are ignored.
-- [ ] Run `cd src-tauri && cargo test skill_library`.
-- [ ] Commit with message `feat: validate skill library`.
+- [x] Add a frontmatter parser for simple YAML frontmatter.
+- [x] Use `serde_yaml` or a small parser; if using `serde_yaml`, add it to `Cargo.toml`.
+- [x] Implement `list_skills(main_dir: Option<&Path>) -> Result<Vec<SkillView>, AppError>`.
+- [x] Add fixture helper to create skill directories in temporary directories.
+- [x] Add unit test: valid skill with `name` and `description` is returned as valid.
+- [x] Add unit test: missing `SKILL.md` returns invalid skill with `Missing SKILL.md`.
+- [x] Add unit test: missing `name` returns invalid skill with `Missing frontmatter.name`.
+- [x] Add unit test: missing `description` returns invalid skill with `Missing frontmatter.description`.
+- [x] Add unit test: regular files in main directory are ignored.
+- [x] Run `cd src-tauri && cargo test skill_library`.
+- [x] Commit with message `feat: validate skill library`.
 
 **Expected result:** The backend can produce the valid and invalid skill list needed by the UI.
 
@@ -465,18 +465,18 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add payload models `AddTargetRequest` and `UpdateTargetRequest`.
-- [ ] Implement `add_target(config, request) -> Target`.
-- [ ] Implement `update_target(config, target_id, request) -> Target`.
-- [ ] Implement `delete_target_config(config, target_id) -> Result<(), AppError>` that refuses deletion when records exist unless caller selected cleanup.
-- [ ] Implement `validate_target_dir(path: &Path) -> Result<(), AppError>`.
-- [ ] Add unit test: add target populates ID and timestamps.
-- [ ] Add unit test: update target changes name/path and `updatedAt`.
-- [ ] Add unit test: delete target config does not delete the directory.
-- [ ] Add unit test: install-time validation fails for missing path.
-- [ ] Add unit test: install-time validation fails for regular file path.
-- [ ] Run `cd src-tauri && cargo test target_registry`.
-- [ ] Commit with message `feat: manage target registry`.
+- [x] Add payload models `AddTargetRequest` and `UpdateTargetRequest`.
+- [x] Implement `add_target(config, request) -> Target`.
+- [x] Implement `update_target(config, target_id, request) -> Target`.
+- [x] Implement `delete_target_config(config, target_id) -> Result<(), AppError>` that refuses deletion when records exist unless caller selected cleanup.
+- [x] Implement `validate_target_dir(path: &Path) -> Result<(), AppError>`.
+- [x] Add unit test: add target populates ID and timestamps.
+- [x] Add unit test: update target changes name/path and `updatedAt`.
+- [x] Add unit test: delete target config does not delete the directory.
+- [x] Add unit test: install-time validation fails for missing path.
+- [x] Add unit test: install-time validation fails for regular file path.
+- [x] Run `cd src-tauri && cargo test target_registry`.
+- [x] Commit with message `feat: manage target registry`.
 
 **Expected result:** Targets can be managed independently from install/uninstall behavior.
 
@@ -507,17 +507,17 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement `default_link_type` using conditional compilation.
-- [ ] Implement Unix symlink creation behind `#[cfg(unix)]`.
-- [ ] Implement Windows junction creation behind `#[cfg(windows)]`.
-- [ ] Implement link target resolution.
-- [ ] Implement safe recorded-link removal.
-- [ ] Add unit test: default link type matches current OS.
-- [ ] Add unit test: unknown real directory is not removed by recorded-link removal.
-- [ ] Add unit test: unknown regular file is not removed by recorded-link removal.
-- [ ] Add platform integration test: create link, resolve target, remove link.
-- [ ] Run `cd src-tauri && cargo test fs_adapter`.
-- [ ] Commit with message `feat: add filesystem adapter`.
+- [x] Implement `default_link_type` using conditional compilation.
+- [x] Implement Unix symlink creation behind `#[cfg(unix)]`.
+- [x] Implement Windows junction creation behind `#[cfg(windows)]`.
+- [x] Implement link target resolution.
+- [x] Implement safe recorded-link removal.
+- [x] Add unit test: default link type matches current OS.
+- [x] Add unit test: unknown real directory is not removed by recorded-link removal.
+- [x] Add unit test: unknown regular file is not removed by recorded-link removal.
+- [x] Add platform integration test: create link, resolve target, remove link.
+- [x] Run `cd src-tauri && cargo test fs_adapter`.
+- [x] Commit with message `feat: add filesystem adapter`.
 
 **Expected result:** All filesystem operations used by install/uninstall are isolated and testable.
 
@@ -550,17 +550,17 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement `install_skill(config, target_id, skill_dir_name, skills) -> Result<AppConfig, AppError>`.
-- [ ] Add helper `find_installation(config, target_id, skill_dir_name)`.
-- [ ] Add helper `compute_skill_state(config, target, skill)`.
-- [ ] Add helper `compute_target_skill_states(config, target_id, skills)`.
-- [ ] Add unit test: installing valid skill creates link and installation record.
-- [ ] Add unit test: installing invalid skill fails.
-- [ ] Add unit test: target same-name real directory returns conflict.
-- [ ] Add unit test: target same-name regular file returns conflict.
-- [ ] Add unit test: repeated install of existing recorded correct link is idempotent.
-- [ ] Run `cd src-tauri && cargo test link_installer`.
-- [ ] Commit with message `feat: install skills with recorded links`.
+- [x] Implement `install_skill(config, target_id, skill_dir_name, skills) -> Result<AppConfig, AppError>`.
+- [x] Add helper `find_installation(config, target_id, skill_dir_name)`.
+- [x] Add helper `compute_skill_state(config, target, skill)`.
+- [x] Add helper `compute_target_skill_states(config, target_id, skills)`.
+- [x] Add unit test: installing valid skill creates link and installation record.
+- [x] Add unit test: installing invalid skill fails.
+- [x] Add unit test: target same-name real directory returns conflict.
+- [x] Add unit test: target same-name regular file returns conflict.
+- [x] Add unit test: repeated install of existing recorded correct link is idempotent.
+- [x] Run `cd src-tauri && cargo test link_installer`.
+- [x] Commit with message `feat: install skills with recorded links`.
 
 **Expected result:** The backend can safely install skills and report install status.
 
@@ -589,14 +589,14 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement `uninstall_skill(config, target_id, skill_dir_name) -> Result<AppConfig, AppError>`.
-- [ ] Add unit test: uninstall removes recorded link and record.
-- [ ] Add unit test: uninstall does not delete source skill.
-- [ ] Add unit test: uninstall does not delete unknown real directory at link path.
-- [ ] Add unit test: missing link preserves record and returns `missing` style error.
-- [ ] Add unit test: mismatched link preserves record and returns `mismatch` style error.
-- [ ] Run `cd src-tauri && cargo test link_installer`.
-- [ ] Commit with message `feat: uninstall recorded skill links safely`.
+- [x] Implement `uninstall_skill(config, target_id, skill_dir_name) -> Result<AppConfig, AppError>`.
+- [x] Add unit test: uninstall removes recorded link and record.
+- [x] Add unit test: uninstall does not delete source skill.
+- [x] Add unit test: uninstall does not delete unknown real directory at link path.
+- [x] Add unit test: missing link preserves record and returns `missing` style error.
+- [x] Add unit test: mismatched link preserves record and returns `mismatch` style error.
+- [x] Run `cd src-tauri && cargo test link_installer`.
+- [x] Commit with message `feat: uninstall recorded skill links safely`.
 
 **Expected result:** Target-level uninstall enforces the app's core safety rule.
 
@@ -625,15 +625,15 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement `delete_main_skill(config, skill_dir_name, confirmed) -> Result<AppConfig, AppError>`.
-- [ ] Add a delete result model containing removed link count if useful for UI.
-- [ ] Add unit test: rejects when confirmation is false.
-- [ ] Add unit test: deletes uninstalled source skill.
-- [ ] Add unit test: cleans multiple recorded links before deleting source skill.
-- [ ] Add unit test: aborts source deletion if one recorded link cleanup fails.
-- [ ] Add unit test: successful deletion removes related installation records.
-- [ ] Run `cd src-tauri && cargo test skill_remover`.
-- [ ] Commit with message `feat: delete main skills after link cleanup`.
+- [x] Implement `delete_main_skill(config, skill_dir_name, confirmed) -> Result<AppConfig, AppError>`.
+- [x] Add a delete result model containing removed link count if useful for UI.
+- [x] Add unit test: rejects when confirmation is false.
+- [x] Add unit test: deletes uninstalled source skill.
+- [x] Add unit test: cleans multiple recorded links before deleting source skill.
+- [x] Add unit test: aborts source deletion if one recorded link cleanup fails.
+- [x] Add unit test: successful deletion removes related installation records.
+- [x] Run `cd src-tauri && cargo test skill_remover`.
+- [x] Commit with message `feat: delete main skills after link cleanup`.
 
 **Expected result:** Destructive source deletion is implemented with backend-enforced ordering.
 
@@ -668,14 +668,14 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Register all MVP commands in `main.rs`.
-- [ ] Implement command wrappers in `commands.rs`.
-- [ ] Add frontend wrappers in `src/api/commands.ts` using Tauri `invoke`.
-- [ ] Ensure frontend wrapper names use TypeScript camelCase.
-- [ ] Add command-level tests for non-Tauri pure functions where possible.
-- [ ] Run `cd src-tauri && cargo test`.
-- [ ] Run `npm run build`.
-- [ ] Commit with message `feat: expose tauri commands`.
+- [x] Register all MVP commands in `main.rs`.
+- [x] Implement command wrappers in `commands.rs`.
+- [x] Add frontend wrappers in `src/api/commands.ts` using Tauri `invoke`.
+- [x] Ensure frontend wrapper names use TypeScript camelCase.
+- [x] Add command-level tests for non-Tauri pure functions where possible.
+- [x] Run `cd src-tauri && cargo test`.
+- [x] Run `npm run build`.
+- [x] Commit with message `feat: expose tauri commands`.
 
 **Expected result:** The frontend can call backend operations without knowing filesystem details.
 
@@ -706,15 +706,15 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement `App` state: `appState`, `selectedTargetId`, `loading`, `error`.
-- [ ] Implement state refresh helper that calls `getAppState(selectedTargetId)`.
-- [ ] Implement sidebar composition.
-- [ ] Implement target selection.
-- [ ] Implement skill list rendering for selected target.
-- [ ] Implement invalid skill rendering.
-- [ ] Add CSS for two-column layout, status badges, disabled rows, and error banners.
-- [ ] Run `npm run build`.
-- [ ] Commit with message `feat: build target-centered ui layout`.
+- [x] Implement `App` state: `appState`, `selectedTargetId`, `loading`, `error`.
+- [x] Implement state refresh helper that calls `getAppState(selectedTargetId)`.
+- [x] Implement sidebar composition.
+- [x] Implement target selection.
+- [x] Implement skill list rendering for selected target.
+- [x] Implement invalid skill rendering.
+- [x] Add CSS for two-column layout, status badges, disabled rows, and error banners.
+- [x] Run `npm run build`.
+- [x] Commit with message `feat: build target-centered ui layout`.
 
 **Expected result:** The app can display backend state clearly even before mutation controls are complete.
 
@@ -740,14 +740,14 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add `onToggleSkill(targetId, skillDirName, currentState)` callback in `App`.
-- [ ] Pass callback to `TargetDetail` and `SkillRow`.
-- [ ] Implement per-row pending state.
-- [ ] Call install/uninstall based on current backend state.
-- [ ] Display backend errors in a visible banner.
-- [ ] Refresh state in `finally` after mutation.
-- [ ] Run `npm run build`.
-- [ ] Commit with message `feat: wire immediate skill toggles`.
+- [x] Add `onToggleSkill(targetId, skillDirName, currentState)` callback in `App`.
+- [x] Pass callback to `TargetDetail` and `SkillRow`.
+- [x] Implement per-row pending state.
+- [x] Call install/uninstall based on current backend state.
+- [x] Display backend errors in a visible banner.
+- [x] Refresh state in `finally` after mutation.
+- [x] Run `npm run build`.
+- [x] Commit with message `feat: wire immediate skill toggles`.
 
 **Expected result:** User toggles cause immediate safe backend operations.
 
@@ -774,14 +774,14 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Implement reusable `ConfirmDialog` with title, message, confirm label, cancel label.
-- [ ] Add selected-delete-skill state to `App`.
-- [ ] Wire delete button from skill row or source skill list.
-- [ ] Show irreversible warning text.
-- [ ] Call backend only on confirm.
-- [ ] Refresh app state after command completes.
-- [ ] Run `npm run build`.
-- [ ] Commit with message `feat: confirm main skill deletion`.
+- [x] Implement reusable `ConfirmDialog` with title, message, confirm label, cancel label.
+- [x] Add selected-delete-skill state to `App`.
+- [x] Wire delete button from skill row or source skill list.
+- [x] Show irreversible warning text.
+- [x] Call backend only on confirm.
+- [x] Refresh app state after command completes.
+- [x] Run `npm run build`.
+- [x] Commit with message `feat: confirm main skill deletion`.
 
 **Expected result:** Main skill deletion cannot happen through a single accidental click.
 
@@ -809,13 +809,13 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add Vitest and React Testing Library dependencies if not already present.
-- [ ] Mock `src/api/commands.ts` in tests.
-- [ ] Add test fixtures for app state, targets, valid skills, invalid skills, and conflict states.
-- [ ] Write rendering tests.
-- [ ] Write interaction tests.
-- [ ] Run `npm run test`.
-- [ ] Commit with message `test: cover frontend interactions`.
+- [x] Add Vitest and React Testing Library dependencies if not already present.
+- [x] Mock `src/api/commands.ts` in tests.
+- [x] Add test fixtures for app state, targets, valid skills, invalid skills, and conflict states.
+- [x] Write rendering tests.
+- [x] Write interaction tests.
+- [x] Run `npm run test`.
+- [x] Commit with message `test: cover frontend interactions`.
 
 **Expected result:** Frontend behavior is covered independently from Tauri runtime.
 
@@ -849,12 +849,12 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Add tempdir-based helpers to create valid skill fixtures.
-- [ ] Add tempdir-based helpers to create target directories.
-- [ ] Add helper to build config with one main dir and one or more targets.
-- [ ] Add tests for all safety cases above.
-- [ ] Run `cd src-tauri && cargo test`.
-- [ ] Commit with message `test: cover backend safety flows`.
+- [x] Add tempdir-based helpers to create valid skill fixtures.
+- [x] Add tempdir-based helpers to create target directories.
+- [x] Add helper to build config with one main dir and one or more targets.
+- [x] Add tests for all safety cases above.
+- [x] Run `cd src-tauri && cargo test`.
+- [x] Commit with message `test: cover backend safety flows`.
 
 **Expected result:** The safety invariants are enforced by tests close to backend code.
 
@@ -887,9 +887,9 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Create test document with platform checklist.
-- [ ] Reference the checklist from README.
-- [ ] Commit with message `docs: add cross-platform verification checklist`.
+- [x] Create test document with platform checklist.
+- [x] Reference the checklist from README.
+- [x] Commit with message `docs: add cross-platform verification checklist`.
 
 **Expected result:** Release verification does not depend on memory or ad hoc testing.
 
@@ -924,13 +924,13 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Normalize backend error messages.
-- [ ] Map backend states to Chinese labels in one frontend helper.
-- [ ] Add status badge styling.
-- [ ] Add inline explanatory text for unsafe disabled toggles.
-- [ ] Run `npm run test`.
-- [ ] Run `cd src-tauri && cargo test`.
-- [ ] Commit with message `feat: polish safety state messaging`.
+- [x] Normalize backend error messages.
+- [x] Map backend states to Chinese labels in one frontend helper.
+- [x] Add status badge styling.
+- [x] Add inline explanatory text for unsafe disabled toggles.
+- [x] Run `npm run test`.
+- [x] Run `cd src-tauri && cargo test`.
+- [x] Commit with message `feat: polish safety state messaging`.
 
 **Expected result:** Users can understand why the app refused to perform an unsafe action.
 
@@ -964,12 +964,12 @@ The implementation should proceed backend-first for safety-critical logic, then 
 
 **Steps:**
 
-- [ ] Update README.
-- [ ] Update plan checkbox progress if implementation is being executed from this plan.
-- [ ] Create release checklist if packaging or distribution work starts.
-- [ ] Run all validation commands.
-- [ ] Fix any failures before claiming completion.
-- [ ] Commit with message `docs: finalize skills manager mvp docs`.
+- [x] Update README.
+- [x] Update plan checkbox progress if implementation is being executed from this plan.
+- [x] Create release checklist if packaging or distribution work starts.
+- [x] Run all validation commands.
+- [x] Fix any failures before claiming completion.
+- [x] Commit with message `docs: finalize skills manager mvp docs`.
 
 **Expected result:** The repository contains a tested MVP and clear usage/development documentation.
 
