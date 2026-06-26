@@ -471,5 +471,12 @@ button:disabled {
 
 /* Empty state */
 .empty-state {
+  padding: 1rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.empty-state p {
   margin: 0 0 0.75rem;
 }
