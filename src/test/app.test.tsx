@@ -208,11 +208,13 @@ describe('App', () => {
     cleanup();
   });
 
-  it('renders app title, main directory section and manage skills button', async () => {
+  it('renders main library page by default', async () => {
     vi.mocked(getAppState).mockResolvedValue(baseAppState);
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Main Library' })).toBeInTheDocument();
+    const mainPanel = (await screen.findByRole('main')).closest('.main-panel');
+    expect(mainPanel).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /all skills/i })).toBeInTheDocument();
     expect(await screen.findByText('/tmp/main-skills')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /manage skills/i })).toBeInTheDocument();
   });
@@ -228,28 +230,46 @@ describe('App', () => {
     expect(targetList!.querySelector('.target-name')).toHaveTextContent('Claude Global');
   });
 
-  it('selecting a target shows its skill rows', async () => {
+  it('selecting a target from sidebar switches to target detail', async () => {
     const twoTargetState = withTwoTargets(baseAppState);
     vi.mocked(getAppState).mockResolvedValue(twoTargetState);
     render(<App />);
 
-    // Wait for both targets to appear in the sidebar
+    // Wait for Main Library to render first
+    await screen.findByRole('heading', { name: /all skills/i });
+
     const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
     expect(targetList).toBeInTheDocument();
     const targetItems = targetList!.querySelectorAll('.target-name');
     expect(targetItems.length).toBe(2);
-    expect(targetItems[0]).toHaveTextContent('Claude Global');
-    expect(targetItems[1]).toHaveTextContent('Claude Project');
 
-    // Click on the second target
+    // Mock the refresh call after selecting target to return state with target selected
+    const selectedState = {
+      ...twoTargetState,
+      selectedTargetId: 'target_2',
+      selectedTargetSkills: [],
+    };
+    vi.mocked(getAppState).mockResolvedValue(selectedState);
+
     const user = userEvent.setup();
     await user.click(targetItems[1]!);
 
-    // After selecting, the target's skills should be shown
-    // Since target_2 has no skills in the fixture, we expect the empty state
     await waitFor(() => {
-      expect(screen.getByText('No Target Selected')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Claude Project' })).toBeInTheDocument();
     });
+    expect(screen.getByText('No valid skills found in the main library.')).toBeInTheDocument();
+  });
+
+  it('clicking manage skills keeps main library view', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /manage skills/i }));
+
+    expect(screen.getByRole('heading', { name: /all skills/i })).toBeInTheDocument();
   });
 
   it('notInstalled skill toggle calls install command', async () => {
@@ -258,12 +278,16 @@ describe('App', () => {
     vi.mocked(installSkill).mockResolvedValue(installedState);
 
     render(<App />);
+
+    // Switch to target detail first
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
     await screen.findByText('Explore ideas.');
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
 
-    const user = userEvent.setup();
     await user.click(checkbox);
 
     await waitFor(() => {
@@ -278,12 +302,16 @@ describe('App', () => {
     vi.mocked(uninstallSkill).mockResolvedValue(uninstalledState);
 
     render(<App />);
+
+    // Switch to target detail first
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
     await screen.findByText('Explore ideas.');
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).toBeChecked();
 
-    const user = userEvent.setup();
     await user.click(checkbox);
 
     await waitFor(() => {
@@ -296,6 +324,11 @@ describe('App', () => {
     vi.mocked(getAppState).mockResolvedValue(conflictState);
 
     render(<App />);
+
+    // Switch to target detail first
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
     await screen.findByText('Explore ideas.');
 
     const checkbox = screen.getByRole('checkbox');
@@ -307,6 +340,11 @@ describe('App', () => {
     vi.mocked(getAppState).mockResolvedValue(missingState);
 
     render(<App />);
+
+    // Switch to target detail first
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
     await screen.findByText('Explore ideas.');
 
     const checkbox = screen.getByRole('checkbox');
@@ -318,19 +356,39 @@ describe('App', () => {
     vi.mocked(getAppState).mockResolvedValue(mismatchState);
 
     render(<App />);
+
+    // Switch to target detail first
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
     await screen.findByText('Explore ideas.');
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).toBeDisabled();
   });
 
-  it('delete skill button opens confirmation dialog', async () => {
+  it('target detail does not show delete skill button', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    render(<App />);
+
+    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
+    const user = userEvent.setup();
+    await user.click(targetList!.querySelector('.target-name')!);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Claude Global' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
+  it('delete skill button in main library opens confirmation dialog', async () => {
     vi.mocked(getAppState).mockResolvedValue(baseAppState);
 
     render(<App />);
-    await screen.findByText('Explore ideas.');
+    await screen.findByRole('heading', { name: /all skills/i });
 
-    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    const deleteButton = screen.getByRole('button', { name: /delete skill brainstorming/i });
     const user = userEvent.setup();
     await user.click(deleteButton);
 
@@ -338,13 +396,13 @@ describe('App', () => {
     expect(screen.getByText(/brainstorming.*will be permanently deleted/)).toBeInTheDocument();
   });
 
-  it('canceling confirmation does not call delete command', async () => {
+  it('canceling confirmation in main library does not call delete command', async () => {
     vi.mocked(getAppState).mockResolvedValue(baseAppState);
 
     render(<App />);
-    await screen.findByText('Explore ideas.');
+    await screen.findByRole('heading', { name: /all skills/i });
 
-    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    const deleteButton = screen.getByRole('button', { name: /delete skill brainstorming/i });
     const user = userEvent.setup();
     await user.click(deleteButton);
 
@@ -360,7 +418,7 @@ describe('App', () => {
     expect(deleteMainSkill).not.toHaveBeenCalled();
   });
 
-  it('confirming deletion calls delete command with confirmed = true', async () => {
+  it('confirming deletion in main library calls delete command with confirmed = true', async () => {
     const stateWithInstallations = withInstallations(baseAppState, 'brainstorming');
     vi.mocked(getAppState).mockResolvedValue(stateWithInstallations);
 
@@ -372,15 +430,14 @@ describe('App', () => {
     vi.mocked(deleteMainSkill).mockResolvedValue(afterDeleteState);
 
     render(<App />);
-    await screen.findByText('Explore ideas.');
+    await screen.findByRole('heading', { name: /all skills/i });
 
-    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    const deleteButton = screen.getByRole('button', { name: /delete skill brainstorming/i });
     const user = userEvent.setup();
     await user.click(deleteButton);
 
     expect(await screen.findByText('Confirm Deletion')).toBeInTheDocument();
 
-    // Find the confirm button within the dialog using the dialog's class
     const dialog = screen.getByRole('dialog');
     const confirmButton = dialog.querySelector('.danger-button') as HTMLElement;
     await user.click(confirmButton);
@@ -390,47 +447,29 @@ describe('App', () => {
     });
   });
 
-  it('invalid skills are rendered in invalid section', async () => {
+  it('invalid skills are rendered in main library list', async () => {
     const stateWithInvalid = withInvalidSkill(baseAppState);
     vi.mocked(getAppState).mockResolvedValue(stateWithInvalid);
 
     render(<App />);
-    await screen.findByRole('heading', { name: /Invalid Skills/ });
-    expect((await screen.findAllByText('invalid-skill'))[0]).toBeInTheDocument();
+    await screen.findByRole('heading', { name: /all skills/i });
 
-    // Invalid skill checkbox and delete button should be disabled
-    const invalidSection = screen.getByRole('heading', { name: /Invalid Skills/ }).closest('section');
-    expect(invalidSection).toBeInTheDocument();
+    expect(screen.getAllByText('invalid-skill')[0]).toBeInTheDocument();
+    expect(screen.getByText('Missing skill.yaml')).toBeInTheDocument();
   });
 
-  it('delete dialog shows link count when skill has installations', async () => {
+  it('delete dialog in main library shows link count when skill has installations', async () => {
     const stateWithInstallations = withInstallations(baseAppState, 'brainstorming');
     vi.mocked(getAppState).mockResolvedValue(stateWithInstallations);
 
     render(<App />);
-    await screen.findByText('Explore ideas.');
+    await screen.findByRole('heading', { name: /all skills/i });
 
-    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    const deleteButton = screen.getByRole('button', { name: /delete skill brainstorming/i });
     const user = userEvent.setup();
     await user.click(deleteButton);
 
     expect(await screen.findByText('Confirm Deletion')).toBeInTheDocument();
     expect(screen.getByText(/1 recorded target link\(s\) will be removed/)).toBeInTheDocument();
-  });
-
-  it('target detail does not show delete skill button', async () => {
-    vi.mocked(getAppState).mockResolvedValue(baseAppState);
-    render(<App />);
-
-    // First select a target from the sidebar
-    const targetList = (await screen.findByRole('heading', { name: 'Targets' })).closest('section');
-    const user = userEvent.setup();
-    await user.click(targetList!.querySelector('.target-name')!);
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Claude Global' })).toBeInTheDocument();
-    });
-
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 });

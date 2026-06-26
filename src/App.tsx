@@ -11,6 +11,7 @@ import {
   deleteMainSkill,
 } from './api/commands';
 import Sidebar from './components/Sidebar';
+import MainLibraryPage from './components/MainLibraryPage';
 import TargetDetail from './components/TargetDetail';
 import ConfirmDialog from './components/ConfirmDialog';
 
@@ -22,9 +23,12 @@ function errorMessage(err: unknown): string {
   return '操作失败，请查看日志或重试。';
 }
 
+type MainView = 'main-library' | 'target';
+
 function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [mainView, setMainView] = useState<MainView>('main-library');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingSkillKey, setPendingSkillKey] = useState<string | null>(null);
@@ -83,6 +87,8 @@ function App() {
       const next = await addTarget(name.trim(), skillsDir.trim());
       setAppState(next);
       setSelectedTargetId(next.selectedTargetId);
+      setMainView('target');
+      await refresh(next.selectedTargetId);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -142,8 +148,12 @@ function App() {
   };
 
   const handleSelectTarget = (targetId: string) => {
-    setSelectedTargetId(targetId);
+    setMainView('target');
     refresh(targetId);
+  };
+
+  const handleManageSkills = () => {
+    setMainView('main-library');
   };
 
   const handleToggleSkill = async (skillDirName: string, state: SkillInstallState) => {
@@ -220,6 +230,7 @@ function App() {
         onEditTarget={handleEditTarget}
         onDeleteTarget={handleDeleteTarget}
         onSetMainSkillsDir={handleSetMainSkillsDir}
+        onManageSkills={handleManageSkills}
       />
       <main className="main-panel">
         {loading && <div className="loading-overlay">Loading…</div>}
@@ -235,13 +246,21 @@ function App() {
             </button>
           </div>
         )}
-        <TargetDetail
-          target={selectedTarget}
-          skills={appState?.selectedTargetSkills ?? []}
-          pendingSkillKey={pendingSkillKey}
-          onToggleSkill={handleToggleSkill}
-          onDeleteMainSkill={handleDeleteMainSkill}
-        />
+        {mainView === 'main-library' ? (
+          <MainLibraryPage
+            skills={appState?.skills ?? []}
+            validSkillCount={validSkills.length}
+            invalidSkillCount={invalidSkills.length}
+            onDeleteMainSkill={handleDeleteMainSkill}
+          />
+        ) : (
+          <TargetDetail
+            target={selectedTarget}
+            skills={appState?.selectedTargetSkills ?? []}
+            pendingSkillKey={pendingSkillKey}
+            onToggleSkill={handleToggleSkill}
+          />
+        )}
         <ConfirmDialog
           open={!!deleteSkillDirName}
           title="Confirm Deletion"
