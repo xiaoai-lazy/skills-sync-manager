@@ -489,3 +489,28 @@ button:disabled {
 .empty-state p {
   margin: 0 0 0.75rem;
 }
+
+/* Main library page (main panel) */
+.main-library-page {
+  max-width: 900px;
+}
+
+.main-library-page h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.main-library-page h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Sidebar summary action buttons */
+.main-library-panel .secondary-button {
+  width: 100%;
+  display: block;
+}
