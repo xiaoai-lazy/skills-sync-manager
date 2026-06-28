@@ -133,4 +133,122 @@ describe('PromptDialog', () => {
     expect(onCancel).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('fills input when directory picker resolves to a path', async () => {
+    const onPickDirectory = vi.fn().mockResolvedValue('/chosen/skills');
+
+    render(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        defaultValue="/tmp/skills"
+        onPickDirectory={onPickDirectory}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const user = userEvent.setup();
+    const input = screen.getByLabelText('Directory path');
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    expect(onPickDirectory).toHaveBeenCalledTimes(1);
+    expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
+    expect(input).toHaveValue('/chosen/skills');
+  });
+
+  it('keeps input unchanged when directory picker resolves null', async () => {
+    const onPickDirectory = vi.fn().mockResolvedValue(null);
+
+    render(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        defaultValue="/tmp/skills"
+        onPickDirectory={onPickDirectory}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const user = userEvent.setup();
+    const input = screen.getByLabelText('Directory path');
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    expect(onPickDirectory).toHaveBeenCalledTimes(1);
+    expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
+    expect(input).toHaveValue('/tmp/skills');
+  });
+
+  it('shows inline error and keeps input unchanged when directory picker rejects', async () => {
+    const onPickDirectory = vi.fn().mockRejectedValue(new Error('failed'));
+
+    render(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        defaultValue="/tmp/skills"
+        onPickDirectory={onPickDirectory}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const user = userEvent.setup();
+    const input = screen.getByLabelText('Directory path');
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    expect(onPickDirectory).toHaveBeenCalledTimes(1);
+    expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
+    expect(input).toHaveValue('/tmp/skills');
+    expect(
+      screen.getByText('Directory selection failed. Try again or enter the path manually.')
+    ).toBeInTheDocument();
+  });
+
+
+  it('ignores stale directory picker results after default value resets', async () => {
+    let resolvePicker: (value: string | null) => void = () => {};
+    const onPickDirectory = vi.fn(
+      () => new Promise<string | null>((resolve) => {
+        resolvePicker = resolve;
+      })
+    );
+
+    const { rerender } = render(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        defaultValue="/tmp/skills"
+        onPickDirectory={onPickDirectory}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const user = userEvent.setup();
+    const input = screen.getByLabelText('Directory path');
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    rerender(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        defaultValue="/reset/skills"
+        onPickDirectory={onPickDirectory}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    resolvePicker('/stale/skills');
+
+    expect(await screen.findByDisplayValue('/reset/skills')).toBe(input);
+  });
+
 });

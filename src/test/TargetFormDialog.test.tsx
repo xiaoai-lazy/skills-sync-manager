@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import TargetFormDialog from '../components/TargetFormDialog';
@@ -168,5 +168,84 @@ describe('TargetFormDialog', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(onCancel).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('fills Skills directory path when onPickDirectory resolves to a string', async () => {
+    const onPickDirectory = vi.fn().mockResolvedValue('/chosen/target');
+    const user = userEvent.setup();
+
+    render(
+      <TargetFormDialog
+        open={true}
+        title="Add Target"
+        initialSkillsDir="/tmp/target"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onPickDirectory={onPickDirectory}
+      />
+    );
+
+    const dirInput = screen.getByLabelText('Skills directory path');
+    expect(dirInput).toHaveValue('/tmp/target');
+
+    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    await user.click(pickButton);
+
+    await waitFor(() => expect(dirInput).toHaveValue('/chosen/target'));
+    expect(onPickDirectory).toHaveBeenCalledWith('/tmp/target');
+  });
+
+  it('keeps skills directory unchanged when onPickDirectory resolves null', async () => {
+    const onPickDirectory = vi.fn().mockResolvedValue(null);
+    const user = userEvent.setup();
+
+    render(
+      <TargetFormDialog
+        open={true}
+        title="Add Target"
+        initialSkillsDir="/tmp/target"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onPickDirectory={onPickDirectory}
+      />
+    );
+
+    const dirInput = screen.getByLabelText('Skills directory path');
+    expect(dirInput).toHaveValue('/tmp/target');
+
+    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    await user.click(pickButton);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose Directory' })).toBeEnabled());
+    expect(dirInput).toHaveValue('/tmp/target');
+  });
+
+  it('shows inline error and keeps input unchanged when onPickDirectory rejects', async () => {
+    const onPickDirectory = vi.fn().mockRejectedValue(new Error('fail'));
+    const user = userEvent.setup();
+
+    render(
+      <TargetFormDialog
+        open={true}
+        title="Add Target"
+        initialSkillsDir="/tmp/target"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onPickDirectory={onPickDirectory}
+      />
+    );
+
+    const dirInput = screen.getByLabelText('Skills directory path');
+    expect(dirInput).toHaveValue('/tmp/target');
+
+    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    await user.click(pickButton);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Directory selection failed. Try again or enter the path manually.')
+      ).toBeInTheDocument()
+    );
+    expect(dirInput).toHaveValue('/tmp/target');
   });
 });

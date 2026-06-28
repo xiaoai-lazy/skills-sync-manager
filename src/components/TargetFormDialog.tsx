@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Dialog from './Dialog';
 
 export interface TargetFormDialogProps {
@@ -7,9 +7,13 @@ export interface TargetFormDialogProps {
   initialName?: string;
   initialSkillsDir?: string;
   confirmLabel?: string;
+  pickDirectoryLabel?: string;
+  onPickDirectory?: (currentValue: string) => Promise<string | null>;
   onConfirm: (name: string, skillsDir: string) => void;
   onCancel: () => void;
 }
+
+const DIRECTORY_PICKER_ERROR = 'Directory selection failed. Try again or enter the path manually.';
 
 function TargetFormDialog(props: TargetFormDialogProps) {
   const {
@@ -18,16 +22,31 @@ function TargetFormDialog(props: TargetFormDialogProps) {
     initialName = '',
     initialSkillsDir = '',
     confirmLabel = 'Save',
+    pickDirectoryLabel = 'Choose Directory',
+    onPickDirectory,
     onConfirm,
     onCancel,
   } = props;
   const [name, setName] = useState(initialName);
   const [skillsDir, setSkillsDir] = useState(initialSkillsDir);
+  const [isPickingDirectory, setIsPickingDirectory] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const pickerRequestIdRef = useRef(0);
+  const resetGenerationRef = useRef(0);
+  const resetKey = `${open}:${initialName}:${initialSkillsDir}`;
+  const resetKeyRef = useRef(resetKey);
+
+  if (resetKeyRef.current !== resetKey) {
+    resetKeyRef.current = resetKey;
+    resetGenerationRef.current += 1;
+  }
 
   useEffect(() => {
     if (open) {
       setName(initialName);
       setSkillsDir(initialSkillsDir);
+      setIsPickingDirectory(false);
+      setPickerError(null);
     }
   }, [open, initialName, initialSkillsDir]);
 
@@ -42,6 +61,45 @@ function TargetFormDialog(props: TargetFormDialogProps) {
     if (e.key === 'Enter' && canSubmit) {
       e.preventDefault();
       onConfirm(name.trim(), skillsDir.trim());
+    }
+  };
+
+  const handlePickDirectory = async () => {
+    if (!onPickDirectory) {
+      return;
+    }
+
+    const pickerRequestId = pickerRequestIdRef.current + 1;
+    const pickerResetGeneration = resetGenerationRef.current;
+    pickerRequestIdRef.current = pickerRequestId;
+    setIsPickingDirectory(true);
+    setPickerError(null);
+
+    try {
+      const pickedDirectory = await onPickDirectory(skillsDir);
+      if (
+        pickerRequestIdRef.current !== pickerRequestId ||
+        resetGenerationRef.current !== pickerResetGeneration
+      ) {
+        return;
+      }
+      if (pickedDirectory !== null) {
+        setSkillsDir(pickedDirectory);
+      }
+    } catch {
+      if (
+        pickerRequestIdRef.current === pickerRequestId &&
+        resetGenerationRef.current === pickerResetGeneration
+      ) {
+        setPickerError(DIRECTORY_PICKER_ERROR);
+      }
+    } finally {
+      if (
+        pickerRequestIdRef.current === pickerRequestId &&
+        resetGenerationRef.current === pickerResetGeneration
+      ) {
+        setIsPickingDirectory(false);
+      }
     }
   };
 
@@ -74,13 +132,21 @@ function TargetFormDialog(props: TargetFormDialogProps) {
       </div>
       <div className="dialog-form-field">
         <label htmlFor="target-form-skills-dir">Skills directory path</label>
-        <input
-          id="target-form-skills-dir"
-          type="text"
-          value={skillsDir}
-          onChange={(e) => setSkillsDir(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
+        <div className="directory-input-row">
+          <input
+            id="target-form-skills-dir"
+            type="text"
+            value={skillsDir}
+            onChange={(e) => setSkillsDir(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          {onPickDirectory ? (
+            <button type="button" onClick={handlePickDirectory} disabled={isPickingDirectory}>
+              {isPickingDirectory ? 'Choosing...' : pickDirectoryLabel}
+            </button>
+          ) : null}
+        </div>
+        {pickerError ? <div className="dialog-field-error">{pickerError}</div> : null}
       </div>
     </Dialog>
   );
