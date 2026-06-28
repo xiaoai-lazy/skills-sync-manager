@@ -10,6 +10,7 @@ jobs:
   publish-tauri:
     permissions:
       contents: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -52,3 +53,44 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.5.0'
+
+      - name: Sign release artifacts with Sigstore
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version=$(jq -r '.version' src-tauri/tauri.conf.json)
+          release_tag="skills-sync-manager-v${version}"
+
+          artifacts=()
+          while IFS= read -r -d '' f; do
+            artifacts+=("$f")
+          done < <(find src-tauri/target/release/bundle -type f \
+            ! -name '*.sig' ! -name '*.crt' -print0)
+
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "No artifacts found to sign" >&2
+            exit 1
+          fi
+
+          sigs=()
+          certs=()
+          for f in "${artifacts[@]}"; do
+            cosign sign-blob --yes "$f" \
+              --output-signature="$f.sig" \
+              --output-certificate="$f.crt"
+            sigs+=("$f.sig")
+            certs+=("$f.crt")
+          done
+
+          gh release upload "$release_tag" \
+            "${sigs[@]}" \
+            "${certs[@]}" \
+            --clobber

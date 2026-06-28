@@ -32,7 +32,20 @@ Go to [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/relea
 - **macOS**: `.dmg`
 - **Linux**: `.AppImage` / `.deb`
 
-> The installers are currently unsigned. Windows may show a SmartScreen warning, and macOS may require right-clicking the app and choosing Open. Code signing will be added in a future release.
+> The installers are signed with [Sigstore](https://www.sigstore.dev/) keyless signing. You can verify them with `cosign`. Windows may still show a SmartScreen warning, and macOS may require right-clicking the app and choosing Open, because this is not native OS code signing.
+>
+> Verify a downloaded file (example for Windows `.exe`):
+>
+> ```bash
+> cosign verify-blob \
+>   --certificate "Skills Sync Manager_x64-setup.exe.crt" \
+>   --signature "Skills Sync Manager_x64-setup.exe.sig" \
+>   --certificate-identity-regexp '^https://github.com/xiaoai-lazy/skills-sync-manager/\.github/workflows/release\.yml@refs/tags/v.*$' \
+>   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+>   "Skills Sync Manager_x64-setup.exe"
+> ```
+>
+> Replace the filenames with the actual installer and matching `.crt`/`.sig` you downloaded.
 
 ## 5. Quick start
 
