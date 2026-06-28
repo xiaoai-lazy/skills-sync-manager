@@ -2,27 +2,70 @@
 
 [中文文档](README.zh.md)
 
-A cross-platform desktop app for managing one main skills directory and syncing selected skills into multiple target directories through directory links.
+Skills Sync Manager is a desktop app for keeping one main skills library in sync with multiple Claude / agent target directories.
 
-## What the app does
+Use it when you want one source of truth for your skills, but need those skills available in several local tool directories without copying files by hand.
 
-- Manages one configurable main skills directory.
-- Validates skills from direct child directories of the main directory.
-- A skill is valid when its directory contains `SKILL.md` with YAML frontmatter fields `name` and `description`.
-- Shows invalid skill directories with explicit validation errors, but prevents installation.
-- Installs valid skills immediately when the user toggles them on for a selected target.
-- Uninstalls installed skills immediately when the user toggles them off for a selected target.
-- Persists settings, targets, and installation records in a local app-data JSON file.
-- Supports direct deletion of a main-directory skill after explicit confirmation and after all recorded links for that skill have been cleaned.
+## Why this exists
 
-## What the app refuses to do
+Managing skills across multiple agent directories gets messy quickly:
 
-- The app does not scan the machine for agent directories.
-- The app does not overwrite existing target content.
-- The app only uninstalls links that it created and recorded.
-- Main skill deletion is irreversible in v1 and requires confirmation.
+- Copying skills by hand creates stale duplicates.
+- Manual symlinks or junctions are hard to audit later.
+- Deleting a skill can leave broken links behind.
+- Overwriting an existing target directory can destroy work.
 
-## Tech stack
+Skills Sync Manager gives you a safer workflow: keep your skills in one main directory, add the target directories you use, and choose which skills should be linked into each target.
+
+## What you can do
+
+- Set one main skills directory as your source library.
+- Add multiple target directories for Claude or other local agents.
+- See which skills are valid and which ones need fixing.
+- Install or uninstall selected skills for the current target.
+- Delete a skill from the main library after explicit confirmation.
+- Keep settings, targets, and installation records saved locally.
+
+## Download and install
+
+Pre-built installers are available on the [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) page.
+
+Download the package for your platform:
+
+- **Windows**: `.msi` or `.exe`
+- **macOS**: `.dmg`
+- **Linux**: `.AppImage` or `.deb`
+
+> The installers are currently unsigned. Windows may show a SmartScreen warning, and macOS may require right-clicking the app and choosing Open. This is a code-signing status note; signing will be added in a future release.
+
+## First run
+
+1. Open Skills Sync Manager.
+2. Set your main skills directory.
+3. Add one or more target directories.
+4. Select a target directory from the sidebar.
+5. Enable the skills you want to install into that target.
+
+Each skill should be a direct child directory of the main skills directory. A valid skill contains a `SKILL.md` file with YAML frontmatter fields for `name` and `description`.
+
+## Safety model
+
+Skills Sync Manager is intentionally conservative:
+
+- It does not scan your machine for agent directories.
+- It does not overwrite existing files or real directories in a target.
+- It only uninstalls links that it created and recorded.
+- It shows invalid skills but prevents installing them.
+- Deleting a main-library skill is irreversible and requires confirmation.
+
+## Link behavior
+
+- **Windows**: uses junctions by default.
+- **macOS / Linux**: uses directory symlinks by default.
+
+## Developer notes
+
+Tech stack:
 
 - Tauri 2
 - React
@@ -30,67 +73,20 @@ A cross-platform desktop app for managing one main skills directory and syncing 
 - Vite
 - Rust
 
-## Scripts
-
-- `npm run dev` starts the Vite frontend dev server.
-- `npm run build` type-checks and builds the frontend.
-- `npm run test` runs frontend tests with Vitest.
-- `npm run tauri` runs the Tauri CLI.
-- `npm run tauri:dev` starts the Tauri desktop app in development mode.
-
-## Development
+Run locally:
 
 ```bash
 npm install
 npm run tauri:dev
 ```
 
-## Tests
+Verify changes:
 
 ```bash
 npm run test
 npm run build
 cd src-tauri && cargo test
 ```
-
-## Backend checks
-
-Run Rust checks from the Tauri crate directory:
-
-```bash
-cd src-tauri
-cargo test
-```
-
-## Download and install
-
-Pre-built installers are available on the [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) page.
-
-Download the installer for your platform:
-
-- **Windows**: `.msi` or `.exe`
-- **macOS**: `.dmg`
-- **Linux**: `.AppImage` or `.deb`
-
-> The installers are currently **unsigned**. Windows may show a SmartScreen warning, and macOS may require right-click → Open. Code signing will be added in a future release.
-
-To create a release manually, tag a version and push it:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-GitHub Actions will then build the installers and create a draft release.
-
-## Link behavior
-
-- Windows: junction by default.
-- macOS/Linux: directory symlink by default.
-
-## Warning
-
-Main skill deletion is irreversible in v1. The app will remove recorded target links before deleting the source skill directory.
 
 ## Manual testing
 
