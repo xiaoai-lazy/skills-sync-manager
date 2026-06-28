@@ -32,7 +32,20 @@ Skills Sync Manager 是一款跨平台桌面工具，核心作用是统一维护
 - **macOS**：`.dmg`
 - **Linux**：`.AppImage` / `.deb`
 
-> 当前安装包未签名。Windows 会弹出 SmartScreen 警告，macOS 需右键应用并选择「打开」即可正常使用。后续版本将补充代码签名。
+> 当前安装包使用 [Sigstore](https://www.sigstore.dev/) 无密钥签名，可用 `cosign` 验证。Windows 仍可能弹出 SmartScreen 警告，macOS 仍需右键应用并选择「打开」，因为这并非操作系统原生代码签名。
+>
+> 验证已下载文件（以 Windows `.exe` 为例）：
+>
+> ```bash
+> cosign verify-blob \
+>   --certificate "Skills Sync Manager_x64-setup.exe.crt" \
+>   --signature "Skills Sync Manager_x64-setup.exe.sig" \
+>   --certificate-identity-regexp '^https://github.com/xiaoai-lazy/skills-sync-manager/\.github/workflows/release\.yml@refs/tags/v.*$' \
+>   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+>   "Skills Sync Manager_x64-setup.exe"
+> ```
+>
+> 请将文件名替换为你实际下载的安装包及对应的 `.crt`/`.sig` 文件。
 
 ## 五、快速上手
 
