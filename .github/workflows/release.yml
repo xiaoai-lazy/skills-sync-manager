@@ -73,7 +73,8 @@ jobs:
           while IFS= read -r -d '' f; do
             artifacts+=("$f")
           done < <(find src-tauri/target/release/bundle -type f \
-            ! -name '*.sig' ! -name '*.crt' -print0)
+            \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
+            -print0)
 
           if [ ${#artifacts[@]} -eq 0 ]; then
             echo "No artifacts found to sign" >&2
