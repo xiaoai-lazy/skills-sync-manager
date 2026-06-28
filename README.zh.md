@@ -1,93 +1,57 @@
-# Skills Sync Manager
+# Skills Sync Manager 使用文档
 
 [English README](README.md)
 
-Skills Sync Manager 是一个桌面应用，用于统一管理一个主 skills 库，并将选中的 skills 同步到多个 Claude / agent 目标目录。
+## 一、工具简介
 
-当你希望只维护一份 skills，却又需要让多个本地工具目录都能使用这些 skills 时，可以使用它避免手动复制文件。
+Skills Sync Manager 是一款跨平台桌面工具，核心作用是统一维护唯一的 Skills 主库，将指定 Skills 批量同步链接至多个 Claude / 本地 Agent 目标目录，彻底替代手动复制 skill 的繁琐操作。
 
-## 为什么需要它
+## 二、解决的核心问题
 
-当 skills 分散在多个 agent 目录中时，维护会很快变得混乱：
+多 Agent 目录分散维护 Skills 易出现各类问题，本工具可有效规避：
 
-- 手动复制容易产生过期副本。
-- 手动创建 symlink 或 junction 之后很难追踪。
-- 删除 skill 时可能留下失效链接。
-- 覆盖目标目录中已有内容可能破坏已有工作。
+- 手动复制文件产生过期副本，版本混乱。
+- 手动创建软链接后难以统一追踪、管理。
+- 删除 Skill 后易残留无效链接文件。
+- 手动覆盖文件，易误破坏原有目录内容。
 
-Skills Sync Manager 提供一个更安全的流程：把 skills 放在一个主目录中，添加你使用的目标目录，然后选择哪些 skills 要链接到每个目标目录。
+## 三、核心功能
 
-## 你可以做什么
+- 自定义设置全局唯一的 Skills 主源目录。
+- 批量添加、管理多个 Claude / 本地 Agent 目标同步目录。
+- 自动校验 Skills 有效性，标识异常、待修复项目。
+- 按目标目录按需安装 / 卸载指定 Skills 链接。
+- 二次确认后安全删除主库 Skill，降低误删风险。
+- 本地持久化保存所有配置、目录和安装记录。
 
-- 设置一个主 skills 目录作为源库。
-- 添加多个 Claude 或其他本地 agent 的目标目录。
-- 查看哪些 skills 有效，哪些需要修复。
-- 为当前目标目录安装或卸载选中的 skills。
-- 在明确确认后，从主库删除某个 skill。
-- 在本地保存设置、目标目录和安装记录。
+## 四、下载安装
 
-## 下载与安装
+前往 [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) 下载对应系统预编译安装包：
 
-预编译安装包可以在 [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) 页面下载。
-
-根据平台选择对应安装包：
-
-- **Windows**：`.msi` 或 `.exe`
+- **Windows**：`.msi` / `.exe`
 - **macOS**：`.dmg`
-- **Linux**：`.AppImage` 或 `.deb`
+- **Linux**：`.AppImage` / `.deb`
 
-> 当前安装包尚未签名。Windows 可能会显示 SmartScreen 警告，macOS 可能需要右键点击应用并选择“打开”。这是代码签名状态说明；后续版本会补充签名。
+> 当前安装包未签名。Windows 会弹出 SmartScreen 警告，macOS 需右键应用并选择「打开」即可正常使用。后续版本将补充代码签名。
 
-## 首次使用
+## 五、快速上手
 
-1. 打开 Skills Sync Manager。
-2. 设置主 skills 目录。
-3. 添加一个或多个目标目录。
-4. 从侧边栏选择一个目标目录。
-5. 启用你希望安装到该目标目录的 skills。
+5 步完成基础配置，开启同步使用：
 
-每个 skill 应该是主 skills 目录下的直接子目录。有效 skill 需要包含 `SKILL.md` 文件，并在 YAML frontmatter 中提供 `name` 和 `description` 字段。
+1. 打开 Skills Sync Manager 客户端。
+2. 配置本地 Skills 主库目录（源目录）。
+3. 添加需要同步的 Agent / Claude 目标目录。
+4. 在侧边栏选中对应目标目录。
+5. 勾选并启用需要同步的 Skills，自动完成链接部署。
 
-## 安全边界
+有效 Skill 规范：主库目录下的子文件夹即为单个 Skill，必须包含 `SKILL.md` 文件，且文件头部 YAML 需配置 `name`、`description` 字段。
 
-Skills Sync Manager 的行为刻意保持保守：
+## 六、安全边界（防误操作）
 
-- 不会扫描整台机器寻找 agent 目录。
-- 不会覆盖目标目录中已经存在的真实文件或目录。
-- 只会卸载由本应用创建并记录的链接。
-- 会显示无效 skills，但禁止安装它们。
-- 删除主库中的 skill 不可恢复，并且需要明确确认。
+工具采用保守安全机制，全程规避数据风险：
 
-## 链接行为
-
-- **Windows**：默认使用 junction。
-- **macOS / Linux**：默认使用目录符号链接。
-
-## 开发者信息
-
-技术栈：
-
-- Tauri 2
-- React
-- TypeScript
-- Vite
-- Rust
-
-本地运行：
-
-```bash
-npm install
-npm run tauri:dev
-```
-
-验证改动：
-
-```bash
-npm run test
-npm run build
-cd src-tauri && cargo test
-```
-
-## 手动测试
-
-参见 [docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md](docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md) 获取跨平台验证清单。
+- 不会主动扫描、读取整机目录，仅使用用户手动添加的目录。
+- 绝不覆盖目标目录原有真实文件 / 文件夹。
+- 仅卸载本工具创建的链接，不改动用户原生文件。
+- 自动拦截无效 Skill，禁止违规安装部署。
+- 主库 Skill 删除后不可恢复，操作需手动二次确认。

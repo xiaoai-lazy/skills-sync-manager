@@ -1,93 +1,57 @@
-# Skills Sync Manager
+# Skills Sync Manager User Guide
 
 [中文文档](README.zh.md)
 
-Skills Sync Manager is a desktop app for keeping one main skills library in sync with multiple Claude / agent target directories.
+## 1. Tool overview
 
-Use it when you want one source of truth for your skills, but need those skills available in several local tool directories without copying files by hand.
+Skills Sync Manager is a cross-platform desktop tool for maintaining one central Skills library and batch-linking selected Skills into multiple Claude / local Agent target directories. It replaces the repetitive work of manually copying skill folders.
 
-## Why this exists
+## 2. Core problems it solves
 
-Managing skills across multiple agent directories gets messy quickly:
+Maintaining Skills across multiple Agent directories can easily create problems. This tool helps avoid them:
 
-- Copying skills by hand creates stale duplicates.
-- Manual symlinks or junctions are hard to audit later.
-- Deleting a skill can leave broken links behind.
-- Overwriting an existing target directory can destroy work.
+- Manually copied files become stale and inconsistent.
+- Manually created symlinks or junctions are hard to track and manage later.
+- Deleting a Skill can leave invalid link files behind.
+- Manually overwriting files can accidentally damage existing target directory content.
 
-Skills Sync Manager gives you a safer workflow: keep your skills in one main directory, add the target directories you use, and choose which skills should be linked into each target.
+## 3. Core features
 
-## What you can do
+- Set one global Skills source directory.
+- Add and manage multiple Claude / local Agent target sync directories.
+- Automatically validate Skills and identify items that need fixing.
+- Install / uninstall selected Skill links per target directory.
+- Safely delete a Skill from the main library after a second confirmation, reducing accidental deletion risk.
+- Persist all settings, directories, and installation records locally.
 
-- Set one main skills directory as your source library.
-- Add multiple target directories for Claude or other local agents.
-- See which skills are valid and which ones need fixing.
-- Install or uninstall selected skills for the current target.
-- Delete a skill from the main library after explicit confirmation.
-- Keep settings, targets, and installation records saved locally.
+## 4. Download and install
 
-## Download and install
+Go to [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) and download the pre-built installer for your system:
 
-Pre-built installers are available on the [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases) page.
-
-Download the package for your platform:
-
-- **Windows**: `.msi` or `.exe`
+- **Windows**: `.msi` / `.exe`
 - **macOS**: `.dmg`
-- **Linux**: `.AppImage` or `.deb`
+- **Linux**: `.AppImage` / `.deb`
 
-> The installers are currently unsigned. Windows may show a SmartScreen warning, and macOS may require right-clicking the app and choosing Open. This is a code-signing status note; signing will be added in a future release.
+> The installers are currently unsigned. Windows may show a SmartScreen warning, and macOS may require right-clicking the app and choosing Open. Code signing will be added in a future release.
 
-## First run
+## 5. Quick start
 
-1. Open Skills Sync Manager.
-2. Set your main skills directory.
-3. Add one or more target directories.
-4. Select a target directory from the sidebar.
-5. Enable the skills you want to install into that target.
+Complete the basic setup in 5 steps:
 
-Each skill should be a direct child directory of the main skills directory. A valid skill contains a `SKILL.md` file with YAML frontmatter fields for `name` and `description`.
+1. Open the Skills Sync Manager client.
+2. Configure your local Skills main library directory (source directory).
+3. Add the Agent / Claude target directories you want to sync to.
+4. Select the target directory from the sidebar.
+5. Check and enable the Skills you want to sync; the app will deploy the links automatically.
 
-## Safety model
+Valid Skill rule: each direct child folder under the main library is treated as one Skill. It must contain a `SKILL.md` file, and the YAML frontmatter must define `name` and `description` fields.
 
-Skills Sync Manager is intentionally conservative:
+## 6. Safety boundaries
 
-- It does not scan your machine for agent directories.
-- It does not overwrite existing files or real directories in a target.
-- It only uninstalls links that it created and recorded.
-- It shows invalid skills but prevents installing them.
-- Deleting a main-library skill is irreversible and requires confirmation.
+The tool uses a conservative safety model to avoid data risk:
 
-## Link behavior
-
-- **Windows**: uses junctions by default.
-- **macOS / Linux**: uses directory symlinks by default.
-
-## Developer notes
-
-Tech stack:
-
-- Tauri 2
-- React
-- TypeScript
-- Vite
-- Rust
-
-Run locally:
-
-```bash
-npm install
-npm run tauri:dev
-```
-
-Verify changes:
-
-```bash
-npm run test
-npm run build
-cd src-tauri && cargo test
-```
-
-## Manual testing
-
-See [docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md](docs/tasks/task-20260623-skills-sync-manager/skills-sync-manager-test.md) for the cross-platform verification checklist.
+- It does not actively scan or read your whole machine; it only uses directories you add manually.
+- It never overwrites real files / folders that already exist in a target directory.
+- It only uninstalls links created by this tool and does not modify your native files.
+- It automatically blocks invalid Skills from being installed.
+- Deleting a Skill from the main library is irreversible and requires a second manual confirmation.
