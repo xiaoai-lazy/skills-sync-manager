@@ -18,6 +18,10 @@ vi.mock('../api/commands', () => ({
 
 import {
   getAppState,
+  setMainSkillsDir,
+  addTarget,
+  updateTarget,
+  deleteTarget,
   installSkill,
   uninstallSkill,
   deleteMainSkill,
@@ -471,5 +475,142 @@ describe('App', () => {
 
     expect(await screen.findByText('Confirm Deletion')).toBeInTheDocument();
     expect(screen.getByText(/1 recorded target link\(s\) will be removed/)).toBeInTheDocument();
+  });
+
+  it('opens PromptDialog and calls setMainSkillsDir when changing directory', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(setMainSkillsDir).mockResolvedValue(baseAppState);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /change directory/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Set Main Skills Directory' })).toBeInTheDocument();
+
+    const input = screen.getByLabelText('Main skills directory path');
+    expect(input).toHaveValue('/tmp/main-skills');
+
+    await user.clear(input);
+    await user.type(input, '/new/main-skills');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(setMainSkillsDir).toHaveBeenCalledWith('/new/main-skills');
+    });
+  });
+
+  it('opens TargetFormDialog and calls addTarget when adding a target', async () => {
+    const stateAfterAdd = {
+      ...baseAppState,
+      selectedTargetId: 'target_new',
+      config: {
+        ...baseAppState.config,
+        targets: [
+          ...baseAppState.config.targets,
+          {
+            id: 'target_new',
+            name: 'New Target',
+            skillsDir: '/tmp/new-target',
+            createdAt: '2026-06-28T00:00:00Z',
+            updatedAt: '2026-06-28T00:00:00Z',
+          },
+        ],
+      },
+    };
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(addTarget).mockResolvedValue(stateAfterAdd);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /add target/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Add Target' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Target name'), 'New Target');
+    await user.type(screen.getByLabelText('Skills directory path'), '/tmp/new-target');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => {
+      expect(addTarget).toHaveBeenCalledWith('New Target', '/tmp/new-target');
+    });
+  });
+
+  it('opens TargetFormDialog prefilled and calls updateTarget when editing a target', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(updateTarget).mockResolvedValue(baseAppState);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /edit target claude global/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Edit Target' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Target name')).toHaveValue('Claude Global');
+    expect(screen.getByLabelText('Skills directory path')).toHaveValue('/tmp/target');
+
+    const nameInput = screen.getByLabelText('Target name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Updated Target');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Updated Target', '/tmp/target');
+    });
+  });
+
+  it('opens ConfirmDialog and calls deleteTarget when deleting a target', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(deleteTarget).mockResolvedValue(baseAppState);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /delete target claude global/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Delete Target' })).toBeInTheDocument();
+    expect(screen.getByText('Delete target "Claude Global"?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(deleteTarget).toHaveBeenCalledWith('target_1', false);
+    });
+  });
+
+  it('switches to force delete confirm when deleteTarget fails with recorded installations', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(deleteTarget)
+      .mockRejectedValueOnce(new Error('Target has recorded installations'))
+      .mockResolvedValueOnce(baseAppState);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /delete target claude global/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Delete Target' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(deleteTarget).toHaveBeenCalledWith('target_1', false);
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Force Delete Target' })).toBeInTheDocument();
+    expect(screen.getByText(/has recorded installations/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Force Delete' }));
+
+    await waitFor(() => {
+      expect(deleteTarget).toHaveBeenCalledWith('target_1', true);
+    });
   });
 });

@@ -14,6 +14,8 @@ import Sidebar from './components/Sidebar';
 import MainLibraryPage from './components/MainLibraryPage';
 import TargetDetail from './components/TargetDetail';
 import ConfirmDialog from './components/ConfirmDialog';
+import PromptDialog from './components/PromptDialog';
+import TargetFormDialog from './components/TargetFormDialog';
 
 function errorMessage(err: unknown): string {
   if (typeof err === 'string') return err;
@@ -33,6 +35,16 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingSkillKey, setPendingSkillKey] = useState<string | null>(null);
   const [deleteSkillDirName, setDeleteSkillDirName] = useState<string | null>(null);
+
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [promptDialogDefaultValue, setPromptDialogDefaultValue] = useState('');
+
+  const [targetFormOpen, setTargetFormOpen] = useState(false);
+  const [targetFormTarget, setTargetFormTarget] = useState<Target | null>(null);
+
+  const [deleteTargetConfirmOpen, setDeleteTargetConfirmOpen] = useState(false);
+  const [deleteTargetData, setDeleteTargetData] = useState<Target | null>(null);
+  const [deleteTargetForce, setDeleteTargetForce] = useState(false);
 
   const refresh = useCallback(
     async (nextSelectedTargetId: string | null = selectedTargetId): Promise<void> => {
@@ -56,13 +68,14 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSetMainSkillsDir = async () => {
+  const handleSetMainSkillsDir = () => {
     if (!appState) return;
-    const path = window.prompt(
-      'Enter main skills directory path:',
-      appState.config.settings.mainSkillsDir ?? ''
-    );
-    if (path === null) return;
+    setPromptDialogDefaultValue(appState.config.settings.mainSkillsDir ?? '');
+    setPromptDialogOpen(true);
+  };
+
+  const handleConfirmSetMainSkillsDir = async (path: string) => {
+    setPromptDialogOpen(false);
     setPendingSkillKey('mainDir');
     try {
       const next = await setMainSkillsDir(path);
@@ -76,15 +89,16 @@ function App() {
     }
   };
 
-  const handleAddTarget = async () => {
-    const name = window.prompt('Enter target name:');
-    if (name === null) return;
-    const skillsDir = window.prompt('Enter target skills directory path:');
-    if (skillsDir === null) return;
-    if (!name.trim() || !skillsDir.trim()) return;
+  const handleAddTarget = () => {
+    setTargetFormTarget(null);
+    setTargetFormOpen(true);
+  };
+
+  const handleConfirmAddTarget = async (name: string, skillsDir: string) => {
+    setTargetFormOpen(false);
     setPendingSkillKey('addTarget');
     try {
-      const next = await addTarget(name.trim(), skillsDir.trim());
+      const next = await addTarget(name, skillsDir);
       setAppState(next);
       setSelectedTargetId(next.selectedTargetId);
       setMainView('target');
@@ -97,15 +111,16 @@ function App() {
     }
   };
 
-  const handleEditTarget = async (target: Target) => {
-    const name = window.prompt('Enter new target name:', target.name);
-    if (name === null) return;
-    const skillsDir = window.prompt('Enter new target skills directory path:', target.skillsDir);
-    if (skillsDir === null) return;
-    if (!name.trim() || !skillsDir.trim()) return;
-    setPendingSkillKey(`edit-${target.id}`);
+  const handleEditTarget = (target: Target) => {
+    setTargetFormTarget(target);
+    setTargetFormOpen(true);
+  };
+
+  const handleConfirmEditTarget = async (targetId: string, name: string, skillsDir: string) => {
+    setTargetFormOpen(false);
+    setPendingSkillKey(`edit-${targetId}`);
     try {
-      const next = await updateTarget(target.id, name.trim(), skillsDir.trim());
+      const next = await updateTarget(targetId, name, skillsDir);
       setAppState(next);
       setSelectedTargetId(next.selectedTargetId);
       setError(null);
@@ -116,35 +131,44 @@ function App() {
     }
   };
 
-  const handleDeleteTarget = async (target: Target) => {
-    if (!window.confirm(`Delete target "${target.name}"?`)) return;
+  const handleDeleteTarget = (target: Target) => {
+    setDeleteTargetData(target);
+    setDeleteTargetForce(false);
+    setDeleteTargetConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteTarget = async () => {
+    if (!deleteTargetData) return;
+    const target = deleteTargetData;
+    const force = deleteTargetForce;
     setPendingSkillKey(`delete-${target.id}`);
     try {
-      const next = await deleteTarget(target.id, false);
+      const next = await deleteTarget(target.id, force);
+      setDeleteTargetConfirmOpen(false);
+      setDeleteTargetData(null);
+      setDeleteTargetForce(false);
       setAppState(next);
       setSelectedTargetId(next.selectedTargetId);
       setError(null);
     } catch (err) {
       const msg = errorMessage(err);
-      if (
-        window.confirm(
-          'Target has recorded installations. Remove links and delete target?'
-        )
-      ) {
-        try {
-          const next = await deleteTarget(target.id, true);
-          setAppState(next);
-          setSelectedTargetId(next.selectedTargetId);
-          setError(null);
-        } catch (err2) {
-          setError(errorMessage(err2));
-        }
+      if (!force) {
+        setDeleteTargetForce(true);
       } else {
+        setDeleteTargetConfirmOpen(false);
+        setDeleteTargetData(null);
+        setDeleteTargetForce(false);
         setError(msg);
       }
     } finally {
       setPendingSkillKey(null);
     }
+  };
+
+  const handleCancelDeleteTarget = () => {
+    setDeleteTargetConfirmOpen(false);
+    setDeleteTargetData(null);
+    setDeleteTargetForce(false);
   };
 
   const handleSelectTarget = (targetId: string) => {
@@ -270,6 +294,45 @@ function App() {
           danger
           onConfirm={handleConfirmDeleteMainSkill}
           onCancel={handleCancelDeleteMainSkill}
+        />
+        <PromptDialog
+          open={promptDialogOpen}
+          title="Set Main Skills Directory"
+          label="Main skills directory path"
+          defaultValue={promptDialogDefaultValue}
+          confirmLabel="Save"
+          onConfirm={handleConfirmSetMainSkillsDir}
+          onCancel={() => setPromptDialogOpen(false)}
+        />
+        <TargetFormDialog
+          open={targetFormOpen}
+          title={targetFormTarget ? 'Edit Target' : 'Add Target'}
+          initialName={targetFormTarget?.name}
+          initialSkillsDir={targetFormTarget?.skillsDir}
+          confirmLabel={targetFormTarget ? 'Save' : 'Add'}
+          onConfirm={
+            targetFormTarget
+              ? (name, skillsDir) => handleConfirmEditTarget(targetFormTarget.id, name, skillsDir)
+              : handleConfirmAddTarget
+          }
+          onCancel={() => {
+            setTargetFormOpen(false);
+            setTargetFormTarget(null);
+          }}
+        />
+        <ConfirmDialog
+          open={deleteTargetConfirmOpen}
+          title={deleteTargetForce ? 'Force Delete Target' : 'Delete Target'}
+          message={
+            deleteTargetForce
+              ? `Target "${deleteTargetData?.name}" has recorded installations. Remove links and delete target?`
+              : `Delete target "${deleteTargetData?.name}"?`
+          }
+          confirmLabel={deleteTargetForce ? 'Force Delete' : 'Delete'}
+          cancelLabel="Cancel"
+          danger
+          onConfirm={handleConfirmDeleteTarget}
+          onCancel={handleCancelDeleteTarget}
         />
       </main>
     </div>

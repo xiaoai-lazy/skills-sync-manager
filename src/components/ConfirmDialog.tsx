@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import Dialog from './Dialog';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -14,44 +15,22 @@ export interface ConfirmDialogProps {
 function ConfirmDialog(props: ConfirmDialogProps) {
   const { open, title, message, confirmLabel, cancelLabel, danger, onConfirm, onCancel } = props;
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const messageId = 'confirm-dialog-message';
 
   useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    confirmRef.current?.focus();
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open, onCancel]);
-
-  if (!open) return null;
+    if (open) {
+      confirmRef.current?.focus();
+    }
+  }, [open]);
 
   return (
-    <div className="confirm-dialog-overlay" role="presentation" onClick={onCancel}>
-      <div
-        className="confirm-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-dialog-title"
-        aria-describedby="confirm-dialog-message"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="confirm-dialog-header" id="confirm-dialog-title">
-          {title}
-        </div>
-        <div className="confirm-dialog-body" id="confirm-dialog-message">
-          {message}
-        </div>
-        <div className="confirm-dialog-actions">
+    <Dialog
+      open={open}
+      title={title}
+      descriptionId={messageId}
+      onClose={onCancel}
+      actions={
+        <>
           <button className="secondary-button" onClick={onCancel}>
             {cancelLabel}
           </button>
@@ -62,9 +41,11 @@ function ConfirmDialog(props: ConfirmDialogProps) {
           >
             {confirmLabel}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <div id={messageId}>{message}</div>
+    </Dialog>
   );
 }
 
