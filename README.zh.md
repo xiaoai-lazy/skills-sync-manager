@@ -4,7 +4,7 @@
 
 ## 一、工具简介
 
-Skills Sync Manager 是一款跨平台桌面工具，核心作用是统一维护唯一的 Skills 主库，将指定 Skills 批量同步链接至多个 Claude / 本地 Agent 目标目录，彻底替代手动复制 skill 的繁琐操作。
+Skills Sync Manager 是一款桌面工具，核心作用是统一维护 Skills 主库，将指定 Skills 批量同步链接至多个 Claude / 本地 Agent 目标目录，实现多个项目、Agent 共享一套 SKills。
 
 ## 二、解决的核心问题
 
