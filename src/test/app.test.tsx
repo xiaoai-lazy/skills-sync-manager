@@ -16,6 +16,10 @@ vi.mock('../api/commands', () => ({
   deleteMainSkill: vi.fn(),
 }));
 
+vi.mock('../api/dialog', () => ({
+  selectDirectory: vi.fn(),
+}));
+
 import {
   getAppState,
   setMainSkillsDir,
@@ -26,6 +30,7 @@ import {
   uninstallSkill,
   deleteMainSkill,
 } from '../api/commands';
+import { selectDirectory } from '../api/dialog';
 
 const baseAppState: AppState = {
   config: {
@@ -206,6 +211,7 @@ function withInstallations(state: AppState, skillDirName: string): AppState {
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(selectDirectory).mockReset();
   });
 
   afterEach(() => {
@@ -611,6 +617,111 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(deleteTarget).toHaveBeenCalledWith('target_1', true);
+    });
+  });
+
+  it('main directory change uses picker', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(setMainSkillsDir).mockResolvedValue(baseAppState);
+    vi.mocked(selectDirectory).mockResolvedValue('/picked/main-skills');
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /change directory/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Set Main Skills Directory' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    await waitFor(() => {
+      expect(selectDirectory).toHaveBeenCalledWith('/tmp/main-skills');
+    });
+
+    const input = screen.getByLabelText('Main skills directory path');
+    expect(input).toHaveValue('/picked/main-skills');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(setMainSkillsDir).toHaveBeenCalledWith('/picked/main-skills');
+    });
+  });
+
+  it('add target uses picker', async () => {
+    const stateAfterAdd = {
+      ...baseAppState,
+      selectedTargetId: 'target_new',
+      config: {
+        ...baseAppState.config,
+        targets: [
+          ...baseAppState.config.targets,
+          {
+            id: 'target_new',
+            name: 'New Target',
+            skillsDir: '/picked/new-target',
+            createdAt: '2026-06-28T00:00:00Z',
+            updatedAt: '2026-06-28T00:00:00Z',
+          },
+        ],
+      },
+    };
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(addTarget).mockResolvedValue(stateAfterAdd);
+    vi.mocked(selectDirectory).mockResolvedValue('/picked/new-target');
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /add target/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Add Target' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Target name'), 'New Target');
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    await waitFor(() => {
+      expect(selectDirectory).toHaveBeenCalledWith('');
+    });
+
+    const skillsDirInput = screen.getByLabelText('Skills directory path');
+    expect(skillsDirInput).toHaveValue('/picked/new-target');
+
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => {
+      expect(addTarget).toHaveBeenCalledWith('New Target', '/picked/new-target');
+    });
+  });
+
+  it('edit target uses picker', async () => {
+    vi.mocked(getAppState).mockResolvedValue(baseAppState);
+    vi.mocked(updateTarget).mockResolvedValue(baseAppState);
+    vi.mocked(selectDirectory).mockResolvedValue('/picked/target');
+
+    render(<App />);
+    await screen.findByRole('heading', { name: /all skills/i });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /edit target claude global/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Edit Target' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+
+    await waitFor(() => {
+      expect(selectDirectory).toHaveBeenCalledWith('/tmp/target');
+    });
+
+    const skillsDirInput = screen.getByLabelText('Skills directory path');
+    expect(skillsDirInput).toHaveValue('/picked/target');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Claude Global', '/picked/target');
     });
   });
 });

@@ -10,6 +10,7 @@ import {
   uninstallSkill,
   deleteMainSkill,
 } from './api/commands';
+import { selectDirectory } from './api/dialog';
 import Sidebar from './components/Sidebar';
 import MainLibraryPage from './components/MainLibraryPage';
 import TargetDetail from './components/TargetDetail';
@@ -301,6 +302,7 @@ function App() {
           label="Main skills directory path"
           defaultValue={promptDialogDefaultValue}
           confirmLabel="Save"
+          onPickDirectory={selectDirectory}
           onConfirm={handleConfirmSetMainSkillsDir}
           onCancel={() => setPromptDialogOpen(false)}
         />
@@ -310,6 +312,7 @@ function App() {
           initialName={targetFormTarget?.name}
           initialSkillsDir={targetFormTarget?.skillsDir}
           confirmLabel={targetFormTarget ? 'Save' : 'Add'}
+          onPickDirectory={selectDirectory}
           onConfirm={
             targetFormTarget
               ? (name, skillsDir) => handleConfirmEditTarget(targetFormTarget.id, name, skillsDir)
