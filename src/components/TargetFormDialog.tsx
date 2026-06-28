@@ -49,7 +49,8 @@ function TargetFormDialog(props: TargetFormDialogProps) {
     <Dialog
       open={open}
       title={title}
-      onClose={onCancel}
+      closeOnEscape={false}
+      closeOnOverlayClick={false}
       actions={
         <>
           <button className="secondary-button" onClick={onCancel}>

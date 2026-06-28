@@ -87,7 +87,7 @@ describe('PromptDialog', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('calls onCancel when Escape is pressed', async () => {
+  it('does not close when Escape is pressed', async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
 
@@ -104,7 +104,33 @@ describe('PromptDialog', () => {
     const user = userEvent.setup();
     await user.keyboard('{Escape}');
 
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does not close when overlay is clicked', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    const { container } = render(
+      <PromptDialog
+        open={true}
+        title="Set Directory"
+        label="Directory path"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+
+    const overlay = container.querySelector('.dialog-overlay');
+    expect(overlay).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(overlay!);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });

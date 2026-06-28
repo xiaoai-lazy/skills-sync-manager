@@ -6,19 +6,30 @@ export interface DialogProps {
   children: React.ReactNode;
   actions: React.ReactNode;
   onClose?: () => void;
+  closeOnEscape?: boolean;
+  closeOnOverlayClick?: boolean;
   descriptionId?: string;
 }
 
 function Dialog(props: DialogProps) {
-  const { open, title, children, actions, onClose, descriptionId } = props;
+  const {
+    open,
+    title,
+    children,
+    actions,
+    onClose,
+    closeOnEscape = true,
+    closeOnOverlayClick = true,
+    descriptionId,
+  } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = 'dialog-title';
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !onClose || !closeOnEscape) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && onClose) {
+      if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
       }
@@ -34,7 +45,7 @@ function Dialog(props: DialogProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [open, onClose]);
+  }, [open, onClose, closeOnEscape]);
 
   if (!open) return null;
 
@@ -42,7 +53,7 @@ function Dialog(props: DialogProps) {
     <div
       className="dialog-overlay"
       role="presentation"
-      onClick={onClose}
+      onClick={onClose && closeOnOverlayClick ? () => onClose() : undefined}
     >
       <div
         ref={dialogRef}

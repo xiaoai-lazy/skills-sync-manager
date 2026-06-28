@@ -36,7 +36,8 @@ function PromptDialog(props: PromptDialogProps) {
     <Dialog
       open={open}
       title={title}
-      onClose={onCancel}
+      closeOnEscape={false}
+      closeOnOverlayClick={false}
       actions={
         <>
           <button className="secondary-button" onClick={onCancel}>

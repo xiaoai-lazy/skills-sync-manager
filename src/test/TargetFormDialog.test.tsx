@@ -124,4 +124,49 @@ describe('TargetFormDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('does not close when Escape is pressed', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    render(
+      <TargetFormDialog
+        open={true}
+        title="Add Target"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+
+    const user = userEvent.setup();
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does not close when overlay is clicked', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    const { container } = render(
+      <TargetFormDialog
+        open={true}
+        title="Add Target"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+
+    const overlay = container.querySelector('.dialog-overlay');
+    expect(overlay).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(overlay!);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
