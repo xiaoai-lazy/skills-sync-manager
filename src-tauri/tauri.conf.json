@@ -10,6 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "security": {
+      "csp": null,
+      "capabilities": ["default"]
+    },
     "windows": [
       {
         "title": "Skills Sync Manager",
@@ -29,5 +33,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "dialog": {}
   }
 }
