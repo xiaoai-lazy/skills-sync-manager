@@ -35,20 +35,6 @@ export function stateLabel(state: SkillInstallState): string {
   return statusLabelMap[state];
 }
 
-function skillAvatarStyle(id: string): React.CSSProperties {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return { background: `hsl(${hue} 55% 48%)` };
-}
-
-function skillInitial(name: string): string {
-  const ch = name.replace(/^[(无效)\s]+/, '').trim()[0];
-  return (ch || '?').toUpperCase();
-}
-
 function SkillRow(props: SkillRowProps) {
   const { item, pending } = props;
   const { skill, state } = item;
@@ -72,9 +58,6 @@ function SkillRow(props: SkillRowProps) {
     <div
       className={`target-skill-card ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}
     >
-      <div className="skill-avatar" style={skillAvatarStyle(skill.dirName)}>
-        {skillInitial(displayName)}
-      </div>
       <div className="skill-info">
         <div className="skill-name">{displayName}</div>
         <div className="skill-desc">{desc}</div>

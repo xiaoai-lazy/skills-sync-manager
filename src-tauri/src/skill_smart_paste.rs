@@ -1,4 +1,9 @@
-use crate::models::{AppError, DiscoverableSkill, SmartPastePreview};
+use crate::credential_store;
+use crate::gitlab_client;
+use crate::models::{
+    default_github_host, AppError, DiscoverableSkill, SmartPastePreview,
+};
+use crate::skill_library;
 use reqwest::Url;
 use serde::Deserialize;
 
@@ -9,8 +14,15 @@ struct ParsedGitHub {
     directory: String,
 }
 
+pub(crate) struct ParsedGitLab {
+    repo_host: String,
+    project_path: String,
+    branch: String,
+    directory: String,
+}
+
 pub fn parse_smart_paste(input: &str) -> Result<SmartPastePreview, AppError> {
-    parse_smart_paste_with_search(input, search_skills_sh)
+    parse_smart_paste_with_hooks(input, search_skills_sh, fetch_gitlab_skill_md)
 }
 
 pub fn parse_smart_paste_with_search<F>(
@@ -19,6 +31,18 @@ pub fn parse_smart_paste_with_search<F>(
 ) -> Result<SmartPastePreview, AppError>
 where
     F: FnOnce(&str, u32, u32) -> Result<Vec<DiscoverableSkill>, AppError>,
+{
+    parse_smart_paste_with_hooks(input, search, fetch_gitlab_skill_md)
+}
+
+pub(crate) fn parse_smart_paste_with_hooks<F, G>(
+    input: &str,
+    search: F,
+    gitlab_fetch: G,
+) -> Result<SmartPastePreview, AppError>
+where
+    F: FnOnce(&str, u32, u32) -> Result<Vec<DiscoverableSkill>, AppError>,
+    G: FnOnce(&ParsedGitLab) -> Result<String, AppError>,
 {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -35,6 +59,11 @@ where
     if looks_like_github_input(trimmed) {
         let parsed = parse_github_input(trimmed)?;
         return Ok(github_to_preview(parsed));
+    }
+
+    if looks_like_gitlab_input(trimmed) {
+        let parsed = parse_gitlab_input(trimmed)?;
+        return gitlab_to_preview_with_fetch(parsed, gitlab_fetch);
     }
 
     Err(AppError::InvalidInput {
@@ -146,6 +175,8 @@ fn map_skills_sh_api_skill(skill: SkillsShApiSkill) -> Option<DiscoverableSkill>
         description: String::new(),
         directory: skill.skill_id.clone(),
         install_dir_name: install_dir_name_from_directory(&skill.skill_id),
+        repo_host: "github.com".to_string(),
+        project_path: format!("{}/{}", owner, repo),
         repo_owner: owner.to_string(),
         repo_name: repo.to_string(),
         repo_branch: "main".to_string(),
@@ -218,6 +249,8 @@ fn skills_sh_id_to_preview(id: SkillsShId) -> SmartPastePreview {
         name: id.skill_id.clone(),
         description: String::new(),
         install_dir_name: install_dir_name_from_directory(&id.skill_id),
+        repo_host: default_github_host(),
+        project_path: format!("{}/{}", id.owner, id.repo),
         repo_owner: id.owner,
         repo_name: id.repo,
         repo_branch: "main".to_string(),
@@ -253,6 +286,42 @@ fn looks_like_github_input(input: &str) -> bool {
     lower.contains("github.com/") || is_owner_repo_path(input)
 }
 
+fn looks_like_gitlab_input(input: &str) -> bool {
+    let trimmed = input.trim();
+    if is_skills_sh_input(trimmed) || looks_like_github_input(trimmed) {
+        return false;
+    }
+
+    let lower = trimmed.to_lowercase();
+    if lower.contains("/-/blob/") || lower.contains("/-/tree/") {
+        return true;
+    }
+
+    if let Some(after_git) = trimmed.strip_prefix("git@") {
+        if let Some((host, _)) = after_git.split_once(':') {
+            return host.contains('.') && !host.eq_ignore_ascii_case("github.com");
+        }
+    }
+
+    if trimmed.contains("://") {
+        if let Ok(url) = Url::parse(strip_url_query_and_fragment(trimmed)) {
+            if let Some(host) = url.host_str() {
+                let normalized = normalize_gitlab_host(host);
+                return normalized.contains('.') && normalized != "github.com";
+            }
+        }
+    }
+
+    let path_only = strip_url_query_and_fragment(trimmed);
+    if let Some((first, rest)) = path_only.split_once('/') {
+        if first.contains('.') && !first.eq_ignore_ascii_case("github.com") && !rest.is_empty() {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn is_owner_repo_path(input: &str) -> bool {
     let trimmed = input.trim();
     if trimmed.contains("://") || trimmed.contains("skills.sh") {
@@ -260,7 +329,10 @@ fn is_owner_repo_path(input: &str) -> bool {
     }
 
     let parts: Vec<&str> = trimmed.split('/').filter(|part| !part.is_empty()).collect();
-    parts.len() >= 2 && parts[0] != "tree" && parts[0] != "blob"
+    parts.len() >= 2
+        && parts[0] != "tree"
+        && parts[0] != "blob"
+        && !parts[0].contains('.')
 }
 
 fn parse_github_input(input: &str) -> Result<ParsedGitHub, AppError> {
@@ -359,6 +431,159 @@ fn parse_github_input(input: &str) -> Result<ParsedGitHub, AppError> {
     })
 }
 
+fn parse_gitlab_input(input: &str) -> Result<ParsedGitLab, AppError> {
+    let (repo_host, path) = extract_gitlab_host_and_path(input)?;
+    let path_only = strip_url_query_and_fragment(&path);
+
+    let (project_segment, remainder) = if let Some(index) = path_only.find("/-/") {
+        (&path_only[..index], Some(&path_only[index + 3..]))
+    } else {
+        (path_only.as_ref(), None)
+    };
+
+    let project_path = project_segment
+        .strip_suffix(".git")
+        .unwrap_or(project_segment)
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+
+    if project_path.is_empty() {
+        return Err(AppError::InvalidInput {
+            input: input.to_string(),
+            message: "GitLab 项目路径不能为空".to_string(),
+        });
+    }
+
+    let Some(remainder) = remainder else {
+        return Err(AppError::MissingSkillPath {
+            input: input.to_string(),
+        });
+    };
+
+    let parts: Vec<&str> = remainder.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() < 3 {
+        return Err(AppError::MissingSkillPath {
+            input: input.to_string(),
+        });
+    }
+
+    let branch = parts[1].to_string();
+    if branch.is_empty() {
+        return Err(AppError::MissingSkillPath {
+            input: input.to_string(),
+        });
+    }
+
+    let directory = if parts[0] == "tree" {
+        let directory_parts = &parts[2..];
+        if directory_parts.is_empty() {
+            return Err(AppError::MissingSkillPath {
+                input: input.to_string(),
+            });
+        }
+        directory_parts.join("/")
+    } else if parts[0] == "blob" {
+        let path_parts = &parts[2..];
+        if path_parts.is_empty() {
+            return Err(AppError::MissingSkillPath {
+                input: input.to_string(),
+            });
+        }
+
+        let mut directory = path_parts.join("/");
+        if directory.ends_with("/SKILL.md") {
+            directory = directory
+                .strip_suffix("/SKILL.md")
+                .unwrap_or(&directory)
+                .to_string();
+        } else if directory == "SKILL.md" {
+            return Err(AppError::MissingSkillPath {
+                input: input.to_string(),
+            });
+        } else if !directory.ends_with("SKILL.md") {
+            return Err(AppError::InvalidInput {
+                input: input.to_string(),
+                message: "GitLab blob 链接必须指向 SKILL.md 文件".to_string(),
+            });
+        } else {
+            directory = directory
+                .strip_suffix("SKILL.md")
+                .unwrap_or(&directory)
+                .trim_end_matches('/')
+                .to_string();
+        }
+        directory
+    } else {
+        return Err(AppError::InvalidInput {
+            input: input.to_string(),
+            message: "GitLab 链接格式无效，需要 /-/tree/ 或 /-/blob/".to_string(),
+        });
+    };
+
+    Ok(ParsedGitLab {
+        repo_host,
+        project_path,
+        branch: resolve_branch(input, Some(branch)),
+        directory,
+    })
+}
+
+fn extract_gitlab_host_and_path(input: &str) -> Result<(String, String), AppError> {
+    let trimmed = input.trim();
+
+    if let Some(after_git) = trimmed.strip_prefix("git@") {
+        let (host, path) = after_git.split_once(':').ok_or_else(|| AppError::InvalidInput {
+            input: input.to_string(),
+            message: "SSH GitLab 链接格式无效".to_string(),
+        })?;
+        let path = path
+            .strip_suffix(".git")
+            .unwrap_or(path)
+            .trim_end_matches('/')
+            .to_string();
+        return Ok((normalize_gitlab_host(host), path));
+    }
+
+    if let Some(after_scheme) = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+    {
+        let path_only = strip_url_query_and_fragment(after_scheme);
+        let (host, path) = path_only.split_once('/').ok_or_else(|| AppError::InvalidInput {
+            input: input.to_string(),
+            message: "GitLab 链接格式无效，缺少项目路径".to_string(),
+        })?;
+        return Ok((
+            normalize_gitlab_host(host),
+            path.trim_end_matches('/').to_string(),
+        ));
+    }
+
+    let path_only = strip_url_query_and_fragment(trimmed);
+    if let Some((first, rest)) = path_only.split_once('/') {
+        if first.contains('.') {
+            return Ok((
+                normalize_gitlab_host(first),
+                rest.trim_end_matches('/').to_string(),
+            ));
+        }
+    }
+
+    Err(AppError::InvalidInput {
+        input: input.to_string(),
+        message: "GitLab 链接格式无效".to_string(),
+    })
+}
+
+fn normalize_gitlab_host(host: &str) -> String {
+    host.trim()
+        .trim_end_matches('/')
+        .strip_prefix("www.")
+        .unwrap_or(host.trim())
+        .to_lowercase()
+}
+
 fn normalize_github_input(input: &str) -> String {
     let trimmed = input.trim();
     let without_scheme = trimmed
@@ -406,6 +631,24 @@ fn parse_branch_from_source_url(source_url: &str) -> Option<String> {
         return Some(branch.to_string());
     }
 
+    if let Some((_, after_blob)) = source_url.split_once("/-/blob/") {
+        let branch = after_blob
+            .split('/')
+            .next()
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())?;
+        return Some(branch.to_string());
+    }
+
+    if let Some((_, after_tree)) = source_url.split_once("/-/tree/") {
+        let branch = after_tree
+            .split('/')
+            .next()
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())?;
+        return Some(branch.to_string());
+    }
+
     if let Some((_, fragment)) = source_url.split_once('#') {
         let branch = fragment
             .split('&')
@@ -437,6 +680,8 @@ fn github_to_preview(parsed: ParsedGitHub) -> SmartPastePreview {
         name: install_dir_name_from_directory(&parsed.directory),
         description: String::new(),
         install_dir_name: install_dir_name_from_directory(&parsed.directory),
+        repo_host: default_github_host(),
+        project_path: format!("{}/{}", parsed.owner, parsed.repo),
         repo_owner: parsed.owner,
         repo_name: parsed.repo,
         repo_branch: parsed.branch,
@@ -445,16 +690,77 @@ fn github_to_preview(parsed: ParsedGitHub) -> SmartPastePreview {
     }
 }
 
+fn gitlab_to_preview_with_fetch<F>(
+    parsed: ParsedGitLab,
+    fetch: F,
+) -> Result<SmartPastePreview, AppError>
+where
+    F: FnOnce(&ParsedGitLab) -> Result<String, AppError>,
+{
+    let raw = fetch(&parsed)?;
+    let (name, description) =
+        if let Some(metadata) = skill_library::parse_valid_skill_metadata(&raw) {
+            (metadata.name, metadata.description)
+        } else {
+            let fallback = install_dir_name_from_directory(&parsed.directory);
+            (fallback.clone(), String::new())
+        };
+
+    let (repo_owner, repo_name) = project_path_to_owner_name(&parsed.project_path);
+
+    Ok(SmartPastePreview {
+        name,
+        description,
+        install_dir_name: install_dir_name_from_directory(&parsed.directory),
+        repo_host: parsed.repo_host,
+        project_path: parsed.project_path,
+        repo_owner,
+        repo_name,
+        repo_branch: parsed.branch,
+        directory: parsed.directory,
+        source: "gitlab".to_string(),
+    })
+}
+
+fn fetch_gitlab_skill_md(parsed: &ParsedGitLab) -> Result<String, AppError> {
+    let token = credential_store::get_gitlab_token(&parsed.repo_host)?;
+    let skill_md_path = format!("{}/SKILL.md", parsed.directory);
+    gitlab_client::fetch_file_raw(
+        &parsed.repo_host,
+        &parsed.project_path,
+        &skill_md_path,
+        &parsed.branch,
+        token.as_deref(),
+    )
+}
+
 fn discoverable_to_preview(skill: &DiscoverableSkill) -> SmartPastePreview {
     SmartPastePreview {
         name: skill.name.clone(),
         description: skill.description.clone(),
         install_dir_name: skill.install_dir_name.clone(),
+        repo_host: if skill.repo_host.is_empty() {
+            default_github_host()
+        } else {
+            skill.repo_host.clone()
+        },
+        project_path: if skill.project_path.is_empty() {
+            format!("{}/{}", skill.repo_owner, skill.repo_name)
+        } else {
+            skill.project_path.clone()
+        },
         repo_owner: skill.repo_owner.clone(),
         repo_name: skill.repo_name.clone(),
         repo_branch: skill.repo_branch.clone(),
         directory: skill.directory.clone(),
         source: skill.source.clone(),
+    }
+}
+
+fn project_path_to_owner_name(project_path: &str) -> (String, String) {
+    match project_path.rsplit_once('/') {
+        Some((owner, name)) => (owner.to_string(), name.to_string()),
+        None => (String::new(), project_path.to_string()),
     }
 }
 
@@ -494,6 +800,12 @@ mod tests {
         "duration_ms": 1
     }"#;
 
+    const MOCK_GITLAB_SKILL_MD: &str = r#"---
+name: demo-skill
+description: Demo skill for tests.
+---
+"#;
+
     #[test]
     fn parse_tree_url_extracts_owner_repo_branch_and_directory() {
         let preview = parse_smart_paste(
@@ -501,6 +813,8 @@ mod tests {
         )
         .expect("tree url parses");
 
+        assert_eq!(preview.repo_host, "github.com");
+        assert_eq!(preview.project_path, "anthropics/skills");
         assert_eq!(preview.repo_owner, "anthropics");
         assert_eq!(preview.repo_name, "skills");
         assert_eq!(preview.repo_branch, "main");
@@ -520,6 +834,8 @@ mod tests {
         assert_eq!(preview.directory, "skills/brainstorming");
         assert_eq!(preview.install_dir_name, "brainstorming");
         assert_eq!(preview.repo_branch, "main");
+        assert_eq!(preview.repo_host, "github.com");
+        assert_eq!(preview.project_path, "anthropics/skills");
     }
 
     #[test]
@@ -553,6 +869,8 @@ mod tests {
         let preview =
             parse_smart_paste("obra/superpowers/brainstorming").expect("skills.sh id parses");
 
+        assert_eq!(preview.repo_host, "github.com");
+        assert_eq!(preview.project_path, "obra/superpowers");
         assert_eq!(preview.repo_owner, "obra");
         assert_eq!(preview.repo_name, "superpowers");
         assert_eq!(preview.directory, "brainstorming");
@@ -592,5 +910,87 @@ mod tests {
         assert_eq!(preview.name, "brainstorming");
         assert_eq!(preview.repo_owner, "obra");
         assert_eq!(preview.source, "skillssh");
+    }
+
+    #[test]
+    fn parse_gitlab_blob_skill_md() {
+        let preview = parse_smart_paste_with_hooks(
+            "https://gitlab.example.com/acme/tools/-/blob/main/demo-skill/SKILL.md",
+            |_, _, _| Ok(vec![]),
+            |_| Ok(MOCK_GITLAB_SKILL_MD.to_string()),
+        )
+        .expect("gitlab blob parses");
+
+        assert_eq!(preview.repo_host, "gitlab.example.com");
+        assert_eq!(preview.project_path, "acme/tools");
+        assert_eq!(preview.repo_branch, "main");
+        assert_eq!(preview.directory, "demo-skill");
+        assert_eq!(preview.install_dir_name, "demo-skill");
+        assert_eq!(preview.name, "demo-skill");
+        assert_eq!(preview.description, "Demo skill for tests.");
+        assert_eq!(preview.source, "gitlab");
+        assert_eq!(preview.repo_owner, "acme");
+        assert_eq!(preview.repo_name, "tools");
+    }
+
+    #[test]
+    fn parse_gitlab_tree_directory() {
+        let preview = parse_smart_paste_with_hooks(
+            "https://gitlab.example.com/acme/tools/-/tree/main/demo-skill",
+            |_, _, _| Ok(vec![]),
+            |_| Ok(MOCK_GITLAB_SKILL_MD.to_string()),
+        )
+        .expect("gitlab tree parses");
+
+        assert_eq!(preview.repo_host, "gitlab.example.com");
+        assert_eq!(preview.project_path, "acme/tools");
+        assert_eq!(preview.repo_branch, "main");
+        assert_eq!(preview.directory, "demo-skill");
+        assert_eq!(preview.source, "gitlab");
+        assert_eq!(preview.name, "demo-skill");
+    }
+
+    #[test]
+    fn gitlab_auth_required_without_token() {
+        let parsed = parse_gitlab_input(
+            "https://gitlab.example.com/acme/tools/-/blob/main/demo-skill/SKILL.md",
+        )
+        .expect("gitlab input parses");
+
+        let error = gitlab_to_preview_with_fetch(parsed, |_| {
+            Err(AppError::GitLabAuthRequired {
+                host: "gitlab.example.com".to_string(),
+            })
+        })
+        .expect_err("auth required");
+
+        assert!(matches!(error, AppError::GitLabAuthRequired { .. }));
+        assert_eq!(error.to_dto().code, "gitlabAuthRequired");
+        assert!(error.to_dto().message.contains("gitlab.example.com"));
+    }
+
+    #[test]
+    fn looks_like_gitlab_input_detects_custom_host_and_markers() {
+        assert!(looks_like_gitlab_input(
+            "https://gitlab.example.com/acme/tools/-/blob/main/demo-skill/SKILL.md"
+        ));
+        assert!(looks_like_gitlab_input("gitlab.example.com/acme/tools"));
+        assert!(!looks_like_gitlab_input(
+            "https://github.com/anthropics/skills/tree/main/skills/brainstorming"
+        ));
+        assert!(!looks_like_gitlab_input("https://skills.sh/skills/brainstorming"));
+        assert!(!looks_like_gitlab_input("obra/superpowers/brainstorming"));
+    }
+
+    #[test]
+    fn parse_gitlab_project_only_returns_missing_skill_path() {
+        let error = parse_smart_paste_with_hooks(
+            "https://gitlab.example.com/acme/tools",
+            |_, _, _| Ok(vec![]),
+            |_| Ok(MOCK_GITLAB_SKILL_MD.to_string()),
+        )
+        .expect_err("project-only url should fail");
+
+        assert!(matches!(error, AppError::MissingSkillPath { .. }));
     }
 }

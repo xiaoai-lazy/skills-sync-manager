@@ -15,11 +15,13 @@ export interface SmartPasteBarProps {
 
 function previewToDiscoverable(preview: SmartPastePreview): DiscoverableSkill {
   return {
-    key: `${preview.repoOwner}/${preview.repoName}:${preview.directory}`,
+    key: `${preview.repoHost}/${preview.projectPath}:${preview.directory}`,
     name: preview.name,
     description: preview.description,
     directory: preview.directory,
     installDirName: preview.installDirName,
+    repoHost: preview.repoHost,
+    projectPath: preview.projectPath,
     repoOwner: preview.repoOwner,
     repoName: preview.repoName,
     repoBranch: preview.repoBranch,

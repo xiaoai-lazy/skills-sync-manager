@@ -1,11 +1,17 @@
 use crate::commands::store_from_app;
+use crate::credential_store;
+use crate::gitlab_client;
 use crate::models::{
-    AppConfig, AppError, AppErrorDto, DiscoverableSkill, SkillDiscoverCache, SkillHubLocalState,
-    SkillRepo, SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState, SmartPastePreview,
-    UpdateAllSkillsResult,
+    AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
+    PreviewAddRepoResult, SkillDiscoverCache,
+    SkillHubLocalState, SkillRepo, SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState,
+    SmartPastePreview, UpdateAllSkillsResult,
 };
 use crate::skill_repos;
-use crate::skill_discover::{discover_available, iso8601_timestamp_now};
+use crate::skill_discover::{
+    discover_available_with_warnings, iso8601_timestamp_now, merge_repo_into_discover_cache,
+    remove_repo_from_discover_cache,
+};
 use crate::skill_install;
 use crate::skill_library;
 use crate::skill_smart_paste;
@@ -55,14 +61,14 @@ fn try_begin_updates_check() -> Result<UpdatesGuard, AppError> {
     Ok(UpdatesGuard)
 }
 
-fn execute_discover(config: &mut AppConfig) -> Result<Vec<DiscoverableSkill>, AppError> {
+fn execute_discover(config: &mut AppConfig) -> (Vec<DiscoverableSkill>, Vec<String>) {
     let main_dir = config.settings.main_skills_dir.as_deref();
-    let skills = if config.skill_repos.is_empty()
+    let (skills, warnings) = if config.skill_repos.is_empty()
         || !config.skill_repos.iter().any(|repo| repo.enabled)
     {
-        Vec::new()
+        (Vec::new(), Vec::new())
     } else {
-        discover_available(config, main_dir)?
+        discover_available_with_warnings(config, main_dir)
     };
 
     config.skill_discover_cache = SkillDiscoverCache {
@@ -70,16 +76,19 @@ fn execute_discover(config: &mut AppConfig) -> Result<Vec<DiscoverableSkill>, Ap
         skills: skills.clone(),
     };
 
-    Ok(skills)
+    (skills, warnings)
 }
 
 async fn run_discover_task(
     config: AppConfig,
-) -> Result<(AppConfig, Vec<DiscoverableSkill>), AppError> {
+) -> Result<(AppConfig, DiscoverSkillsResult), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut config = config;
-        let skills = execute_discover(&mut config)?;
-        Ok((config, skills))
+        let (skills, warnings) = execute_discover(&mut config);
+        Ok((
+            config,
+            DiscoverSkillsResult { skills, warnings },
+        ))
     })
     .await
     .map_err(|err| AppError::Io {
@@ -89,15 +98,15 @@ async fn run_discover_task(
 }
 
 #[tauri::command]
-pub async fn discover_skills(app: AppHandle) -> Result<Vec<DiscoverableSkill>, AppErrorDto> {
+pub async fn discover_skills(app: AppHandle) -> Result<DiscoverSkillsResult, AppErrorDto> {
     let _guard = try_begin_discover().map_err(|err| err.to_dto())?;
 
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let config = store.load().map_err(|err| err.to_dto())?;
-    let (config, skills) = run_discover_task(config).await.map_err(|err| err.to_dto())?;
+    let (config, result) = run_discover_task(config).await.map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
-    Ok(skills)
+    Ok(result)
 }
 
 fn require_main_skills_dir(config: &AppConfig) -> Result<&Path, AppError> {
@@ -264,45 +273,196 @@ pub fn get_skill_repos(app: AppHandle) -> Result<Vec<SkillRepo>, AppErrorDto> {
 }
 
 #[tauri::command]
+pub fn preview_add_skill_repo(app: AppHandle, url: String) -> Result<PreviewAddRepoResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    Ok(skill_repos::preview_add_skill_repo(&config, &url))
+}
+
+#[tauri::command]
+pub fn validate_gitlab_pat(app: AppHandle, host: String, pat: String) -> Result<(), AppErrorDto> {
+    let _store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    gitlab_client::validate_token(&host, &pat).map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn list_gitlab_credentials(app: AppHandle) -> Result<Vec<String>, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    Ok(credential_store::list_configured_gitlab_hosts(&config))
+}
+
+#[tauri::command]
+pub fn remove_gitlab_credential(app: AppHandle, host: String) -> Result<(), AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    credential_store::unregister_gitlab_host(&mut config, &host);
+    store.save(&config).map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn update_gitlab_credential(
+    app: AppHandle,
+    host: String,
+    pat: String,
+) -> Result<(), AppErrorDto> {
+    gitlab_client::validate_token(&host, &pat).map_err(|err| err.to_dto())?;
+    credential_store::set_gitlab_token(&host, &pat).map_err(|err| err.to_dto())?;
+
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    credential_store::register_gitlab_host(&mut config, &host);
+    store.save(&config).map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
 pub async fn add_skill_repo(
     app: AppHandle,
     url: String,
     branch: Option<String>,
+    pat: Option<String>,
 ) -> Result<SkillRepoChangeResult, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
-    skill_repos::add_skill_repo(&mut config, &url, branch.as_deref())
-        .map_err(|err| err.to_dto())?;
+
+    let url_for_task = url;
+    let branch_for_task = branch;
+    let pat_for_task = pat;
+
+    let (mut config, added_repo) = tauri::async_runtime::spawn_blocking(move || {
+        let added_repo = skill_repos::add_skill_repo(
+            &mut config,
+            &url_for_task,
+            branch_for_task.as_deref(),
+            pat_for_task.as_deref(),
+        )?;
+        Ok::<(AppConfig, SkillRepo), AppError>((config, added_repo))
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("添加来源仓库任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
     store.save(&config).map_err(|err| err.to_dto())?;
 
-    let _guard = try_begin_discover().map_err(|err| err.to_dto())?;
-    let (config, skills) = run_discover_task(config).await.map_err(|err| err.to_dto())?;
+    let main_dir = config.settings.main_skills_dir.clone();
+    let (mut config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
+        let main_dir = main_dir.as_deref().map(Path::new);
+        let discover_skills =
+            merge_repo_into_discover_cache(&mut config, &added_repo, main_dir)?;
+        Ok::<(AppConfig, Vec<DiscoverableSkill>), AppError>((config, discover_skills))
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("扫描新来源仓库任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(SkillRepoChangeResult {
         repos: skill_repos::get_skill_repos(&config),
-        discover_skills: skills,
+        discover_skills,
     })
 }
 
 #[tauri::command]
 pub async fn remove_skill_repo(
     app: AppHandle,
-    owner: String,
-    name: String,
+    host: String,
+    project_path: String,
 ) -> Result<SkillRepoChangeResult, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
-    skill_repos::remove_skill_repo(&mut config, &owner, &name).map_err(|err| err.to_dto())?;
-    store.save(&config).map_err(|err| err.to_dto())?;
 
-    let _guard = try_begin_discover().map_err(|err| err.to_dto())?;
-    let (config, skills) = run_discover_task(config).await.map_err(|err| err.to_dto())?;
+    let host_for_task = host;
+    let project_path_for_task = project_path;
+
+    let (mut config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
+        skill_repos::remove_skill_repo(&mut config, &host_for_task, &project_path_for_task)?;
+        let discover_skills =
+            remove_repo_from_discover_cache(&mut config, &host_for_task, &project_path_for_task);
+        Ok::<(AppConfig, Vec<DiscoverableSkill>), AppError>((config, discover_skills))
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("删除来源仓库任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(SkillRepoChangeResult {
         repos: skill_repos::get_skill_repos(&config),
-        discover_skills: skills,
+        discover_skills,
+    })
+}
+
+#[tauri::command]
+pub async fn set_skill_repo_enabled(
+    app: AppHandle,
+    host: String,
+    project_path: String,
+    enabled: bool,
+) -> Result<SkillRepoChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let host_for_task = host.clone();
+    let project_path_for_task = project_path.clone();
+
+    let (mut config, repo) = tauri::async_runtime::spawn_blocking(move || {
+        let repo = skill_repos::set_skill_repo_enabled(
+            &mut config,
+            &host_for_task,
+            &project_path_for_task,
+            enabled,
+        )?;
+        Ok::<(AppConfig, SkillRepo), AppError>((config, repo))
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("更新来源仓库状态任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let main_dir = config.settings.main_skills_dir.clone();
+    let host_for_discover = host;
+    let project_path_for_discover = project_path;
+
+    let (config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
+        let main_dir = main_dir.as_deref().map(Path::new);
+        let discover_skills = if enabled {
+            merge_repo_into_discover_cache(&mut config, &repo, main_dir)?
+        } else {
+            remove_repo_from_discover_cache(&mut config, &host_for_discover, &project_path_for_discover)
+        };
+        Ok::<(AppConfig, Vec<DiscoverableSkill>), AppError>((config, discover_skills))
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("更新发现列表任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    Ok(SkillRepoChangeResult {
+        repos: skill_repos::get_skill_repos(&config),
+        discover_skills,
     })
 }
 
@@ -363,6 +523,8 @@ mod tests {
         config.skill_records.insert(
             "valid-one".to_string(),
             crate::models::SkillRecord {
+                repo_host: "github.com".to_string(),
+                project_path: "anthropics/skills".to_string(),
                 source: "github".to_string(),
                 repo_owner: "anthropics".to_string(),
                 repo_name: "skills".to_string(),

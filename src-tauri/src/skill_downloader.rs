@@ -1,9 +1,32 @@
-use crate::models::AppError;
+use crate::credential_store;
+use crate::gitlab_client;
+use crate::models::{
+    AppError, RepoRef, default_github_host, default_github_provider,
+};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub fn download_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf, AppError> {
+    download_repo_ref(&RepoRef {
+        host: default_github_host(),
+        provider: default_github_provider(),
+        project_path: format!("{owner}/{name}"),
+        branch: branch.to_string(),
+    })
+}
+
+pub fn download_repo_ref(repo: &RepoRef) -> Result<PathBuf, AppError> {
+    if repo.provider == "gitlab" {
+        download_gitlab_repo(repo)
+    } else {
+        let (owner, name) = parse_github_project_path(&repo.project_path)?;
+        download_github_repo(owner, name, &repo.branch)
+    }
+}
+
+fn download_github_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf, AppError> {
     let primary_url = github_archive_url(owner, name, branch);
     match download_and_extract(&primary_url) {
         Ok(path) => Ok(path),
@@ -32,8 +55,73 @@ pub fn download_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf, A
     }
 }
 
+fn download_gitlab_repo(repo: &RepoRef) -> Result<PathBuf, AppError> {
+    let token = credential_store::get_gitlab_token(&repo.host)?;
+    let Some(token) = token else {
+        return Err(AppError::GitLabAuthRequired {
+            host: repo.host.clone(),
+        });
+    };
+
+    match gitlab_client::download_archive(
+        &repo.host,
+        &repo.project_path,
+        &repo.branch,
+        Some(&token),
+    ) {
+        Ok(path) => Ok(path),
+        Err(err) if is_not_found_error(&err) => {
+            let mut last_error = err;
+            for fallback in fallback_branches(&repo.branch) {
+                match gitlab_client::download_archive(
+                    &repo.host,
+                    &repo.project_path,
+                    fallback,
+                    Some(&token),
+                ) {
+                    Ok(path) => return Ok(path),
+                    Err(fallback_err) => last_error = fallback_err,
+                }
+            }
+            Err(last_error)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn is_not_found_error(err: &AppError) -> bool {
+    matches!(
+        err,
+        AppError::SkillRepoNotFound { .. }
+            | AppError::DownloadFailed {
+                status: Some(404),
+                ..
+            }
+    )
+}
+
+fn parse_github_project_path(project_path: &str) -> Result<(&str, &str), AppError> {
+    project_path.split_once('/').ok_or_else(|| AppError::InvalidInput {
+        input: project_path.to_string(),
+        message: "GitHub 项目路径必须为 owner/name 格式".to_string(),
+    })
+}
+
 pub fn download_and_extract(url: &str) -> Result<PathBuf, AppError> {
-    let response = reqwest::blocking::get(url).map_err(|err| AppError::Io {
+    download_and_extract_with_headers(url, &[])
+}
+
+pub fn download_and_extract_with_headers(
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<PathBuf, AppError> {
+    let client = blocking_http_client();
+    let mut request = client.get(url);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+
+    let response = request.send().map_err(|err| AppError::Io {
         path: None,
         message: format!("下载失败 {}: {}", url, err),
     })?;
@@ -62,6 +150,18 @@ pub fn download_and_extract(url: &str) -> Result<PathBuf, AppError> {
     })?;
 
     Ok(extracted_dir)
+}
+
+const HTTP_TIMEOUT_SECS: u64 = 60;
+
+fn blocking_http_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new())
+    })
 }
 
 fn create_temp_extract_dir() -> Result<PathBuf, AppError> {

@@ -42,22 +42,43 @@ const mockSkills: SkillView[] = [
     valid: true,
     validationErrors: [],
   },
+  {
+    dirName: 'code-review',
+    name: 'Code Review',
+    description: 'GitLab 来源的 Skill。',
+    path: 'C:\\skills\\code-review',
+    valid: true,
+    validationErrors: [],
+  },
 ];
 
 const mockHubState: SkillHubLocalState = {
   skills: mockSkills,
-  validCount: 2,
+  validCount: 3,
   invalidCount: 1,
   pendingUpdateCount: 1,
   lastScanAt: '2026-06-30T00:00:00Z',
   skillRecords: {
     tdd: {
+      repoHost: 'github.com',
+      projectPath: 'anthropics/skills',
       source: 'github',
       repoOwner: 'anthropics',
       repoName: 'skills',
       repoBranch: 'main',
       directory: 'skills/tdd',
       contentHash: 'abc',
+      installedAt: '2026-06-30T00:00:00Z',
+    },
+    'code-review': {
+      repoHost: 'gitlab.example.com',
+      projectPath: 'team/skills',
+      source: 'gitlab',
+      repoOwner: 'team',
+      repoName: 'skills',
+      repoBranch: 'main',
+      directory: 'skills/code-review',
+      contentHash: 'xyz',
       installedAt: '2026-06-30T00:00:00Z',
     },
   },
@@ -78,10 +99,26 @@ const mockDiscoverable: DiscoverableSkill = {
   description: 'PDF 解析与合并。',
   directory: 'skills/pdf-toolkit',
   installDirName: 'pdf-toolkit',
+  repoHost: 'github.com',
+  projectPath: 'anthropics/skills',
   repoOwner: 'anthropics',
   repoName: 'skills',
   repoBranch: 'main',
   source: 'github',
+};
+
+const mockGitlabDiscoverable: DiscoverableSkill = {
+  key: 'gitlab.example.com/team/skills:skills/lint-helper',
+  name: 'Lint Helper',
+  description: 'GitLab 仓库中的 Skill。',
+  directory: 'skills/lint-helper',
+  installDirName: 'lint-helper',
+  repoHost: 'gitlab.example.com',
+  projectPath: 'team/skills',
+  repoOwner: 'team',
+  repoName: 'skills',
+  repoBranch: 'main',
+  source: 'gitlab',
 };
 
 function renderHub(overrides: Partial<ComponentProps<typeof SkillHubPage>> = {}) {
@@ -122,11 +159,11 @@ describe('SkillHubPage', () => {
     renderHub();
 
     expect(await screen.findByRole('heading', { name: 'Skill 中心' })).toBeInTheDocument();
-    expect(screen.getByText('2 有效')).toBeInTheDocument();
+    expect(screen.getByText('3 有效')).toBeInTheDocument();
     expect(screen.getByText('1 无效')).toBeInTheDocument();
     expect(screen.getByText('1 待更新')).toBeInTheDocument();
     expect(screen.getByText('C:\\Users\\dev\\.cursor\\skills')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /已安装 \(3\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /已安装 \(4\)/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /可安装 \(1\)/ })).toBeInTheDocument();
   });
 
@@ -197,6 +234,52 @@ describe('SkillHubPage', () => {
 
     await screen.findByText('红-绿-重构循环。');
     expect(screen.getByText(/GitHub · tdd/)).toBeInTheDocument();
+  });
+
+  it('shows GitLab source with host for installed gitlab skills', async () => {
+    renderHub({ skillRecords: undefined });
+
+    await screen.findByText('GitLab 来源的 Skill。');
+    expect(screen.getByText(/GitLab · gitlab\.example\.com · code-review/)).toBeInTheDocument();
+  });
+
+  it('filters installed skills by GitLab source filter', async () => {
+    const user = userEvent.setup();
+    renderHub({ skillRecords: undefined });
+
+    await screen.findByText('GitLab 来源的 Skill。');
+    await user.selectOptions(screen.getByLabelText('来源筛选'), 'gitlab');
+
+    expect(screen.getByText('GitLab 来源的 Skill。')).toBeInTheDocument();
+    expect(screen.queryByText('Explore ideas before implementation.')).not.toBeInTheDocument();
+    expect(screen.queryByText('红-绿-重构循环。')).not.toBeInTheDocument();
+  });
+
+  it('shows GitLab source with host on discover tab', async () => {
+    const user = userEvent.setup();
+    renderHub({
+      discoverSkills: [mockDiscoverable, mockGitlabDiscoverable],
+    });
+
+    await screen.findByRole('tab', { name: /可安装 \(2\)/ });
+    await user.click(screen.getByRole('tab', { name: /可安装 \(2\)/ }));
+
+    expect(await screen.findByText('GitLab 仓库中的 Skill。')).toBeInTheDocument();
+    expect(screen.getByText(/GitLab · gitlab\.example\.com · lint-helper/)).toBeInTheDocument();
+  });
+
+  it('filters discover skills by GitLab source filter', async () => {
+    const user = userEvent.setup();
+    renderHub({
+      discoverSkills: [mockDiscoverable, mockGitlabDiscoverable],
+    });
+
+    await screen.findByRole('tab', { name: /可安装 \(2\)/ });
+    await user.click(screen.getByRole('tab', { name: /可安装 \(2\)/ }));
+    await user.selectOptions(screen.getByLabelText('来源筛选'), 'gitlab');
+
+    expect(await screen.findByText('GitLab 仓库中的 Skill。')).toBeInTheDocument();
+    expect(screen.queryByText('PDF 解析与合并。')).not.toBeInTheDocument();
   });
 
   it('calls scanMainLibrary on mount when onRefreshHub is not provided', async () => {

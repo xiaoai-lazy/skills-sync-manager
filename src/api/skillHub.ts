@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   DiscoverableSkill,
+  DiscoverSkillsResult,
+  PreviewAddRepoResult,
   SkillHubLocalState,
   SkillRepo,
   SkillRepoChangeResult,
@@ -14,8 +16,8 @@ export async function scanMainLibrary(): Promise<SkillHubLocalState> {
   return invoke<SkillHubLocalState>('scan_main_library');
 }
 
-export async function discoverSkills(): Promise<DiscoverableSkill[]> {
-  return invoke<DiscoverableSkill[]>('discover_skills');
+export async function discoverSkills(): Promise<DiscoverSkillsResult> {
+  return invoke<DiscoverSkillsResult>('discover_skills');
 }
 
 export async function checkSkillUpdates(): Promise<SkillUpdateInfo[]> {
@@ -44,15 +46,55 @@ export async function getSkillRepos(): Promise<SkillRepo[]> {
   return invoke<SkillRepo[]>('get_skill_repos');
 }
 
-export async function addSkillRepo(url: string, branch?: string): Promise<SkillRepoChangeResult> {
-  return invoke<SkillRepoChangeResult>('add_skill_repo', { url, branch: branch ?? null });
+export async function previewAddSkillRepo(url: string): Promise<PreviewAddRepoResult> {
+  return invoke<PreviewAddRepoResult>('preview_add_skill_repo', { url });
+}
+
+export async function validateGitlabPat(host: string, pat: string): Promise<void> {
+  return invoke<void>('validate_gitlab_pat', { host, pat });
+}
+
+export async function listGitlabCredentials(): Promise<string[]> {
+  return invoke<string[]>('list_gitlab_credentials');
+}
+
+export async function removeGitlabCredential(host: string): Promise<void> {
+  return invoke<void>('remove_gitlab_credential', { host });
+}
+
+export async function updateGitlabCredential(host: string, pat: string): Promise<void> {
+  return invoke<void>('update_gitlab_credential', { host, pat });
+}
+
+export async function addSkillRepo(
+  url: string,
+  branch?: string,
+  pat?: string,
+): Promise<SkillRepoChangeResult> {
+  return invoke<SkillRepoChangeResult>('add_skill_repo', {
+    url,
+    branch: branch ?? null,
+    pat: pat ?? null,
+  });
 }
 
 export async function removeSkillRepo(
-  owner: string,
-  name: string,
+  host: string,
+  projectPath: string,
 ): Promise<SkillRepoChangeResult> {
-  return invoke<SkillRepoChangeResult>('remove_skill_repo', { owner, name });
+  return invoke<SkillRepoChangeResult>('remove_skill_repo', { host, projectPath });
+}
+
+export async function setSkillRepoEnabled(
+  host: string,
+  projectPath: string,
+  enabled: boolean,
+): Promise<SkillRepoChangeResult> {
+  return invoke<SkillRepoChangeResult>('set_skill_repo_enabled', {
+    host,
+    projectPath,
+    enabled,
+  });
 }
 
 export async function searchSkillsSh(

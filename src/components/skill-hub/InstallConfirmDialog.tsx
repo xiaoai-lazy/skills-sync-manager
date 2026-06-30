@@ -60,14 +60,18 @@ function InstallConfirmDialog(props: InstallConfirmDialogProps) {
                 ? 'skills.sh'
                 : preview.source === 'github'
                   ? 'GitHub'
-                  : preview.source}
+                  : preview.source === 'gitlab'
+                    ? 'GitLab'
+                    : preview.source}
             </dd>
           </div>
-          {'repoOwner' in preview && preview.repoOwner && (
+          {'projectPath' in preview && preview.projectPath && (
             <div>
               <dt>仓库</dt>
               <dd>
-                {preview.repoOwner}/{preview.repoName}
+                {preview.source === 'gitlab'
+                  ? `${preview.repoHost}/${preview.projectPath}`
+                  : preview.projectPath}
               </dd>
             </div>
           )}

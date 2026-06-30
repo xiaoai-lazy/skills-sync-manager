@@ -1,6 +1,6 @@
 [package]
 name = "skills-sync-manager"
-version = "0.3.0"
+version = "0.4.0"
 description = "Skills Sync Manager desktop application"
 authors = ["Skills Sync Manager Contributors"]
 edition = "2021"
@@ -22,6 +22,8 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 zip = "2"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+urlencoding = "2"
 
 [dev-dependencies]
 tempfile = "3"

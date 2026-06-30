@@ -3,7 +3,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Current on-disk config schema version. Bump when adding breaking fields.
-pub const CURRENT_CONFIG_VERSION: u32 = 3;
+pub const CURRENT_CONFIG_VERSION: u32 = 4;
+
+pub(crate) fn default_github_host() -> String {
+    "github.com".to_string()
+}
+
+pub(crate) fn default_github_provider() -> String {
+    "github".to_string()
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +28,8 @@ pub struct AppConfig {
     pub skill_discover_cache: SkillDiscoverCache,
     #[serde(default)]
     pub skill_update_cache: SkillUpdateCache,
+    #[serde(default)]
+    pub gitlab_credential_hosts: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -30,6 +40,9 @@ impl Default for AppConfig {
             targets: Vec::new(),
             installations: Vec::new(),
             skill_repos: vec![SkillRepo {
+                host: default_github_host(),
+                provider: default_github_provider(),
+                project_path: "obra/superpowers".to_string(),
                 owner: "obra".to_string(),
                 name: "superpowers".to_string(),
                 branch: "main".to_string(),
@@ -38,6 +51,7 @@ impl Default for AppConfig {
             skill_records: HashMap::new(),
             skill_discover_cache: SkillDiscoverCache::default(),
             skill_update_cache: SkillUpdateCache::default(),
+            gitlab_credential_hosts: Vec::new(),
         }
     }
 }
@@ -47,6 +61,25 @@ pub fn migrate_config(config: &mut AppConfig) -> bool {
     if config.version >= CURRENT_CONFIG_VERSION {
         return false;
     }
+
+    if config.version < 4 {
+        for repo in &mut config.skill_repos {
+            repo.host = default_github_host();
+            repo.provider = default_github_provider();
+            if repo.project_path.is_empty() {
+                repo.project_path = format!("{}/{}", repo.owner, repo.name);
+            }
+        }
+        for record in config.skill_records.values_mut() {
+            if record.repo_host.is_empty() {
+                record.repo_host = default_github_host();
+            }
+            if record.project_path.is_empty() {
+                record.project_path = format!("{}/{}", record.repo_owner, record.repo_name);
+            }
+        }
+    }
+
     config.version = CURRENT_CONFIG_VERSION;
     true
 }
@@ -144,15 +177,94 @@ pub struct DeleteMainSkillResult {
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillRepo {
+    #[serde(default = "default_github_host")]
+    pub host: String,
+    #[serde(default = "default_github_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub project_path: String,
     pub owner: String,
     pub name: String,
     pub branch: String,
     pub enabled: bool,
 }
 
+impl SkillRepo {
+    pub fn to_repo_ref(&self) -> RepoRef {
+        let project_path = if self.project_path.is_empty() {
+            format!("{}/{}", self.owner, self.name)
+        } else {
+            self.project_path.clone()
+        };
+        RepoRef {
+            host: self.host.clone(),
+            provider: self.provider.clone(),
+            project_path,
+            branch: self.branch.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoRef {
+    pub host: String,
+    pub provider: String,
+    pub project_path: String,
+    pub branch: String,
+}
+
+impl DiscoverableSkill {
+    pub fn to_repo_ref(&self) -> RepoRef {
+        let project_path = if self.project_path.is_empty() {
+            format!("{}/{}", self.repo_owner, self.repo_name)
+        } else {
+            self.project_path.clone()
+        };
+        RepoRef {
+            host: if self.repo_host.is_empty() {
+                default_github_host()
+            } else {
+                self.repo_host.clone()
+            },
+            provider: self.source.clone(),
+            project_path,
+            branch: self.repo_branch.clone(),
+        }
+    }
+}
+
+impl SkillRecord {
+    pub fn to_repo_ref(&self) -> RepoRef {
+        let project_path = if self.project_path.is_empty() {
+            format!("{}/{}", self.repo_owner, self.repo_name)
+        } else {
+            self.project_path.clone()
+        };
+        let provider = if self.source == "gitlab" || self.repo_host != default_github_host() {
+            "gitlab".to_string()
+        } else {
+            default_github_provider()
+        };
+        RepoRef {
+            host: if self.repo_host.is_empty() {
+                default_github_host()
+            } else {
+                self.repo_host.clone()
+            },
+            provider,
+            project_path,
+            branch: self.repo_branch.clone(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillRecord {
+    #[serde(default = "default_github_host")]
+    pub repo_host: String,
+    #[serde(default)]
+    pub project_path: String,
     pub source: String,
     pub repo_owner: String,
     pub repo_name: String,
@@ -176,6 +288,13 @@ pub struct SkillUpdateCache {
     pub updates: Vec<SkillUpdateInfo>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverSkillsResult {
+    pub skills: Vec<DiscoverableSkill>,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverableSkill {
@@ -184,6 +303,10 @@ pub struct DiscoverableSkill {
     pub description: String,
     pub directory: String,
     pub install_dir_name: String,
+    #[serde(default = "default_github_host")]
+    pub repo_host: String,
+    #[serde(default)]
+    pub project_path: String,
     pub repo_owner: String,
     pub repo_name: String,
     pub repo_branch: String,
@@ -195,6 +318,18 @@ pub struct DiscoverableSkill {
 pub struct SkillRepoChangeResult {
     pub repos: Vec<SkillRepo>,
     pub discover_skills: Vec<DiscoverableSkill>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewAddRepoResult {
+    pub can_save: bool,
+    pub needs_pat: bool,
+    pub host: Option<String>,
+    pub provider: Option<String>,
+    pub project_path: Option<String>,
+    pub branch: Option<String>,
+    pub error: Option<AppErrorDto>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -237,6 +372,10 @@ pub struct SmartPastePreview {
     pub name: String,
     pub description: String,
     pub install_dir_name: String,
+    #[serde(default = "default_github_host")]
+    pub repo_host: String,
+    #[serde(default)]
+    pub project_path: String,
     pub repo_owner: String,
     pub repo_name: String,
     pub repo_branch: String,
@@ -321,6 +460,15 @@ pub enum AppError {
     SkillRepoNotFound {
         owner: String,
         name: String,
+    },
+    CredentialStore {
+        message: String,
+    },
+    GitLabAuthRequired {
+        host: String,
+    },
+    GitLabAuthInvalid {
+        host: String,
     },
 }
 
@@ -444,6 +592,21 @@ impl AppError {
                 code: "skillRepoNotFound".to_string(),
                 message: format!("找不到 Skill 仓库 {}/{}", owner, name),
             },
+            AppError::CredentialStore { message } => AppErrorDto {
+                code: "credentialStore".to_string(),
+                message: message.clone(),
+            },
+            AppError::GitLabAuthRequired { host } => AppErrorDto {
+                code: "gitlabAuthRequired".to_string(),
+                message: format!(
+                    "访问 GitLab {} 需要登录，请先配置 Personal Access Token",
+                    host
+                ),
+            },
+            AppError::GitLabAuthInvalid { host } => AppErrorDto {
+                code: "gitlabAuthInvalid".to_string(),
+                message: format!("GitLab {} 的 Token 无效或已过期，请重新配置", host),
+            },
         }
     }
 }
@@ -561,6 +724,15 @@ impl std::fmt::Display for AppError {
             AppError::SkillRepoNotFound { owner, name } => {
                 write!(formatter, "skill repo not found: {}/{}", owner, name)
             }
+            AppError::CredentialStore { message } => {
+                write!(formatter, "credential store error: {}", message)
+            }
+            AppError::GitLabAuthRequired { host } => {
+                write!(formatter, "gitlab authentication required for {}", host)
+            }
+            AppError::GitLabAuthInvalid { host } => {
+                write!(formatter, "gitlab authentication invalid for {}", host)
+            }
         }
     }
 }
@@ -643,5 +815,26 @@ mod tests {
             serde_json::to_value(SkillInstallState::InvalidSkill).unwrap(),
             json!("invalidSkill")
         );
+    }
+
+    #[test]
+    fn migrate_config_v3_to_v4_fills_repo_fields() {
+        let json = r#"{
+            "version": 3,
+            "settings": { "mainSkillsDir": null, "linkStrategy": "auto" },
+            "targets": [],
+            "installations": [],
+            "skillRepos": [{ "owner": "obra", "name": "superpowers", "branch": "main", "enabled": true }],
+            "skillRecords": {},
+            "skillDiscoverCache": { "skills": [] },
+            "skillUpdateCache": { "updates": [] }
+        }"#;
+        let mut config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(migrate_config(&mut config));
+        assert_eq!(config.version, 4);
+        let repo = &config.skill_repos[0];
+        assert_eq!(repo.host, "github.com");
+        assert_eq!(repo.provider, "github");
+        assert_eq!(repo.project_path, "obra/superpowers");
     }
 }

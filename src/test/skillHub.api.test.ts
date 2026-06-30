@@ -13,6 +13,14 @@ import {
   installHubSkill,
   parseSmartPaste,
   getTargetSkillStates,
+  previewAddSkillRepo,
+  validateGitlabPat,
+  listGitlabCredentials,
+  removeGitlabCredential,
+  updateGitlabCredential,
+  addSkillRepo,
+  removeSkillRepo,
+  setSkillRepoEnabled,
 } from '../api/skillHub';
 
 const sampleDiscoverable: DiscoverableSkill = {
@@ -21,6 +29,8 @@ const sampleDiscoverable: DiscoverableSkill = {
   description: 'Explore ideas before implementation.',
   directory: 'skills/brainstorming',
   installDirName: 'brainstorming',
+  repoHost: 'github.com',
+  projectPath: 'anthropics/skills',
   repoOwner: 'anthropics',
   repoName: 'skills',
   repoBranch: 'main',
@@ -76,12 +86,13 @@ describe('skillHub API', () => {
   });
 
   it('discoverSkills calls invoke with discover_skills', async () => {
-    invokeMock.mockResolvedValue([sampleDiscoverable]);
+    invokeMock.mockResolvedValue({ skills: [sampleDiscoverable], warnings: [] });
 
     const result = await discoverSkills();
 
     expect(invokeMock).toHaveBeenCalledWith('discover_skills');
-    expect(result).toEqual([sampleDiscoverable]);
+    expect(result.skills).toEqual([sampleDiscoverable]);
+    expect(result.warnings).toEqual([]);
   });
 
   it('parseSmartPaste passes input to parse_smart_paste', async () => {
@@ -114,6 +125,101 @@ describe('skillHub API', () => {
 
     expect(invokeMock).toHaveBeenCalledWith('get_target_skill_states', {
       targetId: 'target_1',
+    });
+  });
+
+  it('previewAddSkillRepo passes url to preview_add_skill_repo', async () => {
+    invokeMock.mockResolvedValue({
+      canSave: true,
+      needsPat: false,
+      host: 'github.com',
+      provider: 'github',
+      projectPath: 'anthropics/skills',
+      branch: 'main',
+      error: null,
+    });
+
+    const result = await previewAddSkillRepo('https://github.com/anthropics/skills');
+
+    expect(invokeMock).toHaveBeenCalledWith('preview_add_skill_repo', {
+      url: 'https://github.com/anthropics/skills',
+    });
+    expect(result.canSave).toBe(true);
+  });
+
+  it('validateGitlabPat passes host and pat to validate_gitlab_pat', async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await validateGitlabPat('gitlab.example.com', 'glpat-test');
+
+    expect(invokeMock).toHaveBeenCalledWith('validate_gitlab_pat', {
+      host: 'gitlab.example.com',
+      pat: 'glpat-test',
+    });
+  });
+
+  it('listGitlabCredentials calls list_gitlab_credentials', async () => {
+    invokeMock.mockResolvedValue(['gitlab.example.com']);
+
+    const result = await listGitlabCredentials();
+
+    expect(invokeMock).toHaveBeenCalledWith('list_gitlab_credentials');
+    expect(result).toEqual(['gitlab.example.com']);
+  });
+
+  it('removeGitlabCredential passes host to remove_gitlab_credential', async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await removeGitlabCredential('gitlab.example.com');
+
+    expect(invokeMock).toHaveBeenCalledWith('remove_gitlab_credential', {
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('updateGitlabCredential passes host and pat to update_gitlab_credential', async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await updateGitlabCredential('gitlab.example.com', 'glpat-new');
+
+    expect(invokeMock).toHaveBeenCalledWith('update_gitlab_credential', {
+      host: 'gitlab.example.com',
+      pat: 'glpat-new',
+    });
+  });
+
+  it('addSkillRepo passes url branch and pat to add_skill_repo', async () => {
+    invokeMock.mockResolvedValue({ repos: [], discoverSkills: [] });
+
+    await addSkillRepo('https://gitlab.example.com/acme/tools', 'main', 'glpat-test');
+
+    expect(invokeMock).toHaveBeenCalledWith('add_skill_repo', {
+      url: 'https://gitlab.example.com/acme/tools',
+      branch: 'main',
+      pat: 'glpat-test',
+    });
+  });
+
+  it('removeSkillRepo passes host and projectPath to remove_skill_repo', async () => {
+    invokeMock.mockResolvedValue({ repos: [], discoverSkills: [] });
+
+    await removeSkillRepo('gitlab.example.com', 'acme/tools');
+
+    expect(invokeMock).toHaveBeenCalledWith('remove_skill_repo', {
+      host: 'gitlab.example.com',
+      projectPath: 'acme/tools',
+    });
+  });
+
+  it('setSkillRepoEnabled passes host projectPath and enabled', async () => {
+    invokeMock.mockResolvedValue({ repos: [], discoverSkills: [] });
+
+    await setSkillRepoEnabled('gitlab.example.com', 'acme/tools', false);
+
+    expect(invokeMock).toHaveBeenCalledWith('set_skill_repo_enabled', {
+      host: 'gitlab.example.com',
+      projectPath: 'acme/tools',
+      enabled: false,
     });
   });
 });

@@ -41,6 +41,13 @@ function getDirName(skill: SkillCardSkill): string {
   return isDiscoverableSkill(skill) ? skill.installDirName : skill.dirName;
 }
 
+function getSourceMeta(sourceLabel: string, dirName: string, skill: SkillCardSkill): string {
+  if (isDiscoverableSkill(skill) && skill.source === 'gitlab' && skill.repoHost) {
+    return `GitLab · ${skill.repoHost} · ${dirName}`;
+  }
+  return `${sourceLabel} · ${dirName}`;
+}
+
 function SkillCard(props: SkillCardProps) {
   const {
     skill,
@@ -60,6 +67,7 @@ function SkillCard(props: SkillCardProps) {
   const dirName = getDirName(skill);
   const invalid = !isDiscoverableSkill(skill) && !skill.valid;
   const isDiscover = mode === 'discover';
+  const sourceMeta = getSourceMeta(sourceLabel, dirName, skill);
 
   let actions: React.ReactNode = null;
   if (isDiscover) {
@@ -130,7 +138,7 @@ function SkillCard(props: SkillCardProps) {
       </div>
       <p className="skill-card-desc">{desc || '—'}</p>
       <div className="skill-card-meta">
-        {sourceLabel} · {dirName}
+        {sourceMeta}
       </div>
       <div
         className="skill-card-actions"

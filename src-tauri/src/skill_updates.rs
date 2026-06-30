@@ -1,9 +1,11 @@
 use crate::models::{
-    AppConfig, AppError, SkillRecord, SkillUpdateInfo, UpdateAllSkillsFailure, UpdateAllSkillsResult,
+    AppConfig, AppError, RepoRef, SkillRecord, SkillUpdateInfo, UpdateAllSkillsFailure,
+    UpdateAllSkillsResult,
 };
 use crate::skill_discover::iso8601_timestamp_now;
 use crate::skill_downloader::{self, copy_dir_recursive};
 use crate::skill_install::resolve_skill_directory;
+use crate::skill_repos;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -73,29 +75,32 @@ fn collect_files_sorted(
 }
 
 pub fn check_updates(config: &AppConfig, main_dir: &Path) -> Result<Vec<SkillUpdateInfo>, AppError> {
-    check_updates_with_download_hook(config, main_dir, |owner, name, branch| {
-        skill_downloader::download_repo(owner, name, branch)
+    check_updates_with_download_hook(config, main_dir, |repo_ref| {
+        skill_downloader::download_repo_ref(repo_ref)
     })
 }
 
 pub fn check_updates_with_download_hook<F>(
     config: &AppConfig,
     main_dir: &Path,
-    download_repo: F,
+    download_repo_ref: F,
 ) -> Result<Vec<SkillUpdateInfo>, AppError>
 where
-    F: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+    F: Fn(&RepoRef) -> Result<PathBuf, AppError>,
 {
-    let mut repo_cache: HashMap<(String, String, String), PathBuf> = HashMap::new();
+    let mut repo_cache: HashMap<RepoCacheKey, PathBuf> = HashMap::new();
     let mut updates = Vec::new();
 
     for (dir_name, record) in &config.skill_records {
+        if !skill_repos::is_skill_repo_enabled(config, &record.repo_host, &record.project_path) {
+            continue;
+        }
         let update = check_single_record(
             dir_name,
             record,
             main_dir,
             &mut repo_cache,
-            &download_repo,
+            &download_repo_ref,
         )?;
         if let Some(info) = update {
             updates.push(info);
@@ -106,25 +111,28 @@ where
     Ok(updates)
 }
 
+type RepoCacheKey = (String, String, String);
+
 fn check_single_record<F>(
     dir_name: &str,
     record: &SkillRecord,
     main_dir: &Path,
-    repo_cache: &mut HashMap<(String, String, String), PathBuf>,
-    download_repo: &F,
+    repo_cache: &mut HashMap<RepoCacheKey, PathBuf>,
+    download_repo_ref: &F,
 ) -> Result<Option<SkillUpdateInfo>, AppError>
 where
-    F: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+    F: Fn(&RepoRef) -> Result<PathBuf, AppError>,
 {
+    let repo_ref = record.to_repo_ref();
     let repo_key = (
-        record.repo_owner.clone(),
-        record.repo_name.clone(),
-        record.repo_branch.clone(),
+        repo_ref.host.clone(),
+        repo_ref.project_path.clone(),
+        repo_ref.branch.clone(),
     );
     let repo_root = if let Some(cached) = repo_cache.get(&repo_key) {
         cached.clone()
     } else {
-        let downloaded = download_repo(&record.repo_owner, &record.repo_name, &record.repo_branch)?;
+        let downloaded = download_repo_ref(&repo_ref)?;
         repo_cache.insert(repo_key, downloaded.clone());
         downloaded
     };
@@ -173,8 +181,8 @@ pub fn update_skill(
     dir_name: &str,
     main_dir: &Path,
 ) -> Result<(), AppError> {
-    update_skill_with_download_hook(config, dir_name, main_dir, |owner, name, branch| {
-        skill_downloader::download_repo(owner, name, branch)
+    update_skill_with_download_hook(config, dir_name, main_dir, |repo_ref| {
+        skill_downloader::download_repo_ref(repo_ref)
     })
 }
 
@@ -182,10 +190,10 @@ pub fn update_skill_with_download_hook<F>(
     config: &mut AppConfig,
     dir_name: &str,
     main_dir: &Path,
-    download_repo: F,
+    download_repo_ref: F,
 ) -> Result<(), AppError>
 where
-    F: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
+    F: FnOnce(&RepoRef) -> Result<PathBuf, AppError>,
 {
     if !config
         .skill_update_cache
@@ -206,7 +214,8 @@ where
             dir_name: dir_name.to_string(),
         })?;
 
-    let repo_root = download_repo(&record.repo_owner, &record.repo_name, &record.repo_branch)?;
+    let repo_ref = record.to_repo_ref();
+    let repo_root = download_repo_ref(&repo_ref)?;
     let source_dir = resolve_skill_directory(&repo_root, &record.directory);
 
     if !source_dir.join("SKILL.md").is_file() {
@@ -240,18 +249,18 @@ pub fn update_all_skills(
     config: &mut AppConfig,
     main_dir: &Path,
 ) -> Result<UpdateAllSkillsResult, AppError> {
-    update_all_skills_with_download_hook(config, main_dir, |owner, name, branch| {
-        skill_downloader::download_repo(owner, name, branch)
+    update_all_skills_with_download_hook(config, main_dir, |repo_ref| {
+        skill_downloader::download_repo_ref(repo_ref)
     })
 }
 
 pub fn update_all_skills_with_download_hook<F>(
     config: &mut AppConfig,
     main_dir: &Path,
-    mut download_repo: F,
+    mut download_repo_ref: F,
 ) -> Result<UpdateAllSkillsResult, AppError>
 where
-    F: FnMut(&str, &str, &str) -> Result<PathBuf, AppError>,
+    F: FnMut(&RepoRef) -> Result<PathBuf, AppError>,
 {
     let pending: Vec<String> = config
         .skill_update_cache
@@ -264,8 +273,8 @@ where
     let mut failed = Vec::new();
 
     for dir_name in pending {
-        match update_skill_with_download_hook(config, &dir_name, main_dir, |owner, name, branch| {
-            download_repo(owner, name, branch)
+        match update_skill_with_download_hook(config, &dir_name, main_dir, |repo_ref| {
+            download_repo_ref(repo_ref)
         }) {
             Ok(()) => updated.push(dir_name),
             Err(err) => failed.push(UpdateAllSkillsFailure {
@@ -315,7 +324,7 @@ fn io_error(path: Option<impl AsRef<Path>>, message: String) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{SkillDiscoverCache, SkillUpdateCache};
+    use crate::models::{SkillDiscoverCache, SkillRepo, SkillUpdateCache, default_github_host};
     use std::fs;
 
     fn write_valid_skill(dir: &Path, name: &str, body_suffix: &str) {
@@ -332,6 +341,8 @@ mod tests {
 
     fn sample_record(directory: &str, content_hash: &str) -> SkillRecord {
         SkillRecord {
+            repo_host: default_github_host(),
+            project_path: "anthropics/skills".to_string(),
             source: "github".to_string(),
             repo_owner: "anthropics".to_string(),
             repo_name: "skills".to_string(),
@@ -362,6 +373,44 @@ mod tests {
     }
 
     #[test]
+    fn check_updates_skips_disabled_source_repo() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let local_installed = main_dir.join("brainstorming");
+        write_valid_skill(&local_installed, "brainstorming", "local-old");
+
+        write_valid_skill(
+            &repo_root.join("skills").join("brainstorming"),
+            "brainstorming",
+            "remote-new",
+        );
+
+        let mut config = config_with_record(
+            "brainstorming",
+            sample_record("skills/brainstorming", "stale-hash"),
+        );
+        config.skill_repos = vec![SkillRepo {
+            host: default_github_host(),
+            provider: "github".to_string(),
+            project_path: "anthropics/skills".to_string(),
+            owner: "anthropics".to_string(),
+            name: "skills".to_string(),
+            branch: "main".to_string(),
+            enabled: false,
+        }];
+
+        let updates = check_updates_with_download_hook(&config, &main_dir, |_| {
+            Ok(repo_root.clone())
+        })
+        .expect("check updates");
+
+        assert!(updates.is_empty());
+    }
+
+    #[test]
     fn check_updates_skills_without_skill_record() {
         let temp = tempfile::tempdir().expect("tempdir");
         let main_dir = temp.path().join("main");
@@ -382,7 +431,7 @@ mod tests {
             sample_record("skills/brainstorming", "stale-hash"),
         );
 
-        let updates = check_updates_with_download_hook(&config, &main_dir, |_, _, _| {
+        let updates = check_updates_with_download_hook(&config, &main_dir, |_| {
             Ok(repo_root.clone())
         })
         .expect("check updates");
@@ -419,7 +468,7 @@ mod tests {
         );
 
         let updates =
-            check_updates_with_download_hook(&config, &main_dir, |_, _, _| Ok(repo_root.clone()))
+            check_updates_with_download_hook(&config, &main_dir, |_| Ok(repo_root.clone()))
                 .expect("check updates");
 
         assert_eq!(updates.len(), 1);
@@ -470,7 +519,7 @@ mod tests {
             }],
         };
 
-        update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_, _, _| {
+        update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_| {
             Ok(repo_root.clone())
         })
         .expect("update skill");
@@ -499,7 +548,7 @@ mod tests {
             sample_record("skills/brainstorming", "hash"),
         );
 
-        let error = update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_, _, _| {
+        let error = update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_| {
             Ok(PathBuf::new())
         })
         .expect_err("should require pending update");
@@ -549,16 +598,8 @@ mod tests {
             ],
         };
 
-        let result = update_all_skills_with_download_hook(&mut config, &main_dir, |_, name, _| {
-            if name == "bad" {
-                Err(AppError::DownloadFailed {
-                    url: "mock".to_string(),
-                    status: Some(404),
-                    message: "missing repo".to_string(),
-                })
-            } else {
-                Ok(repo_root.clone())
-            }
+        let result = update_all_skills_with_download_hook(&mut config, &main_dir, |_| {
+            Ok(repo_root.clone())
         })
         .expect("update all");
 

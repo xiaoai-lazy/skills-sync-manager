@@ -224,9 +224,15 @@ function App() {
 
     try {
 
-      const skills = await discoverSkills();
+      const result = await discoverSkills();
 
-      setDiscoverSkillsList(skills);
+      setDiscoverSkillsList(result.skills);
+
+      if (result.warnings.length > 0 && result.skills.length === 0) {
+
+        setError(result.warnings.join('；'));
+
+      }
 
     } catch (err) {
 

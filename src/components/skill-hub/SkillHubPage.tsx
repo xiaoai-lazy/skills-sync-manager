@@ -21,7 +21,7 @@ import SmartPasteBar from './SmartPasteBar';
 
 type HubTab = 'installed' | 'discover';
 type InstalledChip = 'all' | 'updates';
-type SourceFilter = 'all' | 'manual' | 'github' | 'skillssh';
+type SourceFilter = 'all' | 'manual' | 'github' | 'gitlab' | 'skillssh';
 
 export interface SkillHubPageProps {
   mainSkillsDir: string | null;
@@ -39,9 +39,12 @@ export interface SkillHubPageProps {
   onError?: (error: unknown) => void;
 }
 
-function sourceLabel(source: string): string {
+function sourceLabel(source: string, record?: Pick<SkillRecord, 'repoHost'>): string {
   if (source === 'github') return 'GitHub';
   if (source === 'skillssh') return 'skills.sh';
+  if (source === 'gitlab') {
+    return record?.repoHost ? `GitLab · ${record.repoHost}` : 'GitLab';
+  }
   return '本地导入';
 }
 
@@ -53,6 +56,7 @@ function getInstalledSource(
   if (!record) return 'manual';
   if (record.source === 'skillssh') return 'skillssh';
   if (record.source === 'github') return 'github';
+  if (record.source === 'gitlab') return 'gitlab';
   return 'manual';
 }
 
@@ -171,9 +175,17 @@ function SkillHubPage(props: SkillHubPageProps) {
     discoverInFlight.current = true;
     setRefreshingDiscover(true);
     try {
-      const skills = await discoverSkills();
-      onDiscoverSkillsChange(skills);
-      onToast?.('列表已刷新');
+      const result = await discoverSkills();
+      onDiscoverSkillsChange(result.skills);
+      if (result.warnings.length > 0) {
+        onToast?.(
+          result.warnings.length === 1
+            ? result.warnings[0]
+            : `部分来源不可用（${result.warnings.length} 个），其余已刷新`,
+        );
+      } else {
+        onToast?.('列表已刷新');
+      }
     } catch (err) {
       onError?.(errorMessage(err));
     } finally {
@@ -468,6 +480,7 @@ function SkillHubPage(props: SkillHubPageProps) {
               <option value="all">全部来源</option>
               {tab === 'installed' && <option value="manual">本地导入</option>}
               <option value="github">GitHub</option>
+              <option value="gitlab">GitLab</option>
               <option value="skillssh">skills.sh</option>
             </select>
           </div>
@@ -517,6 +530,7 @@ function SkillHubPage(props: SkillHubPageProps) {
                   hasUpdate={pendingUpdateSet.has(skill.dirName)}
                   sourceLabel={sourceLabel(
                     getInstalledSource(skill.dirName, installedRecords),
+                    installedRecords?.[skill.dirName],
                   )}
                   onUpdate={() => void handleUpdateSkill(skill.dirName)}
                   onDelete={() => onDeleteMainSkill(skill.dirName)}
@@ -532,7 +546,7 @@ function SkillHubPage(props: SkillHubPageProps) {
                 skill={skill}
                 mode="discover"
                 selected={selectedKeys.has(skill.key)}
-                sourceLabel={sourceLabel(skill.source)}
+                sourceLabel={sourceLabel(skill.source, skill)}
                 onSelect={(selected) => toggleSelection(skill.key, selected)}
                 onInstall={() => openInstallDialog([skill])}
               />

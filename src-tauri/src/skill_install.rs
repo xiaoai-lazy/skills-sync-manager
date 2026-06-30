@@ -1,4 +1,4 @@
-use crate::models::{AppConfig, AppError, DiscoverableSkill, SkillRecord};
+use crate::models::{AppConfig, AppError, DiscoverableSkill, RepoRef, SkillRecord, default_github_host};
 use crate::skill_discover::iso8601_timestamp_now;
 use crate::skill_downloader::{self, copy_dir_recursive};
 use crate::skill_updates;
@@ -9,8 +9,8 @@ pub fn install_to_main(
     skill: &DiscoverableSkill,
     main_dir: &Path,
 ) -> Result<(), AppError> {
-    install_to_main_with_download(config, skill, main_dir, |owner, name, branch| {
-        skill_downloader::download_repo(owner, name, branch)
+    install_to_main_with_download(config, skill, main_dir, |repo_ref| {
+        skill_downloader::download_repo_ref(repo_ref)
     })
 }
 
@@ -18,10 +18,10 @@ pub fn install_to_main_with_download<F>(
     config: &mut AppConfig,
     skill: &DiscoverableSkill,
     main_dir: &Path,
-    download_repo: F,
+    download_repo_ref: F,
 ) -> Result<(), AppError>
 where
-    F: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
+    F: FnOnce(&RepoRef) -> Result<PathBuf, AppError>,
 {
     let install_path = main_dir.join(&skill.install_dir_name);
     if install_path.exists() {
@@ -30,7 +30,8 @@ where
         });
     }
 
-    let repo_root = download_repo(&skill.repo_owner, &skill.repo_name, &skill.repo_branch)?;
+    let repo_ref = skill.to_repo_ref();
+    let repo_root = download_repo_ref(&repo_ref)?;
     let source_dir = resolve_skill_directory(&repo_root, &skill.directory);
 
     if !source_dir.join("SKILL.md").is_file() {
@@ -46,6 +47,16 @@ where
     config.skill_records.insert(
         skill.install_dir_name.clone(),
         SkillRecord {
+            repo_host: if skill.repo_host.is_empty() {
+                default_github_host()
+            } else {
+                skill.repo_host.clone()
+            },
+            project_path: if skill.project_path.is_empty() {
+                format!("{}/{}", skill.repo_owner, skill.repo_name)
+            } else {
+                skill.project_path.clone()
+            },
             source: skill.source.clone(),
             repo_owner: skill.repo_owner.clone(),
             repo_name: skill.repo_name.clone(),
@@ -92,11 +103,13 @@ mod tests {
 
     fn sample_skill(key_suffix: &str) -> DiscoverableSkill {
         DiscoverableSkill {
-            key: format!("anthropics/skills:skills/{key_suffix}"),
+            key: format!("github.com/anthropics/skills:skills/{key_suffix}"),
             name: key_suffix.to_string(),
             description: "Test skill.".to_string(),
             directory: format!("skills/{key_suffix}"),
             install_dir_name: key_suffix.to_string(),
+            repo_host: default_github_host(),
+            project_path: "anthropics/skills".to_string(),
             repo_owner: "anthropics".to_string(),
             repo_name: "skills".to_string(),
             repo_branch: "main".to_string(),
@@ -110,7 +123,7 @@ mod tests {
         main_dir: &Path,
         repo_root: &Path,
     ) -> Result<(), AppError> {
-        install_to_main_with_download(config, skill, main_dir, |_, _, _| Ok(repo_root.to_path_buf()))
+        install_to_main_with_download(config, skill, main_dir, |_| Ok(repo_root.to_path_buf()))
     }
 
     #[test]

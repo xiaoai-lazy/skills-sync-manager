@@ -227,7 +227,7 @@ mod tests {
 
         let on_disk = fs::read_to_string(path).expect("read migrated config");
         assert!(on_disk.contains("skillRepos"));
-        assert!(on_disk.contains("\"version\": 3"));
+        assert!(on_disk.contains("\"version\": 4"));
     }
 
     #[test]

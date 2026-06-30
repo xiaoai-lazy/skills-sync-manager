@@ -41,6 +41,9 @@ export interface Installation {
 }
 
 export interface SkillRepo {
+  host: string;
+  provider: string;
+  projectPath: string;
   owner: string;
   name: string;
   branch: string;
@@ -48,6 +51,8 @@ export interface SkillRepo {
 }
 
 export interface SkillRecord {
+  repoHost: string;
+  projectPath: string;
   source: string;
   repoOwner: string;
   repoName: string;
@@ -63,15 +68,32 @@ export interface DiscoverableSkill {
   description: string;
   directory: string;
   installDirName: string;
+  repoHost: string;
+  projectPath: string;
   repoOwner: string;
   repoName: string;
   repoBranch: string;
   source: string;
 }
 
+export interface DiscoverSkillsResult {
+  skills: DiscoverableSkill[];
+  warnings: string[];
+}
+
 export interface SkillRepoChangeResult {
   repos: SkillRepo[];
   discoverSkills: DiscoverableSkill[];
+}
+
+export interface PreviewAddRepoResult {
+  canSave: boolean;
+  needsPat: boolean;
+  host: string | null;
+  provider: string | null;
+  projectPath: string | null;
+  branch: string | null;
+  error: AppErrorDto | null;
 }
 
 export interface SkillUpdateInfo {
@@ -104,6 +126,8 @@ export interface SmartPastePreview {
   name: string;
   description: string;
   installDirName: string;
+  repoHost: string;
+  projectPath: string;
   repoOwner: string;
   repoName: string;
   repoBranch: string;

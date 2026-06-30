@@ -478,7 +478,7 @@ function setupHubMocks(state: AppState = baseAppState): void {
 
   });
 
-  vi.mocked(discoverSkills).mockResolvedValue([]);
+  vi.mocked(discoverSkills).mockResolvedValue({ skills: [], warnings: [] });
 
   vi.mocked(checkSkillUpdates).mockResolvedValue([]);
 

@@ -120,6 +120,7 @@ mod tests {
     use crate::models::{AppConfig, Installation, SkillView, Target};
     use crate::models::{
         DiscoverableSkill, SkillDiscoverCache, SkillRecord, SkillUpdateCache, SkillUpdateInfo,
+        default_github_host,
     };
     use std::fs;
     use std::path::Path;
@@ -392,6 +393,8 @@ mod tests {
         config.skill_records.insert(
             "brainstorming".to_string(),
             SkillRecord {
+                repo_host: default_github_host(),
+                project_path: "owner/repo".to_string(),
                 source: "github".to_string(),
                 repo_owner: "owner".to_string(),
                 repo_name: "repo".to_string(),
@@ -427,6 +430,8 @@ mod tests {
                     description: "Test".to_string(),
                     directory: "skills/brainstorming".to_string(),
                     install_dir_name: "brainstorming".to_string(),
+                    repo_host: default_github_host(),
+                    project_path: "owner/repo".to_string(),
                     repo_owner: "owner".to_string(),
                     repo_name: "repo".to_string(),
                     repo_branch: "main".to_string(),
@@ -438,6 +443,8 @@ mod tests {
                     description: "Other".to_string(),
                     directory: "skills/other".to_string(),
                     install_dir_name: "other-skill".to_string(),
+                    repo_host: default_github_host(),
+                    project_path: "owner/repo".to_string(),
                     repo_owner: "owner".to_string(),
                     repo_name: "repo".to_string(),
                     repo_branch: "main".to_string(),
