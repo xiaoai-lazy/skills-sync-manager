@@ -13,8 +13,8 @@ function TargetDetail(props: TargetDetailProps) {
   if (!props.target) {
     return (
       <div className="target-detail empty">
-        <h2>No Target Selected</h2>
-        <p>Select a target from the sidebar to view and manage its skills.</p>
+        <h2>未选择目标</h2>
+        <p>从侧栏选择一个目标目录，以查看和管理 Skill。</p>
       </div>
     );
   }
@@ -23,52 +23,47 @@ function TargetDetail(props: TargetDetailProps) {
   const invalidSkills = props.skills.filter((s) => !s.skill.valid);
 
   return (
-    <div className="target-detail">
-      <header className="target-detail-header">
-        <h2>{props.target.name}</h2>
-        <div className="target-meta" title={props.target.skillsDir}>
+    <section className="target-detail">
+      <div className="target-hero">
+        <h1>{props.target.name}</h1>
+        <div className="target-path" title={props.target.skillsDir}>
           {props.target.skillsDir}
         </div>
-      </header>
+      </div>
 
-      <section className="skill-section">
-        <h3>Skills ({validSkills.length})</h3>
+      <div className="target-body">
         {validSkills.length === 0 ? (
-          <div className="empty-state">
-            <p>No valid skills found in the main library.</p>
-          </div>
+          <div className="empty-hint">主库中暂无有效 Skill</div>
         ) : (
-          <ul className="skill-list">
+          <div className="target-list-cards">
             {validSkills.map((item) => (
-              <li key={item.skill.dirName}>
-                <SkillRow
-                  item={item}
-                  pending={props.pendingSkillKey === item.skill.dirName}
-                  onToggle={props.onToggleSkill}
-                />
-              </li>
+              <SkillRow
+                key={item.skill.dirName}
+                item={item}
+                pending={props.pendingSkillKey === item.skill.dirName}
+                onToggle={props.onToggleSkill}
+              />
             ))}
-          </ul>
+          </div>
         )}
-      </section>
 
-      {invalidSkills.length > 0 && (
-        <section className="skill-section invalid-section">
-          <h3>Invalid Skills ({invalidSkills.length})</h3>
-          <ul className="skill-list">
-            {invalidSkills.map((item) => (
-              <li key={item.skill.dirName}>
+        {invalidSkills.length > 0 && (
+          <section className="target-invalid-section">
+            <h3 className="target-section-label">无效 Skill（{invalidSkills.length}）</h3>
+            <div className="target-list-cards invalid-section">
+              {invalidSkills.map((item) => (
                 <SkillRow
+                  key={item.skill.dirName}
                   item={item}
                   pending={props.pendingSkillKey === item.skill.dirName}
                   onToggle={props.onToggleSkill}
                 />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </section>
   );
 }
 

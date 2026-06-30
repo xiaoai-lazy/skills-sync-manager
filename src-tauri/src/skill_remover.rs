@@ -72,10 +72,24 @@ pub fn delete_main_skill(
                 && !crate::link_installer::same_path(&i.source_path, &source_path)
         });
 
+    cleanup_skill_hub_metadata(config, skill_dir_name);
+
     Ok(DeleteMainSkillResult {
         deleted_skill_dir_name: skill_dir_name.to_string(),
         removed_link_count: related.len(),
     })
+}
+
+fn cleanup_skill_hub_metadata(config: &mut AppConfig, skill_dir_name: &str) {
+    config.skill_records.remove(skill_dir_name);
+    config
+        .skill_update_cache
+        .updates
+        .retain(|update| update.dir_name != skill_dir_name);
+    config
+        .skill_discover_cache
+        .skills
+        .retain(|skill| skill.install_dir_name != skill_dir_name);
 }
 
 fn validate_skill_dir_name(name: &str) -> Result<(), AppError> {
@@ -104,6 +118,9 @@ fn validate_skill_dir_name(name: &str) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::models::{AppConfig, Installation, SkillView, Target};
+    use crate::models::{
+        DiscoverableSkill, SkillDiscoverCache, SkillRecord, SkillUpdateCache, SkillUpdateInfo,
+    };
     use std::fs;
     use std::path::Path;
 
@@ -364,6 +381,81 @@ mod tests {
         // Only the unrelated installation record should remain
         assert_eq!(config.installations.len(), 1);
         assert_eq!(config.installations[0].skill_dir_name, "other-skill");
+    }
+
+    #[test]
+    fn successful_deletion_cleans_skill_hub_metadata() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (mut config, main_dir) = create_config_with_main_dir(temp.path());
+        create_valid_skill(&main_dir, "brainstorming");
+
+        config.skill_records.insert(
+            "brainstorming".to_string(),
+            SkillRecord {
+                source: "github".to_string(),
+                repo_owner: "owner".to_string(),
+                repo_name: "repo".to_string(),
+                repo_branch: "main".to_string(),
+                directory: "skills/brainstorming".to_string(),
+                content_hash: "hash".to_string(),
+                installed_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+        );
+        config.skill_update_cache = SkillUpdateCache {
+            checked_at: Some("2026-01-01T00:00:00Z".to_string()),
+            updates: vec![
+                SkillUpdateInfo {
+                    dir_name: "brainstorming".to_string(),
+                    name: "brainstorming".to_string(),
+                    current_hash: Some("old".to_string()),
+                    remote_hash: "new".to_string(),
+                },
+                SkillUpdateInfo {
+                    dir_name: "other-skill".to_string(),
+                    name: "other-skill".to_string(),
+                    current_hash: Some("a".to_string()),
+                    remote_hash: "b".to_string(),
+                },
+            ],
+        };
+        config.skill_discover_cache = SkillDiscoverCache {
+            fetched_at: Some("2026-01-01T00:00:00Z".to_string()),
+            skills: vec![
+                DiscoverableSkill {
+                    key: "owner/repo/skills/brainstorming".to_string(),
+                    name: "brainstorming".to_string(),
+                    description: "Test".to_string(),
+                    directory: "skills/brainstorming".to_string(),
+                    install_dir_name: "brainstorming".to_string(),
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    repo_branch: "main".to_string(),
+                    source: "github".to_string(),
+                },
+                DiscoverableSkill {
+                    key: "owner/repo/skills/other".to_string(),
+                    name: "other".to_string(),
+                    description: "Other".to_string(),
+                    directory: "skills/other".to_string(),
+                    install_dir_name: "other-skill".to_string(),
+                    repo_owner: "owner".to_string(),
+                    repo_name: "repo".to_string(),
+                    repo_branch: "main".to_string(),
+                    source: "github".to_string(),
+                },
+            ],
+        };
+
+        delete_main_skill(&mut config, "brainstorming", true).expect("delete skill");
+
+        assert!(!config.skill_records.contains_key("brainstorming"));
+        assert_eq!(config.skill_update_cache.updates.len(), 1);
+        assert_eq!(config.skill_update_cache.updates[0].dir_name, "other-skill");
+        assert_eq!(config.skill_discover_cache.skills.len(), 1);
+        assert_eq!(
+            config.skill_discover_cache.skills[0].install_dir_name,
+            "other-skill"
+        );
     }
 
     #[test]

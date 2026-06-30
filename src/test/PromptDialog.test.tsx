@@ -81,7 +81,7 @@ describe('PromptDialog', () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    await user.click(screen.getByRole('button', { name: /取消/i }));
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -151,7 +151,7 @@ describe('PromptDialog', () => {
 
     const user = userEvent.setup();
     const input = screen.getByLabelText('Directory path');
-    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+    await user.click(screen.getByRole('button', { name: '选择目录' }));
 
     expect(onPickDirectory).toHaveBeenCalledTimes(1);
     expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
@@ -175,7 +175,7 @@ describe('PromptDialog', () => {
 
     const user = userEvent.setup();
     const input = screen.getByLabelText('Directory path');
-    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+    await user.click(screen.getByRole('button', { name: '选择目录' }));
 
     expect(onPickDirectory).toHaveBeenCalledTimes(1);
     expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
@@ -199,13 +199,13 @@ describe('PromptDialog', () => {
 
     const user = userEvent.setup();
     const input = screen.getByLabelText('Directory path');
-    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+    await user.click(screen.getByRole('button', { name: '选择目录' }));
 
     expect(onPickDirectory).toHaveBeenCalledTimes(1);
     expect(onPickDirectory).toHaveBeenCalledWith('/tmp/skills');
     expect(input).toHaveValue('/tmp/skills');
     expect(
-      screen.getByText('Directory selection failed. Try again or enter the path manually.')
+      screen.getByText('目录选择失败，请重试或手动输入路径。')
     ).toBeInTheDocument();
   });
 
@@ -232,7 +232,7 @@ describe('PromptDialog', () => {
 
     const user = userEvent.setup();
     const input = screen.getByLabelText('Directory path');
-    await user.click(screen.getByRole('button', { name: 'Choose Directory' }));
+    await user.click(screen.getByRole('button', { name: '选择目录' }));
 
     rerender(
       <PromptDialog

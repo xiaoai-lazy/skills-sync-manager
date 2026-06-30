@@ -102,6 +102,23 @@ fn validate_skill_dir(skill_dir: &Path) -> Result<SkillView, AppError> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedSkillMetadata {
+    pub name: String,
+    pub description: String,
+}
+
+pub fn parse_valid_skill_metadata(raw: &str) -> Option<ParsedSkillMetadata> {
+    match parse_skill_frontmatter(raw) {
+        Ok(metadata) => {
+            let name = trim_non_empty(metadata.name)?;
+            let description = trim_non_empty(metadata.description)?;
+            Some(ParsedSkillMetadata { name, description })
+        }
+        Err(_) => None,
+    }
+}
+
 fn parse_skill_frontmatter(raw: &str) -> Result<SkillMetadata, Vec<String>> {
     let Some(after_opening_delimiter) = raw.strip_prefix("---") else {
         return Err(vec![MISSING_FRONTMATTER.to_string()]);

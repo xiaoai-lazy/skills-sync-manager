@@ -13,7 +13,7 @@ export interface TargetFormDialogProps {
   onCancel: () => void;
 }
 
-const DIRECTORY_PICKER_ERROR = 'Directory selection failed. Try again or enter the path manually.';
+const DIRECTORY_PICKER_ERROR = '目录选择失败，请重试或手动输入路径。';
 
 function TargetFormDialog(props: TargetFormDialogProps) {
   const {
@@ -21,8 +21,8 @@ function TargetFormDialog(props: TargetFormDialogProps) {
     title,
     initialName = '',
     initialSkillsDir = '',
-    confirmLabel = 'Save',
-    pickDirectoryLabel = 'Choose Directory',
+    confirmLabel = '保存',
+    pickDirectoryLabel = '选择目录',
     onPickDirectory,
     onConfirm,
     onCancel,
@@ -112,7 +112,7 @@ function TargetFormDialog(props: TargetFormDialogProps) {
       actions={
         <>
           <button className="secondary-button" onClick={onCancel}>
-            Cancel
+            取消
           </button>
           <button onClick={handleConfirm} disabled={!canSubmit}>
             {confirmLabel}
@@ -121,7 +121,7 @@ function TargetFormDialog(props: TargetFormDialogProps) {
       }
     >
       <div className="dialog-form-field">
-        <label htmlFor="target-form-name">Target name</label>
+        <label htmlFor="target-form-name">目标名称</label>
         <input
           id="target-form-name"
           type="text"
@@ -131,7 +131,7 @@ function TargetFormDialog(props: TargetFormDialogProps) {
         />
       </div>
       <div className="dialog-form-field">
-        <label htmlFor="target-form-skills-dir">Skills directory path</label>
+        <label htmlFor="target-form-skills-dir">Skill 目录路径</label>
         <div className="directory-input-row">
           <input
             id="target-form-skills-dir"
@@ -142,7 +142,7 @@ function TargetFormDialog(props: TargetFormDialogProps) {
           />
           {onPickDirectory ? (
             <button type="button" onClick={handlePickDirectory} disabled={isPickingDirectory}>
-              {isPickingDirectory ? 'Choosing...' : pickDirectoryLabel}
+              {isPickingDirectory ? '选择中…' : pickDirectoryLabel}
             </button>
           ) : null}
         </div>

@@ -93,7 +93,7 @@ mod tests {
 
         // Missing config returns default
         let config = store.load().expect("load default");
-        assert_eq!(config.version, 1);
+        assert_eq!(config.version, crate::models::CURRENT_CONFIG_VERSION);
         assert!(config.settings.main_skills_dir.is_none());
 
         // Save and load round-trips

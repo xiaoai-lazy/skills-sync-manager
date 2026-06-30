@@ -17,8 +17,11 @@ Maintaining Skills across multiple Agent directories can easily create problems.
 
 ## 3. Core features
 
-- Set one global Skills source directory.
-- Add and manage multiple Claude / local Agent target sync directories.
+- **Skill Hub (v0.3)**: browse, install, and update Skills from GitHub / skills.sh repos in the **Skill 中心** view.
+- **Smart Paste**: paste a GitHub or skills.sh URL to preview and install a Skill into the main library in one step.
+- **Repo management**: add, enable, or disable Skill source repositories from Skill 中心.
+- Set one global Skills source directory (configured in Skill 中心, not in the sidebar).
+- Add and manage multiple Claude / local Agent target sync directories from the sidebar **目标目录** section.
 - Automatically validate Skills and identify items that need fixing.
 - Install / uninstall selected Skill links per target directory.
 - Safely delete a Skill from the main library after a second confirmation, reducing accidental deletion risk.
@@ -49,13 +52,16 @@ Go to [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/relea
 
 ## 5. Quick start
 
-Complete the basic setup in 5 steps:
+Complete the basic setup in a few steps:
 
-1. Open the Skills Sync Manager client.
-2. Configure your local Skills main library directory (source directory).
-3. Add the Agent / Claude target directories you want to sync to.
-4. Select the target directory from the sidebar.
-5. Check and enable the Skills you want to sync; the app will deploy the links automatically.
+1. Open the Skills Sync Manager client. The default view is **Skill 中心**.
+2. In Skill 中心, set your local Skills main library directory (source directory).
+3. (Optional) Open **仓库管理** to add GitHub or skills.sh repos, then use **Discover** to browse and install Skills into the main library. You can also paste a repo or skills.sh link in **Smart Paste** for quick install.
+4. In the sidebar **目标目录** section, add the Agent / Claude target directories you want to sync to.
+5. Select a target directory from the sidebar to open its detail view.
+6. Check and enable the Skills you want to sync; the app will deploy the links automatically.
+
+The sidebar separates **Skill 中心** (main library management) from **目标目录** (per-target sync). The main library path is shown and edited only in Skill 中心, not in the sidebar.
 
 Valid Skill rule: each direct child folder under the main library is treated as one Skill. It must contain a `SKILL.md` file, and the YAML frontmatter must define `name` and `description` fields.
 
@@ -68,3 +74,12 @@ The tool uses a conservative safety model to avoid data risk:
 - It only uninstalls links created by this tool and does not modify your native files.
 - It automatically blocks invalid Skills from being installed.
 - Deleting a Skill from the main library is irreversible and requires a second manual confirmation.
+
+## 7. For developers
+
+Tauri commands are split by responsibility:
+
+- **`install_hub_skill`**: download or import a Skill into the **main library** from Skill Hub (GitHub, skills.sh, Smart Paste). Returns updated Skill Hub local state.
+- **`install_skill`**: create a **symlink/junction** from an existing main-library Skill into a **target directory**. Used by target sync, not hub discovery.
+
+Other Skill Hub commands include `discover_skills`, `parse_smart_paste`, `check_skill_updates`, `update_skill`, and `update_all_skills`. See `src/api/skillHub.ts` and `src-tauri/src/commands/skill_hub.rs`.

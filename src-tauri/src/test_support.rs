@@ -66,6 +66,7 @@ pub mod fixtures {
                 })
                 .collect(),
             installations: Vec::new(),
+            ..Default::default()
         }
     }
 }

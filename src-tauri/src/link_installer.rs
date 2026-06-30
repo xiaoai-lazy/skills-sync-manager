@@ -336,6 +336,7 @@ mod tests {
                 updated_at: "1".to_string(),
             }],
             installations: Vec::new(),
+            ..Default::default()
         };
         (config, target_dir)
     }
@@ -635,6 +636,7 @@ mod tests {
                     created_at: "1".to_string(),
                 },
             ],
+            ..Default::default()
         };
 
         fs_adapter::create_dir_link(
@@ -729,6 +731,7 @@ mod tests {
                 updated_at: "1".to_string(),
             }],
             installations: Vec::new(),
+            ..Default::default()
         };
 
         // Install the skill first

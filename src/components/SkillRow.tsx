@@ -35,6 +35,20 @@ export function stateLabel(state: SkillInstallState): string {
   return statusLabelMap[state];
 }
 
+function skillAvatarStyle(id: string): React.CSSProperties {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return { background: `hsl(${hue} 55% 48%)` };
+}
+
+function skillInitial(name: string): string {
+  const ch = name.replace(/^[(无效)\s]+/, '').trim()[0];
+  return (ch || '?').toUpperCase();
+}
+
 function SkillRow(props: SkillRowProps) {
   const { item, pending } = props;
   const { skill, state } = item;
@@ -46,22 +60,24 @@ function SkillRow(props: SkillRowProps) {
   const explanation = stateExplanationMap[state];
   const detailMessage =
     state === 'invalidSkill'
-      ? skill.validationErrors.join(', ')
+      ? skill.validationErrors.join('，')
       : item.message ?? null;
 
+  const displayName = isInvalid
+    ? `(无效) ${skill.name ?? skill.dirName}`
+    : skill.name ?? skill.dirName;
+  const desc = skill.description ?? skill.dirName;
+
   return (
-    <div className={`skill-row ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}>
-      <div className="skill-info">
-        <div className="skill-name">{skill.name ?? skill.dirName}</div>
-        {skill.description && (
-          <div className="skill-description">{skill.description}</div>
-        )}
-        <div className="skill-dir">{skill.dirName}</div>
+    <div
+      className={`target-skill-card ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}
+    >
+      <div className="skill-avatar" style={skillAvatarStyle(skill.dirName)}>
+        {skillInitial(displayName)}
       </div>
-      <div className="skill-status">
-        <span className={`status-badge status-${state}`}>
-          {stateLabel(state)}
-        </span>
+      <div className="skill-info">
+        <div className="skill-name">{displayName}</div>
+        <div className="skill-desc">{desc}</div>
         {(explanation || detailMessage) && (
           <div className="skill-message">
             {explanation && detailMessage
@@ -70,6 +86,7 @@ function SkillRow(props: SkillRowProps) {
           </div>
         )}
       </div>
+      <span className={`status-badge status-${state}`}>{stateLabel(state)}</span>
       <div className="skill-actions">
         <input
           type="checkbox"
@@ -77,6 +94,7 @@ function SkillRow(props: SkillRowProps) {
           disabled={!toggleEnabled}
           onChange={() => props.onToggle(skill.dirName, state)}
           title={toggleEnabled ? (isInstalled ? '卸载' : '安装') : '无法切换'}
+          aria-label={`${displayName} 安装状态`}
         />
       </div>
     </div>

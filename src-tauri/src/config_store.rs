@@ -1,4 +1,5 @@
-use crate::models::{AppConfig, AppError};
+use crate::models::{migrate_config, AppConfig, AppError};
+use crate::skill_repos;
 use std::fs;
 use std::path::PathBuf;
 
@@ -22,10 +23,26 @@ impl ConfigStore {
             message: err.to_string(),
         })?;
 
-        serde_json::from_str(&raw).map_err(|err| AppError::ConfigParse {
+        let mut config: AppConfig = serde_json::from_str(&raw).map_err(|err| AppError::ConfigParse {
             path: self.config_path.clone(),
             message: err.to_string(),
-        })
+        })?;
+
+        let mut changed = false;
+        if migrate_config(&mut config) {
+            changed = true;
+        }
+        if skill_repos::ensure_builtin_repos(&mut config) {
+            changed = true;
+        }
+        if skill_repos::dedupe_skill_repos(&mut config) {
+            changed = true;
+        }
+        if changed {
+            self.save(&config)?;
+        }
+
+        Ok(config)
     }
 
     pub fn save(&self, config: &AppConfig) -> Result<(), AppError> {
@@ -103,7 +120,7 @@ impl ConfigStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Installation, LinkStrategy, LinkType, Target};
+    use crate::models::{migrate_config, AppConfig, AppError, CURRENT_CONFIG_VERSION, Installation, LinkStrategy, LinkType, Target};
 
     #[test]
     fn missing_config_returns_default() {
@@ -112,7 +129,7 @@ mod tests {
 
         let config = store.load().expect("load default config");
 
-        assert_eq!(config.version, 1);
+        assert_eq!(config.version, CURRENT_CONFIG_VERSION);
         assert!(config.settings.main_skills_dir.is_none());
         assert_eq!(config.settings.link_strategy, LinkStrategy::Auto);
         assert!(config.targets.is_empty());
@@ -193,6 +210,42 @@ mod tests {
     }
 
     #[test]
+    fn load_v0_2_config_migrates_and_persists() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.json");
+        let old = r#"{"version":1,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[],"installations":[]}"#;
+        fs::write(&path, old).expect("write v0.2 config");
+        let store = ConfigStore::new(path.clone());
+
+        let config = store.load().expect("load should migrate v0.2 config");
+
+        assert_eq!(config.version, crate::models::CURRENT_CONFIG_VERSION);
+        assert_eq!(config.skill_repos.len(), 1);
+        assert_eq!(config.skill_repos[0].owner, "obra");
+        assert_eq!(config.skill_repos[0].name, "superpowers");
+        assert!(config.skill_records.is_empty());
+
+        let on_disk = fs::read_to_string(path).expect("read migrated config");
+        assert!(on_disk.contains("skillRepos"));
+        assert!(on_disk.contains("\"version\": 3"));
+    }
+
+    #[test]
+    fn current_config_does_not_rewrite_on_load() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = ConfigStore::new(temp.path().join("config.json"));
+        let config = AppConfig::default();
+        store.save(&config).expect("save config");
+
+        let before = fs::read_to_string(store.config_path.clone()).expect("read config");
+        let loaded = store.load().expect("reload config");
+        let after = fs::read_to_string(store.config_path.clone()).expect("read config again");
+
+        assert_eq!(loaded, config);
+        assert_eq!(before, after);
+    }
+
+    #[test]
     fn malformed_config_returns_error_without_overwrite() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join("config.json");
@@ -203,6 +256,17 @@ mod tests {
 
         assert!(matches!(error, AppError::ConfigParse { .. }));
         assert_eq!(fs::read_to_string(path).unwrap(), "{not json");
+    }
+
+    #[test]
+    fn default_config_includes_skill_hub_fields() {
+        let config = AppConfig::default();
+        assert_eq!(config.skill_repos.len(), 1);
+        assert_eq!(config.skill_repos[0].owner, "obra");
+        assert_eq!(config.skill_repos[0].name, "superpowers");
+        assert!(config.skill_records.is_empty());
+        assert!(config.skill_discover_cache.skills.is_empty());
+        assert!(config.skill_update_cache.updates.is_empty());
     }
 
     #[test]

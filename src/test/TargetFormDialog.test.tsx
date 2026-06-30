@@ -32,8 +32,8 @@ describe('TargetFormDialog', () => {
     );
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Skills directory path')).toBeInTheDocument();
+    expect(screen.getByLabelText('目标名称')).toBeInTheDocument();
+    expect(screen.getByLabelText('Skill 目录路径')).toBeInTheDocument();
   });
 
   it('disables confirm button when fields are empty or whitespace-only', async () => {
@@ -48,8 +48,8 @@ describe('TargetFormDialog', () => {
     );
 
     const user = userEvent.setup();
-    const nameInput = screen.getByLabelText('Target name');
-    const dirInput = screen.getByLabelText('Skills directory path');
+    const nameInput = screen.getByLabelText('目标名称');
+    const dirInput = screen.getByLabelText('Skill 目录路径');
     const confirmButton = screen.getByRole('button', { name: 'Add' });
 
     expect(confirmButton).toBeDisabled();
@@ -80,8 +80,8 @@ describe('TargetFormDialog', () => {
     );
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText('Target name'), '  Claude  ');
-    await user.type(screen.getByLabelText('Skills directory path'), '  /tmp/target  ');
+    await user.type(screen.getByLabelText('目标名称'), '  Claude  ');
+    await user.type(screen.getByLabelText('Skill 目录路径'), '  /tmp/target  ');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -101,8 +101,8 @@ describe('TargetFormDialog', () => {
       />
     );
 
-    expect(screen.getByLabelText('Target name')).toHaveValue('Claude Global');
-    expect(screen.getByLabelText('Skills directory path')).toHaveValue('/tmp/global');
+    expect(screen.getByLabelText('目标名称')).toHaveValue('Claude Global');
+    expect(screen.getByLabelText('Skill 目录路径')).toHaveValue('/tmp/global');
   });
 
   it('calls onCancel when cancel is clicked', async () => {
@@ -119,7 +119,7 @@ describe('TargetFormDialog', () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    await user.click(screen.getByRole('button', { name: /取消/i }));
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -170,7 +170,7 @@ describe('TargetFormDialog', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('fills Skills directory path when onPickDirectory resolves to a string', async () => {
+  it('fills Skill 目录路径 when onPickDirectory resolves to a string', async () => {
     const onPickDirectory = vi.fn().mockResolvedValue('/chosen/target');
     const user = userEvent.setup();
 
@@ -185,10 +185,10 @@ describe('TargetFormDialog', () => {
       />
     );
 
-    const dirInput = screen.getByLabelText('Skills directory path');
+    const dirInput = screen.getByLabelText('Skill 目录路径');
     expect(dirInput).toHaveValue('/tmp/target');
 
-    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    const pickButton = screen.getByRole('button', { name: '选择目录' });
     await user.click(pickButton);
 
     await waitFor(() => expect(dirInput).toHaveValue('/chosen/target'));
@@ -210,13 +210,13 @@ describe('TargetFormDialog', () => {
       />
     );
 
-    const dirInput = screen.getByLabelText('Skills directory path');
+    const dirInput = screen.getByLabelText('Skill 目录路径');
     expect(dirInput).toHaveValue('/tmp/target');
 
-    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    const pickButton = screen.getByRole('button', { name: '选择目录' });
     await user.click(pickButton);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose Directory' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: '选择目录' })).toBeEnabled());
     expect(dirInput).toHaveValue('/tmp/target');
   });
 
@@ -235,15 +235,15 @@ describe('TargetFormDialog', () => {
       />
     );
 
-    const dirInput = screen.getByLabelText('Skills directory path');
+    const dirInput = screen.getByLabelText('Skill 目录路径');
     expect(dirInput).toHaveValue('/tmp/target');
 
-    const pickButton = screen.getByRole('button', { name: 'Choose Directory' });
+    const pickButton = screen.getByRole('button', { name: '选择目录' });
     await user.click(pickButton);
 
     await waitFor(() =>
       expect(
-        screen.getByText('Directory selection failed. Try again or enter the path manually.')
+        screen.getByText('目录选择失败，请重试或手动输入路径。')
       ).toBeInTheDocument()
     );
     expect(dirInput).toHaveValue('/tmp/target');

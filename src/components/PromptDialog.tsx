@@ -13,7 +13,7 @@ export interface PromptDialogProps {
   onCancel: () => void;
 }
 
-const DIRECTORY_PICKER_ERROR = 'Directory selection failed. Try again or enter the path manually.';
+const DIRECTORY_PICKER_ERROR = '目录选择失败，请重试或手动输入路径。';
 
 function PromptDialog(props: PromptDialogProps) {
   const {
@@ -21,8 +21,8 @@ function PromptDialog(props: PromptDialogProps) {
     title,
     label,
     defaultValue = '',
-    confirmLabel = 'OK',
-    pickDirectoryLabel = 'Choose Directory',
+    confirmLabel = '确定',
+    pickDirectoryLabel = '选择目录',
     onPickDirectory,
     onConfirm,
     onCancel,
@@ -107,7 +107,7 @@ function PromptDialog(props: PromptDialogProps) {
       actions={
         <>
           <button className="secondary-button" onClick={onCancel}>
-            Cancel
+            取消
           </button>
           <button onClick={handleConfirm}>
             {confirmLabel}
@@ -127,7 +127,7 @@ function PromptDialog(props: PromptDialogProps) {
           />
           {onPickDirectory ? (
             <button type="button" onClick={handlePickDirectory} disabled={isPickingDirectory}>
-              {isPickingDirectory ? 'Choosing...' : pickDirectoryLabel}
+              {isPickingDirectory ? '选择中…' : pickDirectoryLabel}
             </button>
           ) : null}
         </div>

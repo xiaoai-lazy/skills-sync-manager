@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Current on-disk config schema version. Bump when adding breaking fields.
+pub const CURRENT_CONFIG_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -8,17 +12,43 @@ pub struct AppConfig {
     pub settings: Settings,
     pub targets: Vec<Target>,
     pub installations: Vec<Installation>,
+    #[serde(default)]
+    pub skill_repos: Vec<SkillRepo>,
+    #[serde(default)]
+    pub skill_records: HashMap<String, SkillRecord>,
+    #[serde(default)]
+    pub skill_discover_cache: SkillDiscoverCache,
+    #[serde(default)]
+    pub skill_update_cache: SkillUpdateCache,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: CURRENT_CONFIG_VERSION,
             settings: Settings::default(),
             targets: Vec::new(),
             installations: Vec::new(),
+            skill_repos: vec![SkillRepo {
+                owner: "obra".to_string(),
+                name: "superpowers".to_string(),
+                branch: "main".to_string(),
+                enabled: true,
+            }],
+            skill_records: HashMap::new(),
+            skill_discover_cache: SkillDiscoverCache::default(),
+            skill_update_cache: SkillUpdateCache::default(),
         }
     }
+}
+
+/// Upgrade an on-disk config to the current schema. Returns true when persisted state changed.
+pub fn migrate_config(config: &mut AppConfig) -> bool {
+    if config.version >= CURRENT_CONFIG_VERSION {
+        return false;
+    }
+    config.version = CURRENT_CONFIG_VERSION;
+    true
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -111,6 +141,109 @@ pub struct DeleteMainSkillResult {
     pub removed_link_count: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepo {
+    pub owner: String,
+    pub name: String,
+    pub branch: String,
+    pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRecord {
+    pub source: String,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub repo_branch: String,
+    pub directory: String,
+    pub content_hash: String,
+    pub installed_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDiscoverCache {
+    pub fetched_at: Option<String>,
+    pub skills: Vec<DiscoverableSkill>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillUpdateCache {
+    pub checked_at: Option<String>,
+    pub updates: Vec<SkillUpdateInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableSkill {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub directory: String,
+    pub install_dir_name: String,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub repo_branch: String,
+    pub source: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRepoChangeResult {
+    pub repos: Vec<SkillRepo>,
+    pub discover_skills: Vec<DiscoverableSkill>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillUpdateInfo {
+    pub dir_name: String,
+    pub name: String,
+    pub current_hash: Option<String>,
+    pub remote_hash: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAllSkillsResult {
+    pub updated: Vec<String>,
+    pub failed: Vec<UpdateAllSkillsFailure>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAllSkillsFailure {
+    pub dir_name: String,
+    pub error: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillHubLocalState {
+    pub skills: Vec<SkillView>,
+    pub valid_count: u32,
+    pub invalid_count: u32,
+    pub pending_update_count: u32,
+    pub last_scan_at: String,
+    pub skill_records: HashMap<String, SkillRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartPastePreview {
+    pub name: String,
+    pub description: String,
+    pub install_dir_name: String,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub repo_branch: String,
+    pub directory: String,
+    pub source: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppState {
@@ -162,7 +295,37 @@ pub enum AppError {
         path: Option<PathBuf>,
         message: String,
     },
+    DownloadFailed {
+        url: String,
+        status: Option<u16>,
+        message: String,
+    },
+    DiscoverInProgress,
+    DirExists {
+        path: PathBuf,
+    },
+    SkillDirNotFound {
+        path: PathBuf,
+    },
+    UpdatesInProgress,
+    UpdateNotPending {
+        dir_name: String,
+    },
+    InvalidInput {
+        input: String,
+        message: String,
+    },
+    MissingSkillPath {
+        input: String,
+    },
+    SkillRepoNotFound {
+        owner: String,
+        name: String,
+    },
 }
+
+pub const SMART_PASTE_GITHUB_EXAMPLE: &str =
+    "https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +396,53 @@ impl AppError {
                     Some(path) => format!("文件系统错误 {}: {}", path.display(), message),
                     None => format!("文件系统错误：{}", message),
                 },
+            },
+            AppError::DownloadFailed {
+                url,
+                status,
+                message,
+            } => AppErrorDto {
+                code: "downloadFailed".to_string(),
+                message: match status {
+                    Some(code) => format!("下载失败 {} (HTTP {}): {}", url, code, message),
+                    None => format!("下载失败 {}: {}", url, message),
+                },
+            },
+            AppError::DiscoverInProgress => AppErrorDto {
+                code: "discoverInProgress".to_string(),
+                message: "Skill 发现正在进行中，请稍后再试".to_string(),
+            },
+            AppError::DirExists { path } => AppErrorDto {
+                code: "dirExists".to_string(),
+                message: format!("目标目录已存在：{}", path.display()),
+            },
+            AppError::SkillDirNotFound { path } => AppErrorDto {
+                code: "skillDirNotFound".to_string(),
+                message: format!("未找到有效的 Skill 目录：{}", path.display()),
+            },
+            AppError::UpdatesInProgress => AppErrorDto {
+                code: "updatesInProgress".to_string(),
+                message: "Skill 更新检查正在进行中，请稍后再试".to_string(),
+            },
+            AppError::UpdateNotPending { dir_name } => AppErrorDto {
+                code: "notPending".to_string(),
+                message: format!("Skill '{}' 不在待更新列表中", dir_name),
+            },
+            AppError::InvalidInput { input, message } => AppErrorDto {
+                code: "invalidInput".to_string(),
+                message: format!("无法识别链接格式：{} ({})", input, message),
+            },
+            AppError::MissingSkillPath { input } => AppErrorDto {
+                code: "missingSkillPath".to_string(),
+                message: format!(
+                    "链接「{}」只包含仓库信息，请粘贴指向 Skill 目录或 SKILL.md 的 GitHub 地址。示例：{}",
+                    input.trim(),
+                    SMART_PASTE_GITHUB_EXAMPLE
+                ),
+            },
+            AppError::SkillRepoNotFound { owner, name } => AppErrorDto {
+                code: "skillRepoNotFound".to_string(),
+                message: format!("找不到 Skill 仓库 {}/{}", owner, name),
             },
         }
     }
@@ -311,6 +521,45 @@ impl std::fmt::Display for AppError {
                 } else {
                     write!(formatter, "filesystem error: {}", message)
                 }
+            }
+            AppError::DownloadFailed {
+                url,
+                status,
+                message,
+            } => {
+                if let Some(status) = status {
+                    write!(
+                        formatter,
+                        "download failed for {} (HTTP {}): {}",
+                        url, status, message
+                    )
+                } else {
+                    write!(formatter, "download failed for {}: {}", url, message)
+                }
+            }
+            AppError::DiscoverInProgress => {
+                write!(formatter, "skill discovery already in progress")
+            }
+            AppError::DirExists { path } => {
+                write!(formatter, "directory already exists at {}", path.display())
+            }
+            AppError::SkillDirNotFound { path } => {
+                write!(formatter, "skill directory not found at {}", path.display())
+            }
+            AppError::UpdatesInProgress => {
+                write!(formatter, "skill update check already in progress")
+            }
+            AppError::UpdateNotPending { dir_name } => {
+                write!(formatter, "skill '{}' is not pending update", dir_name)
+            }
+            AppError::InvalidInput { input, message } => {
+                write!(formatter, "invalid input '{}': {}", input, message)
+            }
+            AppError::MissingSkillPath { input } => {
+                write!(formatter, "missing skill path in input '{}'", input)
+            }
+            AppError::SkillRepoNotFound { owner, name } => {
+                write!(formatter, "skill repo not found: {}/{}", owner, name)
             }
         }
     }

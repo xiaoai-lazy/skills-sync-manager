@@ -1,6 +1,6 @@
 {
   "name": "skills-sync-manager",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "test": "vitest run --passWithNoTests",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "prototype": "node scripts/serve-prototype.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

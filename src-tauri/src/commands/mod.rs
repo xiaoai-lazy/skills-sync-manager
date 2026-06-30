@@ -2,7 +2,9 @@ use crate::models::{AppConfig, AppError, AppErrorDto, AppState};
 use std::path::PathBuf;
 use tauri::Manager;
 
-fn store_from_app(app: &tauri::AppHandle) -> Result<crate::config_store::ConfigStore, AppError> {
+pub mod skill_hub;
+
+pub(crate) fn store_from_app(app: &tauri::AppHandle) -> Result<crate::config_store::ConfigStore, AppError> {
     let app_data_dir = app.path().app_data_dir().map_err(|err| AppError::Io {
         path: None,
         message: format!("failed to resolve app data directory: {}", err),
@@ -245,6 +247,7 @@ mod tests {
             },
             targets,
             installations: Vec::new(),
+            ..Default::default()
         }
     }
 
