@@ -1,4 +1,3 @@
-import React from 'react';
 import type { SkillWithTargetState, SkillInstallState } from '../model/types';
 
 export interface SkillRowProps {

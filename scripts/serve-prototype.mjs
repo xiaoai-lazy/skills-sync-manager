@@ -28,7 +28,7 @@ const server = createServer(async (req, res) => {
 
 function listen(port) {
   server.listen(port, () => {
-    console.log(`Prototype: http://localhost:${port}/v0.4-gitlab-sources-prototype.html`);
+    console.log(`Prototype: http://localhost:${port}/v0.5-prototype.html`);
   });
 }
 

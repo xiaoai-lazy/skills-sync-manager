@@ -268,7 +268,7 @@ fn extract_skills_sh_query(input: &str) -> Option<String> {
     let path = without_scheme
         .strip_prefix("skills.sh/")
         .or_else(|| without_scheme.strip_prefix("www.skills.sh/"))?;
-    let segment = path.split('/').filter(|part| !part.is_empty()).last()?;
+    let segment = path.split('/').filter(|part| !part.is_empty()).next_back()?;
     if segment.is_empty() {
         None
     } else {
@@ -438,7 +438,7 @@ fn parse_gitlab_input(input: &str) -> Result<ParsedGitLab, AppError> {
     let (project_segment, remainder) = if let Some(index) = path_only.find("/-/") {
         (&path_only[..index], Some(&path_only[index + 3..]))
     } else {
-        (path_only.as_ref(), None)
+        (path_only, None)
     };
 
     let project_path = project_segment

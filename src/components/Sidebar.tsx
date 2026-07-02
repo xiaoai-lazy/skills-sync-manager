@@ -1,21 +1,31 @@
-import React from 'react';
-import type { Target } from '../model/types';
+import type { Project, Target } from '../model/types';
+import ProjectTree from './ProjectTree';
+import TargetRow from './TargetRow';
 
 export type MainView = 'skill-hub' | 'target';
 
 export interface SidebarProps {
   targets: Target[];
+  projects: Project[];
+  expandedProjectIds: ReadonlySet<string>;
   selectedTargetId: string | null;
+  selectedProjectId: string | null;
   mainView: MainView;
   onOpenSkillHub: () => void;
   onSelectTarget: (targetId: string) => void;
-  onAddTarget: () => void;
+  onToggleProject: (projectId: string) => void;
+  onAddGlobalTarget: () => void;
+  onAddProject: () => void;
+  onAddProjectTarget: (projectId: string) => void;
   onEditTarget: (target: Target) => void;
+  onEditProject: (project: Project) => void;
   onDeleteTarget: (target: Target) => void;
+  onDeleteProject: (project: Project) => void;
 }
 
 function Sidebar(props: SidebarProps) {
   const isSkillHubActive = props.mainView === 'skill-hub';
+  const globalTargets = props.targets.filter((target) => target.scope === 'global');
 
   return (
     <aside className="sidebar">
@@ -43,64 +53,75 @@ function Sidebar(props: SidebarProps) {
         </button>
       </nav>
 
-      <div className="sidebar-section">
-        <div className="section-label">目标目录</div>
-        {props.targets.length === 0 ? (
-          <div className="sidebar-empty">暂无目标目录</div>
+      <div className="sidebar-block">
+        <div className="section-label">
+          <span>Agent</span>
+          <div className="section-label-actions">
+            <span className="section-badge">{globalTargets.length}</span>
+            <button
+              type="button"
+              className="section-add-btn"
+              onClick={props.onAddGlobalTarget}
+              aria-label="Add global target"
+              title="添加目标"
+            >
+              +
+            </button>
+          </div>
+        </div>
+        {globalTargets.length === 0 ? (
+          <div className="sidebar-empty">暂无用户级目标</div>
         ) : (
           <ul className="target-list">
-            {props.targets.map((target) => {
+            {globalTargets.map((target) => {
               const isSelected =
                 props.mainView === 'target' && target.id === props.selectedTargetId;
               return (
-                <li
+                <TargetRow
                   key={target.id}
-                  className={`target-item ${isSelected ? 'selected' : ''}`}
-                  onClick={() => props.onSelectTarget(target.id)}
-                >
-                  <span className="target-dot" />
-                  <span className="target-name" title={target.skillsDir}>
-                    {target.name}
-                  </span>
-                  <div className="target-actions">
-                    <button
-                      type="button"
-                      className="icon-button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onEditTarget(target);
-                      }}
-                      aria-label={`Edit target ${target.name}`}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button danger-button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onDeleteTarget(target);
-                      }}
-                      aria-label={`Delete target ${target.name}`}
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </li>
+                  target={target}
+                  isSelected={isSelected}
+                  onSelect={() => props.onSelectTarget(target.id)}
+                  onEdit={props.onEditTarget}
+                  onDelete={props.onDeleteTarget}
+                />
               );
             })}
           </ul>
         )}
-        <div className="sidebar-footer">
-          <button
-            type="button"
-            className="btn-add-target"
-            onClick={props.onAddTarget}
-            aria-label="Add target"
-          >
-            + 添加目标
-          </button>
+      </div>
+
+      <div className="sidebar-block sidebar-block-projects">
+        <div className="section-label">
+          <span>项目</span>
+          <div className="section-label-actions">
+            <span className="section-badge">{props.projects.length}</span>
+            <button
+              type="button"
+              className="section-add-btn"
+              onClick={props.onAddProject}
+              aria-label="Add project"
+              title="添加项目"
+            >
+              +
+            </button>
+          </div>
         </div>
+        <ProjectTree
+          projects={props.projects}
+          targets={props.targets}
+          expandedProjectIds={props.expandedProjectIds}
+          selectedProjectId={props.selectedProjectId}
+          selectedTargetId={props.selectedTargetId}
+          mainView={props.mainView}
+          onToggleProject={props.onToggleProject}
+          onAddProjectTarget={props.onAddProjectTarget}
+          onEditProject={props.onEditProject}
+          onDeleteProject={props.onDeleteProject}
+          onSelectTarget={props.onSelectTarget}
+          onEditTarget={props.onEditTarget}
+          onDeleteTarget={props.onDeleteTarget}
+        />
       </div>
     </aside>
   );

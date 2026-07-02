@@ -7,6 +7,9 @@ import type { SkillWithTargetState, Target } from '../model/types';
 const target: Target = {
   id: 'target_1',
   name: 'Claude Global',
+  scope: 'global',
+  kind: 'custom',
+  customPath: '/tmp/target',
   skillsDir: '/tmp/target',
   createdAt: '2026-06-23T00:00:00Z',
   updatedAt: '2026-06-23T00:00:00Z',

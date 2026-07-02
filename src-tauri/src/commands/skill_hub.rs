@@ -349,7 +349,7 @@ pub async fn add_skill_repo(
     store.save(&config).map_err(|err| err.to_dto())?;
 
     let main_dir = config.settings.main_skills_dir.clone();
-    let (mut config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
+    let (config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
         let main_dir = main_dir.as_deref().map(Path::new);
         let discover_skills =
             merge_repo_into_discover_cache(&mut config, &added_repo, main_dir)?;
@@ -383,7 +383,7 @@ pub async fn remove_skill_repo(
     let host_for_task = host;
     let project_path_for_task = project_path;
 
-    let (mut config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
+    let (config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
         skill_repos::remove_skill_repo(&mut config, &host_for_task, &project_path_for_task)?;
         let discover_skills =
             remove_repo_from_discover_cache(&mut config, &host_for_task, &project_path_for_task);
@@ -560,13 +560,13 @@ mod tests {
 
         let mut config = AppConfig::default();
         config.settings.main_skills_dir = Some(main_dir);
-        config.targets = vec![Target {
-            id: "target-1".to_string(),
-            name: "Target One".to_string(),
-            skills_dir: target_dir.clone(),
-            created_at: "1".to_string(),
-            updated_at: "1".to_string(),
-        }];
+        config.targets = vec![Target::global_custom(
+            "target-1",
+            "Target One",
+            target_dir.clone(),
+            "1",
+            "1",
+        )];
 
         crate::link_installer::install_skill(&mut config, "target-1", "brainstorming", &skills)
             .expect("install skill");

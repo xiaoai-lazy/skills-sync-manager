@@ -1,38 +1,75 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ComponentProps } from 'react';
 import Sidebar from '../components/Sidebar';
-import type { Target } from '../model/types';
+import type { Project, Target } from '../model/types';
 
-const sampleTargets: Target[] = [
+const globalCustomTarget: Target = {
+  id: 'target_global_custom',
+  name: 'Custom Global',
+  scope: 'global',
+  kind: 'custom',
+  customPath: '/tmp/global-custom',
+  skillsDir: '/tmp/global-custom',
+  createdAt: '2026-06-23T00:00:00Z',
+  updatedAt: '2026-06-23T00:00:00Z',
+};
+
+const globalAgentTarget: Target = {
+  id: 'target_global_agent',
+  name: 'Cursor',
+  scope: 'global',
+  kind: 'agent',
+  agentId: 'cursor',
+  skillsDir: '/home/.cursor/skills',
+  createdAt: '2026-06-23T00:00:00Z',
+  updatedAt: '2026-06-23T00:00:00Z',
+};
+
+const projectTarget: Target = {
+  id: 'target_project_1',
+  name: 'Project Target',
+  scope: 'project',
+  kind: 'custom',
+  projectId: 'project_1',
+  customPath: '/tmp/project/.cursor/skills',
+  skillsDir: '/tmp/project/.cursor/skills',
+  createdAt: '2026-06-23T00:00:00Z',
+  updatedAt: '2026-06-23T00:00:00Z',
+};
+
+const sampleProjects: Project[] = [
   {
-    id: 'target_1',
-    name: 'Claude Global',
-    skillsDir: '/tmp/target',
-    createdAt: '2026-06-23T00:00:00Z',
-    updatedAt: '2026-06-23T00:00:00Z',
-  },
-  {
-    id: 'target_2',
-    name: 'Claude Project',
-    skillsDir: '/tmp/target2',
+    id: 'project_1',
+    name: 'My App',
+    rootPath: '/tmp/project',
     createdAt: '2026-06-23T00:00:00Z',
     updatedAt: '2026-06-23T00:00:00Z',
   },
 ];
 
+const sampleTargets: Target[] = [globalCustomTarget, globalAgentTarget, projectTarget];
+
 function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
-  const defaults = {
+  const defaults: ComponentProps<typeof Sidebar> = {
     targets: sampleTargets,
-    selectedTargetId: 'target_1',
-    mainView: 'skill-hub' as const,
+    projects: sampleProjects,
+    selectedTargetId: 'target_global_custom',
+    selectedProjectId: null,
+    expandedProjectIds: new Set<string>(),
+    mainView: 'skill-hub',
     onOpenSkillHub: vi.fn(),
     onSelectTarget: vi.fn(),
-    onAddTarget: vi.fn(),
+    onToggleProject: vi.fn(),
+    onAddGlobalTarget: vi.fn(),
+    onAddProject: vi.fn(),
+    onAddProjectTarget: vi.fn(),
     onEditTarget: vi.fn(),
+    onEditProject: vi.fn(),
     onDeleteTarget: vi.fn(),
+    onDeleteProject: vi.fn(),
   };
   return render(<Sidebar {...defaults} {...overrides} />);
 }
@@ -42,25 +79,54 @@ describe('Sidebar', () => {
     cleanup();
   });
 
-  it('renders brand and Skill 中心 nav', () => {
+  it('renders brand, Skill 中心 nav, Agent and 项目 sections', () => {
     renderSidebar();
 
     expect(screen.getByText('Skills Sync')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /skill 中心/i })).toBeInTheDocument();
-    expect(screen.getByText('目标目录')).toBeInTheDocument();
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+    expect(screen.getByText('项目')).toBeInTheDocument();
   });
 
-  it('marks Skill 中心 nav active when mainView is skill-hub', () => {
-    renderSidebar({ mainView: 'skill-hub' });
+  it('shows only global targets under Agent section', () => {
+    renderSidebar();
 
-    const navButton = screen.getByRole('button', { name: /skill 中心/i });
-    expect(navButton).toHaveClass('active');
+    const agentBlock = screen.getByText('Agent').closest('.sidebar-block') as HTMLElement;
+    expect(agentBlock).toBeTruthy();
+
+    const agentList = within(agentBlock).getAllByRole('listitem');
+    expect(agentList).toHaveLength(2);
+    expect(within(agentBlock).getByText('Custom Global')).toBeInTheDocument();
+    expect(within(agentBlock).getByText('Cursor')).toBeInTheDocument();
+    expect(within(agentBlock).queryByText('Project Target')).not.toBeInTheDocument();
+  });
+
+  it('hides edit button for agent kind targets', () => {
+    renderSidebar();
+
+    const agentBlock = screen.getByText('Agent').closest('.sidebar-block') as HTMLElement;
+    expect(agentBlock).toBeTruthy();
+
+    const cursorRow = within(agentBlock).getByText('Cursor').closest('.target-item') as HTMLElement;
+    expect(cursorRow).toBeTruthy();
+    expect(
+      within(cursorRow).queryByRole('button', { name: /edit target cursor/i })
+    ).not.toBeInTheDocument();
+    expect(
+      within(cursorRow).getByRole('button', { name: /delete target cursor/i })
+    ).toBeInTheDocument();
+
+    const customRow = within(agentBlock).getByText('Custom Global').closest('.target-item') as HTMLElement;
+    expect(customRow).toBeTruthy();
+    expect(
+      within(customRow).getByRole('button', { name: /edit target custom global/i })
+    ).toBeInTheDocument();
   });
 
   it('marks target selected only when mainView is target', () => {
     const { rerender } = renderSidebar({
       mainView: 'skill-hub',
-      selectedTargetId: 'target_1',
+      selectedTargetId: 'target_global_custom',
     });
 
     let selectedItems = document.querySelectorAll('.target-item.selected');
@@ -69,19 +135,27 @@ describe('Sidebar', () => {
     rerender(
       <Sidebar
         targets={sampleTargets}
-        selectedTargetId="target_1"
+        projects={sampleProjects}
+        selectedTargetId="target_global_custom"
+        selectedProjectId={null}
+        expandedProjectIds={new Set()}
         mainView="target"
         onOpenSkillHub={vi.fn()}
         onSelectTarget={vi.fn()}
-        onAddTarget={vi.fn()}
+        onToggleProject={vi.fn()}
+        onAddGlobalTarget={vi.fn()}
+        onAddProject={vi.fn()}
+        onAddProjectTarget={vi.fn()}
         onEditTarget={vi.fn()}
+        onEditProject={vi.fn()}
         onDeleteTarget={vi.fn()}
+        onDeleteProject={vi.fn()}
       />
     );
 
     selectedItems = document.querySelectorAll('.target-item.selected');
     expect(selectedItems).toHaveLength(1);
-    expect(selectedItems[0]).toHaveTextContent('Claude Global');
+    expect(selectedItems[0]).toHaveTextContent('Custom Global');
   });
 
   it('calls onOpenSkillHub when Skill 中心 nav clicked', async () => {
@@ -94,29 +168,39 @@ describe('Sidebar', () => {
     expect(onOpenSkillHub).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onSelectTarget when a target is clicked', async () => {
+  it('calls onSelectTarget when a global target is clicked', async () => {
     const onSelectTarget = vi.fn();
     renderSidebar({ onSelectTarget });
 
     const user = userEvent.setup();
-    await user.click(screen.getByText('Claude Project'));
+    await user.click(screen.getByText('Cursor'));
 
-    expect(onSelectTarget).toHaveBeenCalledWith('target_2');
+    expect(onSelectTarget).toHaveBeenCalledWith('target_global_agent');
   });
 
-  it('calls onAddTarget when add target button clicked', async () => {
-    const onAddTarget = vi.fn();
-    renderSidebar({ onAddTarget });
+  it('calls onAddGlobalTarget when Agent section add button clicked', async () => {
+    const onAddGlobalTarget = vi.fn();
+    renderSidebar({ onAddGlobalTarget });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /add target/i }));
+    await user.click(screen.getByRole('button', { name: /add global target/i }));
 
-    expect(onAddTarget).toHaveBeenCalledTimes(1);
+    expect(onAddGlobalTarget).toHaveBeenCalledTimes(1);
   });
 
-  it('renders empty state when no targets', () => {
-    renderSidebar({ targets: [] });
+  it('calls onAddProject when 项目 section add button clicked', async () => {
+    const onAddProject = vi.fn();
+    renderSidebar({ onAddProject });
 
-    expect(screen.getByText('暂无目标目录')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /add project/i }));
+
+    expect(onAddProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders empty state when no global targets', () => {
+    renderSidebar({ targets: [projectTarget] });
+
+    expect(screen.getByText('暂无用户级目标')).toBeInTheDocument();
   });
 });

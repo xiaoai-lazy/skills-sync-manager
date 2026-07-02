@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { parseSmartPaste } from '../../api/skillHub';
 import { errorMessage } from '../../utils/errorMessage';
 import type { DiscoverableSkill, SmartPastePreview } from '../../model/types';

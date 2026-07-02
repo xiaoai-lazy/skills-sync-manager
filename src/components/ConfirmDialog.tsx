@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import Dialog from './Dialog';
 
 export interface ConfirmDialogProps {

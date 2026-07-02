@@ -45,7 +45,7 @@ pub fn discover_available_with_warnings(
 
 fn repo_display_label(repo: &SkillRepo) -> String {
     if repo.project_path.is_empty() {
-        format!("{}/{}", repo.host, format!("{}/{}", repo.owner, repo.name))
+        format!("{}/{}/{}", repo.host, repo.owner, repo.name)
     } else {
         format!("{}/{}", repo.host, repo.project_path)
     }

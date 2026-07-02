@@ -21,9 +21,34 @@ export interface Settings {
   linkStrategy: LinkStrategy;
 }
 
+export type TargetScope = 'global' | 'project';
+
+export type TargetKind = 'agent' | 'custom';
+
+export interface Project {
+  id: string;
+  name: string;
+  rootPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentPreset {
+  id: string;
+  displayName: string;
+  globalPath: string;
+  projectRelativePath?: string;
+  iconUrl?: string;
+}
+
 export interface Target {
   id: string;
   name: string;
+  scope: TargetScope;
+  kind: TargetKind;
+  agentId?: string;
+  projectId?: string;
+  customPath?: string;
   skillsDir: string;
   createdAt: string;
   updatedAt: string;
@@ -143,6 +168,7 @@ export interface UpdateAllSkillsResult {
 export interface AppConfig {
   version: number;
   settings: Settings;
+  projects: Project[];
   targets: Target[];
   installations: Installation[];
   skillRepos?: SkillRepo[];

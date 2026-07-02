@@ -1,3 +1,4 @@
+pub mod agent_presets;
 pub mod commands;
 pub mod config_store;
 pub mod credential_store;
@@ -5,6 +6,7 @@ pub mod gitlab_client;
 pub mod fs_adapter;
 pub mod link_installer;
 pub mod models;
+pub mod project_registry;
 pub mod skill_discover;
 pub mod skill_downloader;
 pub mod skill_install;
@@ -14,6 +16,7 @@ pub mod skill_repos;
 pub mod skill_smart_paste;
 pub mod skill_updates;
 pub mod target_registry;
+pub mod time_util;
 
 #[cfg(test)]
 pub mod test_support;
@@ -21,14 +24,23 @@ pub mod test_support;
 #[cfg(test)]
 mod integration_tests;
 
+use std::sync::Mutex;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(commands::updater::PendingUpdate(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
             commands::set_main_skills_dir,
-            commands::add_target,
+            commands::list_agent_presets,
+            commands::add_agent_target,
+            commands::add_custom_target,
+            commands::add_project,
+            commands::update_project,
+            commands::delete_project,
             commands::update_target,
             commands::delete_target,
             commands::install_skill,
@@ -52,6 +64,8 @@ pub fn run() {
             commands::skill_hub::add_skill_repo,
             commands::skill_hub::remove_skill_repo,
             commands::skill_hub::set_skill_repo_enabled,
+            commands::updater::check_app_update,
+            commands::updater::install_app_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Skills Sync Manager");

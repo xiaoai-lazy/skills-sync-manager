@@ -97,18 +97,6 @@ export async function setSkillRepoEnabled(
   });
 }
 
-export async function searchSkillsSh(
-  query: string,
-  limit?: number,
-  offset?: number,
-): Promise<DiscoverableSkill[]> {
-  return invoke<DiscoverableSkill[]>('search_skills_sh', {
-    query,
-    limit: limit ?? null,
-    offset: offset ?? null,
-  });
-}
-
 export async function getTargetSkillStates(targetId: string): Promise<SkillWithTargetState[]> {
   return invoke<SkillWithTargetState[]>('get_target_skill_states', { targetId });
 }

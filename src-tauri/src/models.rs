@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Current on-disk config schema version. Bump when adding breaking fields.
-pub const CURRENT_CONFIG_VERSION: u32 = 4;
+pub const CURRENT_CONFIG_VERSION: u32 = 5;
 
 pub(crate) fn default_github_host() -> String {
     "github.com".to_string()
@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub skill_update_cache: SkillUpdateCache,
     #[serde(default)]
     pub gitlab_credential_hosts: Vec<String>,
+    #[serde(default)]
+    pub projects: Vec<Project>,
 }
 
 impl Default for AppConfig {
@@ -39,19 +41,12 @@ impl Default for AppConfig {
             settings: Settings::default(),
             targets: Vec::new(),
             installations: Vec::new(),
-            skill_repos: vec![SkillRepo {
-                host: default_github_host(),
-                provider: default_github_provider(),
-                project_path: "obra/superpowers".to_string(),
-                owner: "obra".to_string(),
-                name: "superpowers".to_string(),
-                branch: "main".to_string(),
-                enabled: true,
-            }],
+            skill_repos: Vec::new(),
             skill_records: HashMap::new(),
             skill_discover_cache: SkillDiscoverCache::default(),
             skill_update_cache: SkillUpdateCache::default(),
             gitlab_credential_hosts: Vec::new(),
+            projects: Vec::new(),
         }
     }
 }
@@ -80,8 +75,130 @@ pub fn migrate_config(config: &mut AppConfig) -> bool {
         }
     }
 
+    if config.version < 5 {
+        migrate_v4_to_v5(config);
+    }
+
     config.version = CURRENT_CONFIG_VERSION;
     true
+}
+
+/// Normalize stored filesystem paths to native platform separators.
+pub fn normalize_config_paths(config: &mut AppConfig) -> bool {
+    use crate::agent_presets::normalize_platform_path;
+
+    let mut changed = false;
+
+    if let Some(dir) = config.settings.main_skills_dir.as_mut() {
+        let normalized = normalize_platform_path(dir.as_path());
+        if *dir != normalized {
+            *dir = normalized;
+            changed = true;
+        }
+    }
+
+    for target in &mut config.targets {
+        let normalized = normalize_platform_path(&target.skills_dir);
+        if target.skills_dir != normalized {
+            target.skills_dir = normalized;
+            changed = true;
+        }
+        if let Some(path) = target.custom_path.as_mut() {
+            let normalized = normalize_platform_path(path.as_path());
+            if *path != normalized {
+                *path = normalized;
+                changed = true;
+            }
+        }
+    }
+
+    for project in &mut config.projects {
+        let normalized = normalize_platform_path(&project.root_path);
+        if project.root_path != normalized {
+            project.root_path = normalized;
+            changed = true;
+        }
+    }
+
+    for installation in &mut config.installations {
+        let source = normalize_platform_path(&installation.source_path);
+        if installation.source_path != source {
+            installation.source_path = source;
+            changed = true;
+        }
+        let link = normalize_platform_path(&installation.link_path);
+        if installation.link_path != link {
+            installation.link_path = link;
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn migrate_v4_to_v5(config: &mut AppConfig) {
+    use std::collections::HashMap;
+
+    let mut root_to_project_id: HashMap<String, String> = HashMap::new();
+
+    for target in &mut config.targets {
+        if target.custom_path.is_none() {
+            target.custom_path = Some(target.skills_dir.clone());
+        }
+
+        if let Some(agent_id) = crate::agent_presets::detect_agent_id_for_path(&target.skills_dir)
+        {
+            if let Some(preset) = crate::agent_presets::builtin_presets()
+                .into_iter()
+                .find(|preset| preset.id == agent_id)
+            {
+                target.scope = TargetScope::Global;
+                target.kind = TargetKind::Agent;
+                target.agent_id = Some(agent_id);
+                target.project_id = None;
+                target.custom_path = None;
+                target.name = preset.display_name;
+                continue;
+            }
+        }
+
+        let root_path =
+            crate::agent_presets::infer_project_root_from_skills_dir(&target.skills_dir);
+        let root_key = crate::agent_presets::normalize_path_for_compare(&root_path);
+        let project_name = if root_path == target.skills_dir {
+            target.name.clone()
+        } else {
+            root_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(target.name.as_str())
+                .to_string()
+        };
+        let project_id = root_to_project_id.get(&root_key).cloned().unwrap_or_else(|| {
+            let id = format!("project-{}", target.id);
+            config.projects.push(Project {
+                id: id.clone(),
+                name: project_name,
+                root_path: root_path.clone(),
+                created_at: target.created_at.clone(),
+                updated_at: target.updated_at.clone(),
+            });
+            root_to_project_id.insert(root_key, id.clone());
+            id
+        });
+
+        target.scope = TargetScope::Project;
+        target.kind = TargetKind::Custom;
+        target.agent_id = None;
+        target.project_id = Some(project_id);
+        target.custom_path = Some(target.skills_dir.clone());
+        if let Some(name) =
+            crate::agent_presets::infer_target_name_from_skills_dir(&target.skills_dir)
+        {
+            target.name = name;
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -106,14 +223,73 @@ pub enum LinkStrategy {
     Auto,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TargetScope {
+    #[default]
+    Global,
+    Project,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TargetKind {
+    Agent,
+    #[default]
+    Custom,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub root_path: PathBuf,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Target {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub scope: TargetScope,
+    #[serde(default)]
+    pub kind: TargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_path: Option<PathBuf>,
     pub skills_dir: PathBuf,
     pub created_at: String,
     pub updated_at: String,
+}
+
+impl Target {
+    pub fn global_custom(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        skills_dir: PathBuf,
+        created_at: impl Into<String>,
+        updated_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            scope: TargetScope::Global,
+            kind: TargetKind::Custom,
+            agent_id: None,
+            project_id: None,
+            custom_path: Some(skills_dir.clone()),
+            skills_dir,
+            created_at: created_at.into(),
+            updated_at: updated_at.into(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -385,6 +561,27 @@ pub struct SmartPastePreview {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentPresetDto {
+    pub id: String,
+    pub display_name: String,
+    pub global_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_relative_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfoDto {
+    pub version: String,
+    pub current_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub config: AppConfig,
     pub skills: Vec<SkillView>,
@@ -469,6 +666,30 @@ pub enum AppError {
     },
     GitLabAuthInvalid {
         host: String,
+    },
+    ProjectNotFound {
+        project_id: String,
+    },
+    DuplicateProjectName {
+        name: String,
+    },
+    InvalidProjectRoot {
+        path: PathBuf,
+        message: String,
+    },
+    DuplicateTarget {
+        message: String,
+    },
+    TargetNotEditable {
+        target_id: String,
+    },
+    ProjectHasTargetsWithInstallations {
+        project_id: String,
+        installation_count: usize,
+    },
+    PathOutsideProjectRoot {
+        path: PathBuf,
+        project_root: PathBuf,
     },
 }
 
@@ -607,6 +828,44 @@ impl AppError {
                 code: "gitlabAuthInvalid".to_string(),
                 message: format!("GitLab {} 的 Token 无效或已过期，请重新配置", host),
             },
+            AppError::ProjectNotFound { project_id } => AppErrorDto {
+                code: "projectNotFound".to_string(),
+                message: format!("找不到项目 {}", project_id),
+            },
+            AppError::DuplicateProjectName { name } => AppErrorDto {
+                code: "duplicateProjectName".to_string(),
+                message: format!("项目名称已存在：{}", name),
+            },
+            AppError::InvalidProjectRoot { path, message } => AppErrorDto {
+                code: "invalidProjectRoot".to_string(),
+                message: format!("项目根目录无效 {}: {}", path.display(), message),
+            },
+            AppError::DuplicateTarget { message } => AppErrorDto {
+                code: "duplicateTarget".to_string(),
+                message: message.clone(),
+            },
+            AppError::TargetNotEditable { target_id } => AppErrorDto {
+                code: "targetNotEditable".to_string(),
+                message: format!("目标 {} 不可编辑", target_id),
+            },
+            AppError::ProjectHasTargetsWithInstallations {
+                project_id,
+                installation_count,
+            } => AppErrorDto {
+                code: "projectHasTargetsWithInstallations".to_string(),
+                message: format!(
+                    "项目 {} 下仍有 {} 条安装记录，请先卸载",
+                    project_id, installation_count
+                ),
+            },
+            AppError::PathOutsideProjectRoot { path, project_root } => AppErrorDto {
+                code: "pathOutsideProjectRoot".to_string(),
+                message: format!(
+                    "路径 {} 不在项目根目录 {} 内",
+                    path.display(),
+                    project_root.display()
+                ),
+            },
         }
     }
 }
@@ -733,6 +992,40 @@ impl std::fmt::Display for AppError {
             AppError::GitLabAuthInvalid { host } => {
                 write!(formatter, "gitlab authentication invalid for {}", host)
             }
+            AppError::ProjectNotFound { project_id } => {
+                write!(formatter, "project not found: {}", project_id)
+            }
+            AppError::DuplicateProjectName { name } => {
+                write!(formatter, "duplicate project name: {}", name)
+            }
+            AppError::InvalidProjectRoot { path, message } => {
+                write!(
+                    formatter,
+                    "invalid project root at {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            AppError::DuplicateTarget { message } => {
+                write!(formatter, "duplicate target: {}", message)
+            }
+            AppError::TargetNotEditable { target_id } => {
+                write!(formatter, "target not editable: {}", target_id)
+            }
+            AppError::ProjectHasTargetsWithInstallations {
+                project_id,
+                installation_count,
+            } => write!(
+                formatter,
+                "project {} still has {} installation record(s) on child targets",
+                project_id, installation_count
+            ),
+            AppError::PathOutsideProjectRoot { path, project_root } => write!(
+                formatter,
+                "path {} is outside project root {}",
+                path.display(),
+                project_root.display()
+            ),
         }
     }
 }
@@ -818,6 +1111,76 @@ mod tests {
     }
 
     #[test]
+    fn migrate_v4_agent_path_becomes_agent_target() {
+        let home = std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+            .expect("home dir");
+        let skills_dir = home.join(".cursor").join("skills");
+        let mut config = AppConfig {
+            version: 4,
+            targets: vec![Target {
+                id: "t1".into(),
+                name: "Old Name".into(),
+                scope: TargetScope::Global,
+                kind: TargetKind::Custom,
+                agent_id: None,
+                project_id: None,
+                custom_path: None,
+                skills_dir: skills_dir.clone(),
+                created_at: "1".into(),
+                updated_at: "1".into(),
+            }],
+            ..Default::default()
+        };
+
+        assert!(migrate_config(&mut config));
+        assert_eq!(config.targets[0].kind, TargetKind::Agent);
+        assert_eq!(config.targets[0].agent_id.as_deref(), Some("cursor"));
+        assert_eq!(config.targets[0].name, "Cursor");
+        assert_eq!(config.targets[0].custom_path, None);
+        assert_eq!(config.targets[0].skills_dir, skills_dir);
+    }
+
+    #[test]
+    fn migrate_v4_json_adds_scope_and_projects() {
+        let raw = r#"{"version":4,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[{"id":"t1","name":"X","skillsDir":"D:/skills","createdAt":"1","updatedAt":"1"}],"installations":[]}"#;
+        let mut config: AppConfig = serde_json::from_str(raw).unwrap();
+        assert!(migrate_config(&mut config));
+        assert_eq!(config.version, 5);
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.projects[0].name, "X");
+        assert_eq!(config.projects[0].root_path, PathBuf::from("D:/skills"));
+        assert_eq!(config.targets[0].scope, TargetScope::Project);
+        assert_eq!(config.targets[0].kind, TargetKind::Custom);
+        assert_eq!(config.targets[0].project_id.as_deref(), Some("project-t1"));
+        assert_eq!(
+            config.targets[0].custom_path,
+            Some(PathBuf::from("D:/skills"))
+        );
+    }
+
+    #[test]
+    fn migrate_v4_non_agent_target_becomes_project_scoped() {
+        let raw = r#"{"version":4,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[{"id":"t1","name":"efs","skillsDir":"C:/Git/efs/.trae/skills","createdAt":"1","updatedAt":"1"}],"installations":[]}"#;
+        let mut config: AppConfig = serde_json::from_str(raw).unwrap();
+        assert!(migrate_config(&mut config));
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.projects[0].name, "efs");
+        assert_eq!(config.targets[0].name, "trae");
+        assert_eq!(
+            config.projects[0].root_path,
+            PathBuf::from("C:/Git/efs")
+        );
+        assert_eq!(config.targets[0].scope, TargetScope::Project);
+        assert_eq!(config.targets[0].project_id.as_deref(), Some("project-t1"));
+        assert_eq!(
+            config.targets[0].skills_dir,
+            PathBuf::from("C:/Git/efs/.trae/skills")
+        );
+    }
+
+    #[test]
     fn migrate_config_v3_to_v4_fills_repo_fields() {
         let json = r#"{
             "version": 3,
@@ -831,7 +1194,7 @@ mod tests {
         }"#;
         let mut config: AppConfig = serde_json::from_str(json).unwrap();
         assert!(migrate_config(&mut config));
-        assert_eq!(config.version, 4);
+        assert_eq!(config.version, 5);
         let repo = &config.skill_repos[0];
         assert_eq!(repo.host, "github.com");
         assert_eq!(repo.provider, "github");

@@ -266,20 +266,6 @@ pub fn set_skill_repo_enabled(
     Ok(config.skill_repos[index].clone())
 }
 
-/// Ensures built-in GitHub repos exist. Returns true when a repo was added.
-pub fn ensure_builtin_repos(config: &mut AppConfig) -> bool {
-    if find_repo_index(config, &default_github_host(), "obra/superpowers").is_some() {
-        return false;
-    }
-
-    let _ = add_skill_repo(
-        config,
-        "https://github.com/obra/superpowers",
-        None,
-        None,
-    );
-    true
-}
 
 pub fn preview_add_skill_repo(_config: &AppConfig, url: &str) -> PreviewAddRepoResult {
     let parsed = match parse_repo_url(url) {
@@ -840,19 +826,6 @@ mod tests {
 
         assert!(config.skill_repos.is_empty());
         assert_eq!(config.skill_records.len(), 1);
-    }
-
-    #[test]
-    fn ensure_builtin_repos_adds_superpowers_once() {
-        let mut config = AppConfig::default();
-        config.skill_repos.clear();
-
-        assert!(ensure_builtin_repos(&mut config));
-        assert_eq!(config.skill_repos.len(), 1);
-        assert_eq!(config.skill_repos[0].project_path, "obra/superpowers");
-        assert_eq!(config.skill_repos[0].branch, "main");
-        assert!(!ensure_builtin_repos(&mut config));
-        assert_eq!(config.skill_repos.len(), 1);
     }
 
     #[test]

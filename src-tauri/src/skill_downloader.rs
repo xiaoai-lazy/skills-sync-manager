@@ -30,7 +30,7 @@ fn download_github_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf
     let primary_url = github_archive_url(owner, name, branch);
     match download_and_extract(&primary_url) {
         Ok(path) => Ok(path),
-        Err(AppError::DownloadFailed { status, .. }) if status == Some(404) => {
+        Err(AppError::DownloadFailed { status: Some(404), .. }) => {
             let fallbacks = fallback_branches(branch);
             let mut last_error = AppError::DownloadFailed {
                 url: primary_url,

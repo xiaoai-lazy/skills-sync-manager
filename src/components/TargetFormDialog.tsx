@@ -6,6 +6,7 @@ export interface TargetFormDialogProps {
   title: string;
   initialName?: string;
   initialSkillsDir?: string;
+  skillsDirReadOnly?: boolean;
   confirmLabel?: string;
   pickDirectoryLabel?: string;
   onPickDirectory?: (currentValue: string) => Promise<string | null>;
@@ -21,6 +22,7 @@ function TargetFormDialog(props: TargetFormDialogProps) {
     title,
     initialName = '',
     initialSkillsDir = '',
+    skillsDirReadOnly = false,
     confirmLabel = '保存',
     pickDirectoryLabel = '选择目录',
     onPickDirectory,
@@ -137,10 +139,12 @@ function TargetFormDialog(props: TargetFormDialogProps) {
             id="target-form-skills-dir"
             type="text"
             value={skillsDir}
-            onChange={(e) => setSkillsDir(e.target.value)}
+            readOnly={skillsDirReadOnly}
+            disabled={skillsDirReadOnly}
+            onChange={skillsDirReadOnly ? undefined : (e) => setSkillsDir(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          {onPickDirectory ? (
+          {onPickDirectory && !skillsDirReadOnly ? (
             <button type="button" onClick={handlePickDirectory} disabled={isPickingDirectory}>
               {isPickingDirectory ? '选择中…' : pickDirectoryLabel}
             </button>

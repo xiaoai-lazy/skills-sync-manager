@@ -1,8 +1,12 @@
-use crate::models::{AppConfig, AppError, Target};
+use crate::agent_presets::{normalize_path_for_compare, normalize_platform_path, resolve_skills_dir, AgentPreset};
+use crate::models::{
+    AppConfig, AppError, Target, TargetKind, TargetScope,
+};
+use crate::project_registry::find_project;
+use crate::time_util::{current_timestamp, timestamp_nanos};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -13,20 +17,118 @@ pub struct AddTargetRequest {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AddAgentTargetRequest {
+    pub scope: TargetScope,
+    pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AddCustomTargetRequest {
+    pub scope: TargetScope,
+    pub name: String,
+    pub skills_dir: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateTargetRequest {
     pub name: String,
     pub skills_dir: PathBuf,
 }
 
 pub fn add_target(config: &mut AppConfig, request: AddTargetRequest) -> Result<Target, AppError> {
+    add_custom_target(
+        config,
+        AddCustomTargetRequest {
+            scope: TargetScope::Global,
+            name: request.name,
+            skills_dir: request.skills_dir,
+            project_id: None,
+        },
+    )
+}
+
+pub fn add_agent_target(
+    config: &mut AppConfig,
+    presets: &[AgentPreset],
+    request: AddAgentTargetRequest,
+) -> Result<Target, AppError> {
+    let preset = presets
+        .iter()
+        .find(|preset| preset.id == request.agent_id)
+        .ok_or_else(|| AppError::InvalidInput {
+            input: request.agent_id.clone(),
+            message: "unknown agent preset".to_string(),
+        })?;
+
+    let project_root = resolve_scope_project(config, &request.scope, request.project_id.as_deref())?;
+    let skills_dir = resolve_skills_dir(preset, request.scope.clone(), project_root)?;
+    ensure_agent_target_dir(&skills_dir)?;
+
+    check_duplicate_target(
+        config,
+        &request.scope,
+        request.project_id.as_deref(),
+        &preset.display_name,
+        &skills_dir,
+        Some(&request.agent_id),
+    )?;
+
+    let now = current_timestamp();
+    let target = Target {
+        id: generate_target_id(config),
+        name: preset.display_name.clone(),
+        scope: request.scope,
+        kind: TargetKind::Agent,
+        agent_id: Some(preset.id.clone()),
+        project_id: request.project_id,
+        custom_path: None,
+        skills_dir,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+
+    config.targets.push(target.clone());
+    Ok(target)
+}
+
+pub fn add_custom_target(
+    config: &mut AppConfig,
+    request: AddCustomTargetRequest,
+) -> Result<Target, AppError> {
     let name = validate_target_name(request.name)?;
-    validate_target_dir(&request.skills_dir)?;
+    let skills_dir = normalize_platform_path(request.skills_dir);
+    validate_target_dir(&skills_dir)?;
+
+    let project_root = resolve_scope_project(config, &request.scope, request.project_id.as_deref())?;
+    if let Some(root) = project_root {
+        validate_path_under_project_root(&skills_dir, root)?;
+    }
+
+    check_duplicate_target(
+        config,
+        &request.scope,
+        request.project_id.as_deref(),
+        &name,
+        &skills_dir,
+        None,
+    )?;
 
     let now = current_timestamp();
     let target = Target {
         id: generate_target_id(config),
         name,
-        skills_dir: request.skills_dir,
+        scope: request.scope,
+        kind: TargetKind::Custom,
+        agent_id: None,
+        project_id: request.project_id,
+        custom_path: Some(skills_dir.clone()),
+        skills_dir,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -41,7 +143,6 @@ pub fn update_target(
     request: UpdateTargetRequest,
 ) -> Result<Target, AppError> {
     let name = validate_target_name(request.name)?;
-    validate_target_dir(&request.skills_dir)?;
 
     let target = config
         .targets
@@ -51,8 +152,13 @@ pub fn update_target(
             target_id: target_id.to_string(),
         })?;
 
+    if target.kind == TargetKind::Agent {
+        return Err(AppError::TargetNotEditable {
+            target_id: target_id.to_string(),
+        });
+    }
+
     target.name = name;
-    target.skills_dir = request.skills_dir;
     target.updated_at = current_timestamp();
 
     Ok(target.clone())
@@ -82,6 +188,17 @@ pub fn delete_target_config(config: &mut AppConfig, target_id: &str) -> Result<(
     }
 
     Ok(())
+}
+
+fn ensure_agent_target_dir(path: &Path) -> Result<(), AppError> {
+    if !path.exists() {
+        fs::create_dir_all(path).map_err(|err| AppError::InvalidTargetDir {
+            path: path.to_path_buf(),
+            message: format!("Failed to create target skills directory: {}", err),
+        })?;
+    }
+
+    validate_target_dir(path)
 }
 
 pub fn validate_target_dir(path: &Path) -> Result<(), AppError> {
@@ -122,6 +239,106 @@ pub fn validate_target_dir(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+fn resolve_scope_project<'a>(
+    config: &'a AppConfig,
+    scope: &TargetScope,
+    project_id: Option<&str>,
+) -> Result<Option<&'a Path>, AppError> {
+    match scope {
+        TargetScope::Global => {
+            if project_id.is_some() {
+                return Err(AppError::InvalidInput {
+                    input: project_id.unwrap_or("").to_string(),
+                    message: "project_id must not be set for global scope".to_string(),
+                });
+            }
+            Ok(None)
+        }
+        TargetScope::Project => {
+            let project_id = project_id.ok_or_else(|| AppError::InvalidInput {
+                input: String::new(),
+                message: "project_id is required for project scope".to_string(),
+            })?;
+            let project = find_project(config, project_id)?;
+            Ok(Some(project.root_path.as_path()))
+        }
+    }
+}
+
+fn validate_path_under_project_root(skills_dir: &Path, project_root: &Path) -> Result<(), AppError> {
+    let normalized_skills = normalize_path_for_compare(skills_dir);
+    let normalized_root = normalize_path_for_compare(project_root);
+    let root_prefix = if normalized_root.ends_with('/') {
+        normalized_root.clone()
+    } else {
+        format!("{}/", normalized_root)
+    };
+
+    if normalized_skills != normalized_root && !normalized_skills.starts_with(&root_prefix) {
+        return Err(AppError::PathOutsideProjectRoot {
+            path: skills_dir.to_path_buf(),
+            project_root: project_root.to_path_buf(),
+        });
+    }
+
+    Ok(())
+}
+
+fn check_duplicate_target(
+    config: &AppConfig,
+    scope: &TargetScope,
+    project_id: Option<&str>,
+    name: &str,
+    skills_dir: &Path,
+    agent_id: Option<&str>,
+) -> Result<(), AppError> {
+    let normalized_skills_dir = normalize_path_for_compare(skills_dir);
+
+    for target in targets_in_scope(config, scope, project_id) {
+        if target.name.eq_ignore_ascii_case(name) {
+            return Err(AppError::DuplicateTarget {
+                message: format!("target name already exists: {}", name),
+            });
+        }
+
+        if normalize_path_for_compare(&target.skills_dir) == normalized_skills_dir {
+            return Err(AppError::DuplicateTarget {
+                message: format!(
+                    "target skills directory already exists: {}",
+                    skills_dir.display()
+                ),
+            });
+        }
+
+        if let Some(agent_id) = agent_id {
+            if target.agent_id.as_deref() == Some(agent_id) {
+                return Err(AppError::DuplicateTarget {
+                    message: format!("agent preset already added: {}", agent_id),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn targets_in_scope<'a>(
+    config: &'a AppConfig,
+    scope: &TargetScope,
+    project_id: Option<&str>,
+) -> Vec<&'a Target> {
+    config
+        .targets
+        .iter()
+        .filter(|target| match scope {
+            TargetScope::Global => target.scope == TargetScope::Global,
+            TargetScope::Project => {
+                target.scope == TargetScope::Project && target.project_id.as_deref() == project_id
+            }
+        })
+        .collect()
+}
+
 fn validate_target_name(name: String) -> Result<String, AppError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -140,21 +357,12 @@ fn generate_target_id(config: &AppConfig) -> String {
     }
 }
 
-fn current_timestamp() -> String {
-    timestamp_nanos().to_string()
-}
-
-fn timestamp_nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after Unix epoch")
-        .as_nanos()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_presets::builtin_presets;
     use crate::models::{Installation, LinkType};
+    use crate::project_registry::add_project;
     use std::fs;
     use std::thread;
     use std::time::Duration;
@@ -174,9 +382,18 @@ mod tests {
     }
 
     fn existing_target(id: &str, skills_dir: PathBuf) -> Target {
+        Target::global_custom(id, "Old Target", skills_dir, "1", "1")
+    }
+
+    fn agent_target(id: &str, agent_id: &str, skills_dir: PathBuf) -> Target {
         Target {
             id: id.to_string(),
-            name: "Old Target".to_string(),
+            name: "Cursor".to_string(),
+            scope: TargetScope::Global,
+            kind: TargetKind::Agent,
+            agent_id: Some(agent_id.to_string()),
+            project_id: None,
+            custom_path: None,
             skills_dir,
             created_at: "1".to_string(),
             updated_at: "1".to_string(),
@@ -197,6 +414,8 @@ mod tests {
         assert!(target.id.starts_with("target-"));
         assert_eq!(target.name, "Claude Code");
         assert_eq!(target.skills_dir, temp.path());
+        assert_eq!(target.scope, TargetScope::Global);
+        assert_eq!(target.kind, TargetKind::Custom);
         assert!(!target.created_at.is_empty());
         assert_eq!(target.created_at, target.updated_at);
         assert_eq!(config.targets, vec![target]);
@@ -218,7 +437,189 @@ mod tests {
     }
 
     #[test]
-    fn update_target_changes_name_path_and_updated_at() {
+    fn add_agent_target_global_dedupes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = AppConfig::default();
+        let presets = builtin_presets();
+        let home = std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+            .expect("home dir");
+        let cursor_dir = home.join(".cursor").join("skills");
+        fs::create_dir_all(&cursor_dir).expect("create cursor dir");
+
+        add_agent_target(
+            &mut config,
+            &presets,
+            AddAgentTargetRequest {
+                scope: TargetScope::Global,
+                agent_id: "cursor".to_string(),
+                project_id: None,
+            },
+        )
+        .expect("first agent target");
+
+        let error = add_agent_target(
+            &mut config,
+            &presets,
+            AddAgentTargetRequest {
+                scope: TargetScope::Global,
+                agent_id: "cursor".to_string(),
+                project_id: None,
+            },
+        )
+        .expect_err("duplicate agent should fail");
+
+        assert!(matches!(error, AppError::DuplicateTarget { .. }));
+        assert_eq!(config.targets.len(), 1);
+
+        let _ = temp;
+    }
+
+    #[test]
+    fn add_agent_target_project_requires_project_relative_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = AppConfig::default();
+        let project = add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+        let presets = vec![AgentPreset {
+            id: "opencode".to_string(),
+            display_name: "OpenCode".to_string(),
+            global_path: "~/.opencode/skills".to_string(),
+            project_relative_path: None,
+            icon: None,
+        }];
+
+        let error = add_agent_target(
+            &mut config,
+            &presets,
+            AddAgentTargetRequest {
+                scope: TargetScope::Project,
+                agent_id: "opencode".to_string(),
+                project_id: Some(project.id),
+            },
+        )
+        .expect_err("missing project relative path should fail");
+
+        assert!(matches!(error, AppError::InvalidInput { .. }));
+        assert!(config.targets.is_empty());
+    }
+
+    #[test]
+    fn add_agent_target_creates_missing_project_skills_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = AppConfig::default();
+        let project = add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+        let presets = builtin_presets();
+        let skills_dir = temp.path().join(".codex").join("skills");
+        assert!(!skills_dir.exists());
+
+        let target = add_agent_target(
+            &mut config,
+            &presets,
+            AddAgentTargetRequest {
+                scope: TargetScope::Project,
+                agent_id: "codex".to_string(),
+                project_id: Some(project.id),
+            },
+        )
+        .expect("add agent target");
+
+        assert!(skills_dir.is_dir());
+        assert_eq!(target.skills_dir, skills_dir);
+    }
+
+    #[test]
+    fn add_custom_target_project_path_must_be_under_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        let mut config = AppConfig::default();
+        let project = add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+        fs::create_dir_all(outside.path()).expect("create outside dir");
+
+        let error = add_custom_target(
+            &mut config,
+            AddCustomTargetRequest {
+                scope: TargetScope::Project,
+                name: "Tools".to_string(),
+                skills_dir: outside.path().to_path_buf(),
+                project_id: Some(project.id),
+            },
+        )
+        .expect_err("outside path should fail");
+
+        assert!(matches!(
+            error,
+            AppError::PathOutsideProjectRoot { .. }
+        ));
+        assert!(config.targets.is_empty());
+    }
+
+    #[test]
+    fn add_custom_target_project_accepts_path_under_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let skills_dir = temp.path().join(".cursor").join("skills");
+        fs::create_dir_all(&skills_dir).expect("create skills dir");
+        let mut config = AppConfig::default();
+        let project = add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+
+        let target = add_custom_target(
+            &mut config,
+            AddCustomTargetRequest {
+                scope: TargetScope::Project,
+                name: "Tools".to_string(),
+                skills_dir: skills_dir.clone(),
+                project_id: Some(project.id),
+            },
+        )
+        .expect("add project custom target");
+
+        assert_eq!(target.scope, TargetScope::Project);
+        assert_eq!(target.skills_dir, skills_dir);
+    }
+
+    #[test]
+    fn update_target_agent_fails() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = AppConfig::default();
+        config
+            .targets
+            .push(agent_target("target-1", "cursor", temp.path().to_path_buf()));
+
+        let error = update_target(
+            &mut config,
+            "target-1",
+            update_request("New Name", temp.path().to_path_buf()),
+        )
+        .expect_err("agent target should not be editable");
+
+        assert!(matches!(
+            error,
+            AppError::TargetNotEditable { target_id } if target_id == "target-1"
+        ));
+    }
+
+    #[test]
+    fn update_target_custom_name_only_no_path_change() {
         let first = tempfile::tempdir().expect("first tempdir");
         let second = tempfile::tempdir().expect("second tempdir");
         let mut config = AppConfig::default();
@@ -236,7 +637,7 @@ mod tests {
 
         assert_eq!(target.id, "target-1");
         assert_eq!(target.name, "Updated Target");
-        assert_eq!(target.skills_dir, second.path());
+        assert_eq!(target.skills_dir, first.path());
         assert_eq!(target.created_at, "1");
         assert_ne!(target.updated_at, "1");
         assert_eq!(config.targets[0], target);

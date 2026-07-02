@@ -57,12 +57,14 @@ pub mod fixtures {
             targets: targets
                 .iter()
                 .enumerate()
-                .map(|(index, (id, skills_dir))| Target {
-                    id: id.clone(),
-                    name: format!("Target {}", index + 1),
-                    skills_dir: skills_dir.clone(),
-                    created_at: "1".to_string(),
-                    updated_at: "1".to_string(),
+                .map(|(index, (id, skills_dir))| {
+                    Target::global_custom(
+                        id.clone(),
+                        format!("Target {}", index + 1),
+                        skills_dir.clone(),
+                        "1",
+                        "1",
+                    )
                 })
                 .collect(),
             installations: Vec::new(),

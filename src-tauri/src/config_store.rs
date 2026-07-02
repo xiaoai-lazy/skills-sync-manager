@@ -1,7 +1,11 @@
-use crate::models::{migrate_config, AppConfig, AppError};
+use crate::models::{migrate_config, AppConfig, AppError, CURRENT_CONFIG_VERSION};
 use crate::skill_repos;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+static CONFIG_IO_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone)]
 pub struct ConfigStore {
@@ -14,6 +18,16 @@ impl ConfigStore {
     }
 
     pub fn load(&self) -> Result<AppConfig, AppError> {
+        let _guard = lock_config_io()?;
+        self.load_unlocked()
+    }
+
+    pub fn save(&self, config: &AppConfig) -> Result<(), AppError> {
+        let _guard = lock_config_io()?;
+        self.save_unlocked(config)
+    }
+
+    fn load_unlocked(&self) -> Result<AppConfig, AppError> {
         if !self.config_path.exists() {
             return Ok(AppConfig::default());
         }
@@ -29,23 +43,26 @@ impl ConfigStore {
         })?;
 
         let mut changed = false;
-        if migrate_config(&mut config) {
-            changed = true;
+        if config.version < CURRENT_CONFIG_VERSION {
+            backup_config_file(&self.config_path)?;
         }
-        if skill_repos::ensure_builtin_repos(&mut config) {
+        if migrate_config(&mut config) {
             changed = true;
         }
         if skill_repos::dedupe_skill_repos(&mut config) {
             changed = true;
         }
+        if crate::models::normalize_config_paths(&mut config) {
+            changed = true;
+        }
         if changed {
-            self.save(&config)?;
+            self.save_unlocked(&config)?;
         }
 
         Ok(config)
     }
 
-    pub fn save(&self, config: &AppConfig) -> Result<(), AppError> {
+    fn save_unlocked(&self, config: &AppConfig) -> Result<(), AppError> {
         if let Some(parent) = self.config_path.parent() {
             fs::create_dir_all(parent).map_err(|err| AppError::ConfigWrite {
                 path: parent.to_path_buf(),
@@ -70,12 +87,7 @@ impl ConfigStore {
     fn replace_with_temp(&self, tmp_path: PathBuf) -> Result<(), AppError> {
         let backup_path = self.config_path.with_extension("json.bak");
 
-        if backup_path.exists() {
-            fs::remove_file(&backup_path).map_err(|err| AppError::ConfigWrite {
-                path: backup_path.clone(),
-                message: err.to_string(),
-            })?;
-        }
+        remove_file_best_effort(&backup_path)?;
 
         let had_existing_config = self.config_path.exists();
         if had_existing_config {
@@ -87,12 +99,7 @@ impl ConfigStore {
 
         match fs::rename(&tmp_path, &self.config_path) {
             Ok(()) => {
-                if had_existing_config && backup_path.exists() {
-                    fs::remove_file(&backup_path).map_err(|err| AppError::ConfigWrite {
-                        path: backup_path,
-                        message: err.to_string(),
-                    })?;
-                }
+                remove_file_best_effort(&backup_path)?;
                 Ok(())
             }
             Err(rename_err) => {
@@ -117,10 +124,40 @@ impl ConfigStore {
     }
 }
 
+fn lock_config_io() -> Result<std::sync::MutexGuard<'static, ()>, AppError> {
+    CONFIG_IO_LOCK.lock().map_err(|err| AppError::Io {
+        path: None,
+        message: format!("config store lock poisoned: {}", err),
+    })
+}
+
+fn remove_file_best_effort(path: &std::path::Path) -> Result<(), AppError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(AppError::ConfigWrite {
+            path: path.to_path_buf(),
+            message: err.to_string(),
+        }),
+    }
+}
+
+fn backup_config_file(config_path: &std::path::Path) -> Result<(), AppError> {
+    let backup_path = config_path.with_extension("json.backup-v4");
+    fs::copy(config_path, &backup_path)
+        .map_err(|err| AppError::Io {
+            path: Some(backup_path),
+            message: format!("failed to backup config before migration: {}", err),
+        })
+        .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{migrate_config, AppConfig, AppError, CURRENT_CONFIG_VERSION, Installation, LinkStrategy, LinkType, Target};
+    use crate::models::{
+        AppConfig, AppError, CURRENT_CONFIG_VERSION, Installation, LinkStrategy, LinkType, Target,
+    };
 
     #[test]
     fn missing_config_returns_default() {
@@ -142,13 +179,13 @@ mod tests {
         let store = ConfigStore::new(temp.path().join("config.json"));
         let mut config = AppConfig::default();
         config.settings.main_skills_dir = Some(temp.path().join("main-skills"));
-        config.targets.push(Target {
-            id: "target-1".to_string(),
-            name: "Target One".to_string(),
-            skills_dir: temp.path().join("target-skills"),
-            created_at: "2026-06-23T00:00:00Z".to_string(),
-            updated_at: "2026-06-23T00:00:00Z".to_string(),
-        });
+        config.targets.push(Target::global_custom(
+            "target-1",
+            "Target One",
+            temp.path().join("target-skills"),
+            "2026-06-23T00:00:00Z",
+            "2026-06-23T00:00:00Z",
+        ));
         config.installations.push(Installation {
             id: "install-1".to_string(),
             skill_dir_name: "example-skill".to_string(),
@@ -220,14 +257,12 @@ mod tests {
         let config = store.load().expect("load should migrate v0.2 config");
 
         assert_eq!(config.version, crate::models::CURRENT_CONFIG_VERSION);
-        assert_eq!(config.skill_repos.len(), 1);
-        assert_eq!(config.skill_repos[0].owner, "obra");
-        assert_eq!(config.skill_repos[0].name, "superpowers");
+        assert!(config.skill_repos.is_empty());
         assert!(config.skill_records.is_empty());
 
         let on_disk = fs::read_to_string(path).expect("read migrated config");
         assert!(on_disk.contains("skillRepos"));
-        assert!(on_disk.contains("\"version\": 4"));
+        assert!(on_disk.contains("\"version\": 5"));
     }
 
     #[test]
@@ -261,12 +296,77 @@ mod tests {
     #[test]
     fn default_config_includes_skill_hub_fields() {
         let config = AppConfig::default();
-        assert_eq!(config.skill_repos.len(), 1);
-        assert_eq!(config.skill_repos[0].owner, "obra");
-        assert_eq!(config.skill_repos[0].name, "superpowers");
+        assert!(config.skill_repos.is_empty());
         assert!(config.skill_records.is_empty());
         assert!(config.skill_discover_cache.skills.is_empty());
         assert!(config.skill_update_cache.updates.is_empty());
+    }
+
+    #[test]
+    fn load_v4_creates_backup_before_migrate() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.json");
+        let v4 = r#"{"version":4,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[{"id":"t1","name":"X","skillsDir":"D:/skills","createdAt":"1","updatedAt":"1"}],"installations":[]}"#;
+        fs::write(&path, v4).expect("write v4 config");
+        let store = ConfigStore::new(path.clone());
+
+        let config = store.load().expect("load should migrate v4 config");
+
+        assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+        let backup = temp.path().join("config.json.backup-v4");
+        assert!(backup.exists(), "backup file should exist before migration write");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), v4);
+    }
+
+    #[test]
+    fn backup_failure_aborts_migration_without_writing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.json");
+        let v4 = r#"{"version":4,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[],"installations":[]}"#;
+        fs::write(&path, v4).expect("write v4 config");
+        fs::create_dir_all(temp.path().join("config.json.backup-v4")).expect("block backup");
+        let store = ConfigStore::new(path.clone());
+
+        let error = store.load().expect_err("backup failure should abort migration");
+
+        assert!(matches!(
+            error,
+            AppError::Io { .. } | AppError::ConfigWrite { .. }
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), v4);
+    }
+
+    #[test]
+    fn concurrent_saves_do_not_corrupt_config() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let temp_dir = temp.path().to_path_buf();
+        let store = Arc::new(ConfigStore::new(temp_dir.join("config.json")));
+        store
+            .save(&AppConfig::default())
+            .expect("seed config");
+
+        let mut handles = Vec::new();
+        for index in 0..8 {
+            let store = Arc::clone(&store);
+            let temp_dir = temp_dir.clone();
+            handles.push(thread::spawn(move || {
+                let mut config = store.load().expect("load config");
+                config.settings.main_skills_dir = Some(temp_dir.join(format!("main-{index}")));
+                store.save(&config).expect("save config");
+            }));
+        }
+
+        for handle in handles {
+            handle.join().expect("thread should finish");
+        }
+
+        let loaded = store.load().expect("load final config");
+        assert!(loaded.settings.main_skills_dir.is_some());
+        assert!(store.config_path.exists());
+        assert!(!store.config_path.with_extension("json.bak").exists());
     }
 
     #[test]

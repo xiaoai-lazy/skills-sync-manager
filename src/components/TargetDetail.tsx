@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Target, SkillWithTargetState } from '../model/types';
 import SkillRow from './SkillRow';
 

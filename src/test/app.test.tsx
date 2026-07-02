@@ -8,7 +8,7 @@ import '@testing-library/jest-dom/vitest';
 
 import App from '../App';
 
-import type { AppState, SkillHubLocalState, SkillInstallState } from '../model/types';
+import type { AppState, SkillInstallState } from '../model/types';
 
 
 
@@ -18,11 +18,21 @@ vi.mock('../api/commands', () => ({
 
   setMainSkillsDir: vi.fn(),
 
-  addTarget: vi.fn(),
-
   updateTarget: vi.fn(),
 
   deleteTarget: vi.fn(),
+
+  deleteProject: vi.fn(),
+
+  listAgentPresets: vi.fn(),
+
+  addAgentTarget: vi.fn(),
+
+  addCustomTarget: vi.fn(),
+
+  addProject: vi.fn(),
+
+  updateProject: vi.fn(),
 
   installSkill: vi.fn(),
 
@@ -56,17 +66,29 @@ vi.mock('../api/dialog', () => ({
 
 
 
+vi.mock('../api/updater', () => ({
+
+  checkAppUpdate: vi.fn().mockResolvedValue(null),
+
+  installAppUpdate: vi.fn(),
+
+}));
+
+
+
 import {
 
   getAppState,
 
   setMainSkillsDir,
 
-  addTarget,
-
   updateTarget,
 
   deleteTarget,
+
+  listAgentPresets,
+
+  addCustomTarget,
 
   installSkill,
 
@@ -100,6 +122,8 @@ const baseAppState: AppState = {
 
     settings: { mainSkillsDir: '/tmp/main-skills', linkStrategy: 'auto' },
 
+    projects: [],
+
     targets: [
 
       {
@@ -107,6 +131,12 @@ const baseAppState: AppState = {
         id: 'target_1',
 
         name: 'Claude Global',
+
+        scope: 'global',
+
+        kind: 'custom',
+
+        customPath: '/tmp/target',
 
         skillsDir: '/tmp/target',
 
@@ -176,24 +206,6 @@ const baseAppState: AppState = {
 
 
 
-const mockHubState: SkillHubLocalState = {
-
-  skills: baseAppState.skills,
-
-  validCount: 1,
-
-  invalidCount: 0,
-
-  pendingUpdateCount: 0,
-
-  lastScanAt: '2026-06-30T00:00:00Z',
-
-  skillRecords: {},
-
-};
-
-
-
 function withSkillState(
 
   state: AppState,
@@ -245,6 +257,12 @@ function withTwoTargets(state: AppState): AppState {
           id: 'target_2',
 
           name: 'Claude Project',
+
+          scope: 'global',
+
+          kind: 'custom',
+
+          customPath: '/tmp/target2',
 
           skillsDir: '/tmp/target2',
 
@@ -404,9 +422,9 @@ function withInstalledSkill(state: AppState): AppState {
 
 async function getTargetNames(): Promise<HTMLElement[]> {
 
-  const label = await screen.findByText('目标目录');
+  const label = await screen.findByText('Agent');
 
-  const section = label.closest('.sidebar-section');
+  const section = label.closest('.sidebar-block');
 
   if (!section) throw new Error('Sidebar target section not found');
 
@@ -482,6 +500,8 @@ function setupHubMocks(state: AppState = baseAppState): void {
 
   vi.mocked(checkSkillUpdates).mockResolvedValue([]);
 
+  vi.mocked(listAgentPresets).mockResolvedValue([]);
+
   vi.mocked(getTargetSkillStates).mockImplementation(async (targetId) => {
 
     if (targetId === 'target_1') return state.selectedTargetSkills;
@@ -542,7 +562,7 @@ describe('App', () => {
 
 
 
-    expect(await screen.findByText('目标目录')).toBeInTheDocument();
+    expect(await screen.findByText('Agent')).toBeInTheDocument();
 
     const targetNames = await getTargetNames();
 
@@ -1000,7 +1020,7 @@ describe('App', () => {
 
 
 
-  it('opens TargetFormDialog and calls addTarget when adding a target', async () => {
+  it('opens AddTargetDialog and calls addCustomTarget when adding a target', async () => {
 
     const stateAfterAdd = {
 
@@ -1022,6 +1042,12 @@ describe('App', () => {
 
             name: 'New Target',
 
+            scope: 'global' as const,
+
+            kind: 'custom' as const,
+
+            customPath: '/tmp/new-target',
+
             skillsDir: '/tmp/new-target',
 
             createdAt: '2026-06-28T00:00:00Z',
@@ -1036,9 +1062,11 @@ describe('App', () => {
 
     };
 
-    vi.mocked(addTarget).mockResolvedValue(stateAfterAdd);
+    vi.mocked(addCustomTarget).mockResolvedValue(stateAfterAdd);
 
     vi.mocked(getTargetSkillStates).mockResolvedValue([]);
+
+    vi.mocked(selectDirectory).mockResolvedValue('/tmp/new-target');
 
 
 
@@ -1050,17 +1078,29 @@ describe('App', () => {
 
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole('button', { name: /add target/i }));
+    await user.click(screen.getByRole('button', { name: /Add global target/i }));
 
 
 
-    expect(await screen.findByRole('heading', { name: '添加目标' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '添加目标（用户级）' })).toBeInTheDocument();
 
 
 
     await user.type(screen.getByLabelText('目标名称'), 'New Target');
 
-    await user.type(screen.getByLabelText('Skill 目录路径'), '/tmp/new-target');
+    await user.click(screen.getByRole('button', { name: '选择目录' }));
+
+
+
+    await waitFor(() => {
+
+      expect(selectDirectory).toHaveBeenCalledWith('');
+
+      expect(screen.getByLabelText('Skill 目录路径')).toHaveValue('/tmp/new-target');
+
+    });
+
+
 
     await user.click(screen.getByRole('button', { name: '添加' }));
 
@@ -1068,7 +1108,19 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(addTarget).toHaveBeenCalledWith('New Target', '/tmp/new-target');
+      expect(addCustomTarget).toHaveBeenCalledWith(
+
+        'global',
+
+        'New Target',
+
+        '/tmp/new-target',
+
+        undefined,
+
+        'target_1',
+
+      );
 
     });
 
@@ -1099,6 +1151,8 @@ describe('App', () => {
     expect(screen.getByLabelText('目标名称')).toHaveValue('Claude Global');
 
     expect(screen.getByLabelText('Skill 目录路径')).toHaveValue('/tmp/target');
+
+    expect(screen.getByLabelText('Skill 目录路径')).toBeDisabled();
 
 
 
@@ -1224,7 +1278,7 @@ describe('App', () => {
 
 
 
-  it('add target uses picker', async () => {
+  it('add target uses directory picker in AddTargetDialog', async () => {
 
     const stateAfterAdd = {
 
@@ -1246,6 +1300,12 @@ describe('App', () => {
 
             name: 'New Target',
 
+            scope: 'global' as const,
+
+            kind: 'custom' as const,
+
+            customPath: '/picked/new-target',
+
             skillsDir: '/picked/new-target',
 
             createdAt: '2026-06-28T00:00:00Z',
@@ -1260,7 +1320,7 @@ describe('App', () => {
 
     };
 
-    vi.mocked(addTarget).mockResolvedValue(stateAfterAdd);
+    vi.mocked(addCustomTarget).mockResolvedValue(stateAfterAdd);
 
     vi.mocked(getTargetSkillStates).mockResolvedValue([]);
 
@@ -1276,11 +1336,11 @@ describe('App', () => {
 
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole('button', { name: /add target/i }));
+    await user.click(screen.getByRole('button', { name: /Add global target/i }));
 
 
 
-    expect(await screen.findByRole('heading', { name: '添加目标' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '添加目标（用户级）' })).toBeInTheDocument();
 
 
 
@@ -1310,7 +1370,19 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(addTarget).toHaveBeenCalledWith('New Target', '/picked/new-target');
+      expect(addCustomTarget).toHaveBeenCalledWith(
+
+        'global',
+
+        'New Target',
+
+        '/picked/new-target',
+
+        undefined,
+
+        'target_1',
+
+      );
 
     });
 
@@ -1318,11 +1390,9 @@ describe('App', () => {
 
 
 
-  it('edit target uses picker', async () => {
+  it('edit custom target keeps skills directory readonly without picker', async () => {
 
     vi.mocked(updateTarget).mockResolvedValue(baseAppState);
-
-    vi.mocked(selectDirectory).mockResolvedValue('/picked/target');
 
 
 
@@ -1342,21 +1412,13 @@ describe('App', () => {
 
 
 
-    await user.click(screen.getByRole('button', { name: '选择目录' }));
-
-
-
-    await waitFor(() => {
-
-      expect(selectDirectory).toHaveBeenCalledWith('/tmp/target');
-
-    });
-
-
-
     const skillsDirInput = screen.getByLabelText('Skill 目录路径');
 
-    expect(skillsDirInput).toHaveValue('/picked/target');
+    expect(skillsDirInput).toHaveValue('/tmp/target');
+
+    expect(skillsDirInput).toBeDisabled();
+
+    expect(screen.queryByRole('button', { name: '选择目录' })).not.toBeInTheDocument();
 
 
 
@@ -1366,7 +1428,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Claude Global', '/picked/target');
+      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Claude Global', '/tmp/target');
 
     });
 

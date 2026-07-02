@@ -203,20 +203,8 @@ mod tests {
             .expect("create link2");
 
         config.targets = vec![
-            Target {
-                id: "target-1".to_string(),
-                name: "Target One".to_string(),
-                skills_dir: target1_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            },
-            Target {
-                id: "target-2".to_string(),
-                name: "Target Two".to_string(),
-                skills_dir: target2_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            },
+            Target::global_custom("target-1", "Target One", target1_dir.clone(), "1", "1"),
+            Target::global_custom("target-2", "Target Two", target2_dir.clone(), "1", "1"),
         ];
 
         config.installations = vec![
@@ -277,20 +265,8 @@ mod tests {
         fs::write(link2.join("keep.txt"), "keep").expect("write file");
 
         config.targets = vec![
-            Target {
-                id: "target-1".to_string(),
-                name: "Target One".to_string(),
-                skills_dir: target1_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            },
-            Target {
-                id: "target-2".to_string(),
-                name: "Target Two".to_string(),
-                skills_dir: target2_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            },
+            Target::global_custom("target-1", "Target One", target1_dir.clone(), "1", "1"),
+            Target::global_custom("target-2", "Target Two", target2_dir.clone(), "1", "1"),
         ];
 
         config.installations = vec![
@@ -341,13 +317,13 @@ mod tests {
         crate::fs_adapter::create_dir_link(&skill.path, &link1, crate::fs_adapter::default_link_type())
             .expect("create link1");
 
-        config.targets = vec![Target {
-            id: "target-1".to_string(),
-            name: "Target One".to_string(),
-            skills_dir: target1_dir.clone(),
-            created_at: "1".to_string(),
-            updated_at: "1".to_string(),
-        }];
+        config.targets = vec![Target::global_custom(
+            "target-1",
+            "Target One",
+            target1_dir.clone(),
+            "1",
+            "1",
+        )];
 
         config.installations = vec![
             Installation {

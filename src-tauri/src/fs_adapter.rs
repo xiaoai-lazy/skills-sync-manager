@@ -88,14 +88,21 @@ pub fn delete_real_dir(path: &Path) -> Result<(), AppError> {
 
 #[cfg(windows)]
 fn create_junction(source: &Path, link_path: &Path) -> Result<(), AppError> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let source = windows_junction_path(source, false)?;
+    let link_path = windows_junction_path(link_path, true)?;
 
     let output = Command::new("cmd")
         .args(["/C", "mklink", "/J"])
-        .arg(link_path)
-        .arg(source)
+        .arg(&link_path)
+        .arg(&source)
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|err| io_error(Some(link_path), format!("failed to invoke mklink: {}", err)))?;
+        .map_err(|err| io_error(Some(&link_path), format!("failed to invoke mklink: {}", err)))?;
 
     if output.status.success() {
         Ok(())
@@ -104,10 +111,78 @@ fn create_junction(source: &Path, link_path: &Path) -> Result<(), AppError> {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let message = if stderr.is_empty() { stdout } else { stderr };
         Err(io_error(
-            Some(link_path),
+            Some(&link_path),
             format!("failed to create junction: {}", message),
         ))
     }
+}
+
+/// Prepare an absolute path with backslashes for `cmd.exe mklink`.
+#[cfg(windows)]
+fn windows_junction_path(path: &Path, allow_missing_leaf: bool) -> Result<PathBuf, AppError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|err| {
+                io_error(
+                    Some(path),
+                    format!("failed to resolve working directory: {}", err),
+                )
+            })?
+            .join(path)
+    };
+
+    let normalized = if absolute.exists() {
+        fs::canonicalize(&absolute).map_err(|err| {
+            io_error(
+                Some(path),
+                format!("failed to canonicalize path: {}", err),
+            )
+        })?
+    } else if allow_missing_leaf {
+        let Some(leaf) = absolute.file_name() else {
+            return Err(io_error(
+                Some(path),
+                "junction link path must include a directory name".to_string(),
+            ));
+        };
+        let parent = absolute
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .ok_or_else(|| {
+                io_error(
+                    Some(path),
+                    "junction link path must include a parent directory".to_string(),
+                )
+            })?;
+        let canonical_parent = if parent.exists() {
+            fs::canonicalize(parent).map_err(|err| {
+                io_error(
+                    Some(path),
+                    format!("failed to canonicalize parent path: {}", err),
+                )
+            })?
+        } else {
+            windows_normalize_separators(parent.to_path_buf())
+        };
+        canonical_parent.join(leaf)
+    } else {
+        return Err(io_error(
+            Some(path),
+            format!(
+                "junction source path does not exist: {}",
+                absolute.display()
+            ),
+        ));
+    };
+
+    Ok(windows_normalize_separators(normalized))
+}
+
+#[cfg(windows)]
+fn windows_normalize_separators(path: PathBuf) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().replace('/', "\\"))
 }
 
 #[cfg(not(windows))]
@@ -271,6 +346,33 @@ mod tests {
         delete_real_dir(&dir).expect("delete real dir");
 
         assert!(!path_exists(&dir));
+    }
+
+    #[test]
+    fn create_junction_accepts_forward_slash_paths_on_windows() {
+        if !cfg!(windows) {
+            return;
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let skills_dir = temp.path().join(".cursor").join("skills");
+        fs::create_dir_all(&source).expect("create source");
+        fs::create_dir_all(&skills_dir).expect("create skills dir");
+        fs::write(source.join("SKILL.md"), "content").expect("write source file");
+
+        let mixed_link = PathBuf::from(format!(
+            "{}/oxygen-tool-branch",
+            skills_dir.to_string_lossy().replace('\\', "/")
+        ));
+
+        create_dir_link(&source, &mixed_link, LinkType::Junction).expect("create junction");
+
+        assert!(path_exists(&mixed_link));
+        assert_eq!(
+            fs::read_to_string(mixed_link.join("SKILL.md")).unwrap(),
+            "content"
+        );
     }
 
     #[test]

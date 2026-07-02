@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import type {
 
   AppState,
 
+  Project,
+
   Target,
+
+  TargetScope,
 
   SkillInstallState,
 
@@ -22,11 +26,11 @@ import {
 
   setMainSkillsDir,
 
-  addTarget,
-
   updateTarget,
 
   deleteTarget,
+
+  deleteProject,
 
   installSkill,
 
@@ -50,7 +54,7 @@ import {
 
 import { selectDirectory } from './api/dialog';
 
-import Sidebar from './components/Sidebar';
+import Sidebar, { type MainView } from './components/Sidebar';
 
 import SkillHubPage from './components/skill-hub/SkillHubPage';
 
@@ -61,12 +65,12 @@ import ConfirmDialog from './components/ConfirmDialog';
 import PromptDialog from './components/PromptDialog';
 
 import TargetFormDialog from './components/TargetFormDialog';
+import AddTargetDialog from './components/AddTargetDialog';
+import ProjectFormDialog from './components/ProjectFormDialog';
 import WindowControls from './components/WindowControls';
+import UpdateDialog from './components/UpdateDialog';
+import { checkAppUpdate, installAppUpdate, type UpdateInfo } from './api/updater';
 import { errorMessage } from './utils/errorMessage';
-
-type MainView = 'skill-hub' | 'target';
-
-
 
 const emptyHubState: SkillHubLocalState = {
 
@@ -118,6 +122,10 @@ function App() {
 
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
 
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(() => new Set());
+
   const [mainView, setMainView] = useState<MainView>('skill-hub');
 
   const [loading, setLoading] = useState(true);
@@ -158,11 +166,57 @@ function App() {
 
 
 
+  const [addTargetDialog, setAddTargetDialog] = useState<{
+
+    open: boolean;
+
+    scope: TargetScope;
+
+    projectId?: string;
+
+    projectName?: string;
+
+  }>({ open: false, scope: 'global' });
+
+
+
+  const [projectFormDialog, setProjectFormDialog] = useState<{
+
+    open: boolean;
+
+    mode: 'add' | 'edit';
+
+    project?: Project;
+
+  }>({ open: false, mode: 'add' });
+
+
+
+  const [deleteProjectConfirmOpen, setDeleteProjectConfirmOpen] = useState(false);
+
+  const [deleteProjectData, setDeleteProjectData] = useState<Project | null>(null);
+
+
+
   const [deleteTargetConfirmOpen, setDeleteTargetConfirmOpen] = useState(false);
 
   const [deleteTargetData, setDeleteTargetData] = useState<Target | null>(null);
 
   const [deleteTargetForce, setDeleteTargetForce] = useState(false);
+
+
+
+  const updateDismissedRef = useRef(false);
+
+  const updateCheckStartedRef = useRef(false);
+
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
 
 
@@ -203,6 +257,26 @@ function App() {
     });
 
   }, []);
+
+
+
+  const applyAppStateSuccess = useCallback(
+
+    (next: AppState) => {
+
+      setAppState(next);
+
+      setSelectedTargetId(next.selectedTargetId);
+
+      syncHubFromAppState(next);
+
+      setError(null);
+
+    },
+
+    [syncHubFromAppState]
+
+  );
 
 
 
@@ -336,6 +410,70 @@ function App() {
 
 
 
+  useEffect(() => {
+
+    if (!appState || updateDismissedRef.current || updateCheckStartedRef.current) return;
+
+    updateCheckStartedRef.current = true;
+
+    void checkAppUpdate()
+
+      .then((info) => {
+
+        if (info) {
+
+          setUpdateInfo(info);
+
+          setUpdateDialogOpen(true);
+
+        }
+
+      })
+
+      .catch(() => {
+
+        /* ignore update check failures at startup */
+
+      });
+
+  }, [appState]);
+
+
+
+  const handleDeferUpdate = () => {
+
+    updateDismissedRef.current = true;
+
+    setUpdateDialogOpen(false);
+
+    setUpdateError(null);
+
+  };
+
+
+
+  const handleInstallUpdate = async () => {
+
+    setUpdateInstalling(true);
+
+    setUpdateError(null);
+
+    try {
+
+      await installAppUpdate();
+
+    } catch (err) {
+
+      setUpdateError(errorMessage(err));
+
+      setUpdateInstalling(false);
+
+    }
+
+  };
+
+
+
   const handleSetMainSkillsDir = () => {
 
     if (!appState) return;
@@ -382,43 +520,169 @@ function App() {
 
 
 
-  const handleAddTarget = () => {
+  const handleAddGlobalTarget = () => {
 
-    setTargetFormTarget(null);
-
-    setTargetFormOpen(true);
+    setAddTargetDialog({ open: true, scope: 'global' });
 
   };
 
 
 
-  const handleConfirmAddTarget = async (name: string, skillsDir: string) => {
+  const handleAddProjectTarget = (projectId: string) => {
 
-    setTargetFormOpen(false);
+    const project = appState?.config.projects.find((p) => p.id === projectId);
 
-    setPendingSkillKey('addTarget');
+    setAddTargetDialog({
+
+      open: true,
+
+      scope: 'project',
+
+      projectId,
+
+      projectName: project?.name,
+
+    });
+
+  };
+
+
+
+  const handleAddTargetSuccess = (next: AppState) => {
+
+    setAddTargetDialog((prev) => ({ ...prev, open: false }));
+
+    applyAppStateSuccess(next);
+
+    setMainView('target');
+
+    const target = next.selectedTargetId
+
+      ? next.config.targets.find((item) => item.id === next.selectedTargetId)
+
+      : undefined;
+
+    if (target?.projectId) {
+
+      setExpandedProjectIds((prev) => new Set(prev).add(target.projectId!));
+
+      setSelectedProjectId(target.projectId);
+
+    }
+
+  };
+
+
+
+  const handleAddProject = () => {
+
+    setProjectFormDialog({ open: true, mode: 'add' });
+
+  };
+
+
+
+  const handleEditProject = (project: Project) => {
+
+    setProjectFormDialog({ open: true, mode: 'edit', project });
+
+  };
+
+
+
+  const handleProjectFormSuccess = (next: AppState) => {
+
+    setProjectFormDialog((prev) => ({ ...prev, open: false }));
+
+    applyAppStateSuccess(next);
+
+    if (projectFormDialog.mode === 'add') {
+
+      const newest = next.config.projects[next.config.projects.length - 1];
+
+      if (newest) {
+
+        setSelectedProjectId(newest.id);
+
+        setExpandedProjectIds((prev) => new Set(prev).add(newest.id));
+
+      }
+
+    }
+
+  };
+
+
+
+  const handleToggleProject = (projectId: string) => {
+
+    setExpandedProjectIds((prev) => {
+
+      const next = new Set(prev);
+
+      if (next.has(projectId)) {
+
+        next.delete(projectId);
+
+      } else {
+
+        next.add(projectId);
+
+      }
+
+      return next;
+
+    });
+
+    setSelectedProjectId(projectId);
+
+  };
+
+
+
+  const handleDeleteProject = (project: Project) => {
+
+    setDeleteProjectData(project);
+
+    setDeleteProjectConfirmOpen(true);
+
+  };
+
+
+
+  const handleConfirmDeleteProject = async () => {
+
+    if (!deleteProjectData) return;
+
+    const project = deleteProjectData;
+
+    setPendingSkillKey(`delete-project-${project.id}`);
 
     try {
 
-      const next = await addTarget(name, skillsDir);
+      const next = await deleteProject(project.id, selectedTargetId);
 
-      setAppState(next);
+      setDeleteProjectConfirmOpen(false);
 
-      setSelectedTargetId(next.selectedTargetId);
+      setDeleteProjectData(null);
 
-      syncHubFromAppState(next);
+      applyAppStateSuccess(next);
 
-      setMainView('target');
+      if (selectedProjectId === project.id) {
 
-      const skills = await getTargetSkillStates(next.selectedTargetId!);
+        setSelectedProjectId(null);
 
-      setAppState((prev) =>
+      }
 
-        prev ? { ...prev, selectedTargetSkills: skills } : prev
+      setExpandedProjectIds((prev) => {
 
-      );
+        const next = new Set(prev);
 
-      setError(null);
+        next.delete(project.id);
+
+        return next;
+
+      });
 
     } catch (err) {
 
@@ -434,7 +698,19 @@ function App() {
 
 
 
+  const handleCancelDeleteProject = () => {
+
+    setDeleteProjectConfirmOpen(false);
+
+    setDeleteProjectData(null);
+
+  };
+
+
+
   const handleEditTarget = (target: Target) => {
+
+    if (target.kind !== 'custom') return;
 
     setTargetFormTarget(target);
 
@@ -559,6 +835,16 @@ function App() {
     setMainView('target');
 
     setSelectedTargetId(targetId);
+
+    const target = appState?.config.targets.find((item) => item.id === targetId);
+
+    if (target?.projectId) {
+
+      setSelectedProjectId(target.projectId);
+
+      setExpandedProjectIds((prev) => new Set(prev).add(target.projectId!));
+
+    }
 
     setLoading(true);
 
@@ -732,7 +1018,13 @@ function App() {
 
         targets={appState?.config.targets ?? []}
 
+        projects={appState?.config.projects ?? []}
+
         selectedTargetId={selectedTargetId}
+
+        selectedProjectId={selectedProjectId}
+
+        expandedProjectIds={expandedProjectIds}
 
         mainView={mainView}
 
@@ -740,11 +1032,21 @@ function App() {
 
         onSelectTarget={handleSelectTarget}
 
-        onAddTarget={handleAddTarget}
+        onToggleProject={handleToggleProject}
+
+        onAddGlobalTarget={handleAddGlobalTarget}
+
+        onAddProject={handleAddProject}
+
+        onAddProjectTarget={handleAddProjectTarget}
 
         onEditTarget={handleEditTarget}
 
+        onEditProject={handleEditProject}
+
         onDeleteTarget={handleDeleteTarget}
+
+        onDeleteProject={handleDeleteProject}
 
       />
 
@@ -868,31 +1170,65 @@ function App() {
 
         />
 
+        <AddTargetDialog
+
+          open={addTargetDialog.open}
+
+          onClose={() => setAddTargetDialog((prev) => ({ ...prev, open: false }))}
+
+          scope={addTargetDialog.scope}
+
+          projectId={addTargetDialog.projectId}
+
+          projectName={addTargetDialog.projectName}
+
+          existingTargets={appState?.config.targets ?? []}
+
+          selectedTargetId={selectedTargetId}
+
+          onSuccess={handleAddTargetSuccess}
+
+        />
+
+        <ProjectFormDialog
+
+          open={projectFormDialog.open}
+
+          onClose={() => setProjectFormDialog((prev) => ({ ...prev, open: false }))}
+
+          mode={projectFormDialog.mode}
+
+          project={projectFormDialog.project}
+
+          selectedTargetId={selectedTargetId}
+
+          onSuccess={handleProjectFormSuccess}
+
+        />
+
         <TargetFormDialog
 
           open={targetFormOpen}
 
-          title={targetFormTarget ? '编辑目标' : '添加目标'}
+          title="编辑目标"
 
           initialName={targetFormTarget?.name}
 
           initialSkillsDir={targetFormTarget?.skillsDir}
 
-          confirmLabel={targetFormTarget ? '保存' : '添加'}
+          skillsDirReadOnly
 
-          pickDirectoryLabel="选择目录"
+          confirmLabel="保存"
 
-          onPickDirectory={selectDirectory}
+          onConfirm={(name, skillsDir) => {
 
-          onConfirm={
+            if (targetFormTarget) {
 
-            targetFormTarget
+              void handleConfirmEditTarget(targetFormTarget.id, name, skillsDir);
 
-              ? (name, skillsDir) => handleConfirmEditTarget(targetFormTarget.id, name, skillsDir)
+            }
 
-              : handleConfirmAddTarget
-
-          }
+          }}
 
           onCancel={() => {
 
@@ -901,6 +1237,46 @@ function App() {
             setTargetFormTarget(null);
 
           }}
+
+        />
+
+        <UpdateDialog
+
+          open={updateDialogOpen}
+
+          update={updateInfo}
+
+          installing={updateInstalling}
+
+          error={updateError}
+
+          onDefer={handleDeferUpdate}
+
+          onInstall={() => {
+
+            void handleInstallUpdate();
+
+          }}
+
+        />
+
+        <ConfirmDialog
+
+          open={deleteProjectConfirmOpen}
+
+          title="删除项目"
+
+          message={`确定删除项目「${deleteProjectData?.name}」吗？`}
+
+          confirmLabel="删除"
+
+          cancelLabel="取消"
+
+          danger
+
+          onConfirm={handleConfirmDeleteProject}
+
+          onCancel={handleCancelDeleteProject}
 
         />
 

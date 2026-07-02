@@ -1,4 +1,3 @@
-import React from 'react';
 import Dialog from '../Dialog';
 import type { DiscoverableSkill, SmartPastePreview } from '../../model/types';
 

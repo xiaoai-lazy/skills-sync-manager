@@ -2,8 +2,8 @@ use crate::fs_adapter;
 use crate::models::{
     AppConfig, AppError, Installation, SkillInstallState, SkillView, SkillWithTargetState, Target,
 };
+use crate::time_util::{current_timestamp, timestamp_nanos};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install_skill(
     config: &mut AppConfig,
@@ -266,17 +266,6 @@ fn compute_skill_state(
     }
 }
 
-fn current_timestamp() -> String {
-    timestamp_nanos().to_string()
-}
-
-fn timestamp_nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after Unix epoch")
-        .as_nanos()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,13 +317,13 @@ mod tests {
         let config = AppConfig {
             version: 1,
             settings: Settings::default(),
-            targets: vec![Target {
-                id: target_id.to_string(),
-                name: target_name.to_string(),
-                skills_dir: target_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            }],
+            targets: vec![Target::global_custom(
+                target_id,
+                target_name,
+                target_dir.clone(),
+                "1",
+                "1",
+            )],
             installations: Vec::new(),
             ..Default::default()
         };
@@ -597,13 +586,13 @@ mod tests {
         let config = AppConfig {
             version: 1,
             settings: Settings::default(),
-            targets: vec![Target {
-                id: "target-1".to_string(),
-                name: "Target One".to_string(),
-                skills_dir: target_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            }],
+            targets: vec![Target::global_custom(
+                "target-1",
+                "Target One",
+                target_dir.clone(),
+                "1",
+                "1",
+            )],
             installations: vec![
                 Installation {
                     id: "install-1".to_string(),
@@ -723,13 +712,13 @@ mod tests {
         let mut config = AppConfig {
             version: 1,
             settings: Settings::default(),
-            targets: vec![Target {
-                id: "target-1".to_string(),
-                name: "Target One".to_string(),
-                skills_dir: target_dir.clone(),
-                created_at: "1".to_string(),
-                updated_at: "1".to_string(),
-            }],
+            targets: vec![Target::global_custom(
+                "target-1",
+                "Target One",
+                target_dir.clone(),
+                "1",
+                "1",
+            )],
             installations: Vec::new(),
             ..Default::default()
         };

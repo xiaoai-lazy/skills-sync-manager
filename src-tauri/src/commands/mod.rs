@@ -1,8 +1,11 @@
-use crate::models::{AppConfig, AppError, AppErrorDto, AppState};
-use std::path::PathBuf;
+use crate::agent_presets::{self, AgentPreset};
+use crate::agent_presets::normalize_platform_path;
+use crate::models::{AgentPresetDto, AppConfig, AppError, AppErrorDto, AppState, TargetScope};
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 pub mod skill_hub;
+pub mod updater;
 
 pub(crate) fn store_from_app(app: &tauri::AppHandle) -> Result<crate::config_store::ConfigStore, AppError> {
     let app_data_dir = app.path().app_data_dir().map_err(|err| AppError::Io {
@@ -54,6 +57,80 @@ where
     build_app_state(config, selected_target_id).map_err(|err| err.to_dto())
 }
 
+fn app_data_dir_from_app(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
+    app.path().app_data_dir().map_err(|err| AppError::Io {
+        path: None,
+        message: format!("failed to resolve app data directory: {}", err),
+    })
+}
+
+fn resource_dir_from_app(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().resource_dir().ok()
+}
+
+pub(crate) fn parse_target_scope(scope: &str) -> Result<TargetScope, AppError> {
+    match scope.trim().to_ascii_lowercase().as_str() {
+        "global" => Ok(TargetScope::Global),
+        "project" => Ok(TargetScope::Project),
+        other => Err(AppError::InvalidInput {
+            input: scope.to_string(),
+            message: format!("scope must be \"global\" or \"project\", got \"{}\"", other),
+        }),
+    }
+}
+
+pub(crate) fn resolve_preset_icon_url(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    icon: Option<&str>,
+) -> Option<String> {
+    let filename = icon?;
+
+    let user_path = app_data_dir.join("agent-icons").join(filename);
+    if user_path.is_file() {
+        return Some(user_path.to_string_lossy().into_owned());
+    }
+
+    if let Some(resource_dir) = resource_dir {
+        let bundled = resource_dir.join("agent-icons").join(filename);
+        if bundled.is_file() {
+            return Some(bundled.to_string_lossy().into_owned());
+        }
+    }
+
+    None
+}
+
+pub(crate) fn preset_to_dto(
+    preset: &AgentPreset,
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+) -> AgentPresetDto {
+    AgentPresetDto {
+        id: preset.id.clone(),
+        display_name: preset.display_name.clone(),
+        global_path: preset.global_path.clone(),
+        project_relative_path: preset.project_relative_path.clone(),
+        icon_url: resolve_preset_icon_url(
+            app_data_dir,
+            resource_dir,
+            preset.icon.as_deref(),
+        ),
+    }
+}
+
+pub(crate) fn list_agent_presets_for_scope(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    scope: TargetScope,
+) -> Result<Vec<AgentPresetDto>, AppError> {
+    let presets = agent_presets::load_merged_presets(app_data_dir)?;
+    Ok(agent_presets::presets_for_scope(&presets, scope)
+        .into_iter()
+        .map(|preset| preset_to_dto(preset, app_data_dir, resource_dir))
+        .collect())
+}
+
 #[tauri::command]
 pub fn get_app_state(
     app: tauri::AppHandle,
@@ -69,7 +146,7 @@ pub fn set_main_skills_dir(
     app: tauri::AppHandle,
     path: String,
 ) -> Result<AppState, AppErrorDto> {
-    let path = PathBuf::from(path);
+    let path = normalize_platform_path(PathBuf::from(path));
     if !path.exists() {
         return Err(AppError::InvalidMainSkillsDir {
             path: path.clone(),
@@ -94,23 +171,129 @@ pub fn set_main_skills_dir(
 }
 
 #[tauri::command]
-pub fn add_target(
+pub fn list_agent_presets(
     app: tauri::AppHandle,
-    name: String,
-    skills_dir: String,
+    scope: String,
+    _project_id: Option<String>,
+) -> Result<Vec<AgentPresetDto>, AppErrorDto> {
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    let resource_dir = resource_dir_from_app(&app);
+    let scope = parse_target_scope(&scope).map_err(|err| err.to_dto())?;
+    list_agent_presets_for_scope(
+        &app_data_dir,
+        resource_dir.as_deref(),
+        scope,
+    )
+    .map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn add_agent_target(
+    app: tauri::AppHandle,
+    scope: String,
+    agent_id: String,
+    project_id: Option<String>,
+    _selected_target_id: Option<String>,
 ) -> Result<AppState, AppErrorDto> {
-    let skills_dir = PathBuf::from(skills_dir);
-    let request = crate::target_registry::AddTargetRequest {
-        name,
-        skills_dir,
+    let scope = parse_target_scope(&scope).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    let presets = agent_presets::load_merged_presets(&app_data_dir).map_err(|err| err.to_dto())?;
+    let request = crate::target_registry::AddAgentTargetRequest {
+        scope,
+        agent_id,
+        project_id,
     };
 
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
-    let target = crate::target_registry::add_target(&mut config, request).map_err(|err| err.to_dto())?;
+    let target =
+        crate::target_registry::add_agent_target(&mut config, &presets, request)
+            .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     build_app_state(config, Some(target.id)).map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn add_custom_target(
+    app: tauri::AppHandle,
+    scope: String,
+    name: String,
+    skills_dir: String,
+    project_id: Option<String>,
+    _selected_target_id: Option<String>,
+) -> Result<AppState, AppErrorDto> {
+    let scope = parse_target_scope(&scope).map_err(|err| err.to_dto())?;
+    let request = crate::target_registry::AddCustomTargetRequest {
+        scope,
+        name,
+        skills_dir: PathBuf::from(skills_dir),
+        project_id,
+    };
+
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    let target = crate::target_registry::add_custom_target(&mut config, request)
+        .map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    build_app_state(config, Some(target.id)).map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn add_project(
+    app: tauri::AppHandle,
+    name: String,
+    root_path: String,
+    selected_target_id: Option<String>,
+) -> Result<AppState, AppErrorDto> {
+    let root_path = PathBuf::from(root_path);
+
+    run_with_config(
+        app,
+        |config| {
+            crate::project_registry::add_project(config, name, root_path)?;
+            Ok(())
+        },
+        selected_target_id,
+    )
+}
+
+#[tauri::command]
+pub fn update_project(
+    app: tauri::AppHandle,
+    project_id: String,
+    name: String,
+    selected_target_id: Option<String>,
+) -> Result<AppState, AppErrorDto> {
+    let project_id_for_closure = project_id.clone();
+
+    run_with_config(
+        app,
+        move |config| {
+            crate::project_registry::update_project(config, &project_id_for_closure, name)?;
+            Ok(())
+        },
+        selected_target_id,
+    )
+}
+
+#[tauri::command]
+pub fn delete_project(
+    app: tauri::AppHandle,
+    project_id: String,
+    selected_target_id: Option<String>,
+) -> Result<AppState, AppErrorDto> {
+    let project_id_for_closure = project_id.clone();
+
+    run_with_config(
+        app,
+        move |config| {
+            crate::project_registry::delete_project(config, &project_id_for_closure)?;
+            Ok(())
+        },
+        selected_target_id,
+    )
 }
 
 #[tauri::command]
@@ -118,18 +301,17 @@ pub fn update_target(
     app: tauri::AppHandle,
     target_id: String,
     name: String,
-    skills_dir: String,
+    _skills_dir: String,
 ) -> Result<AppState, AppErrorDto> {
-    let skills_dir = PathBuf::from(skills_dir);
     let request = crate::target_registry::UpdateTargetRequest {
         name,
-        skills_dir,
+        skills_dir: PathBuf::new(),
     };
     let target_id_for_closure = target_id.clone();
 
     run_with_config(
         app,
-        |config| {
+        move |config| {
             crate::target_registry::update_target(config, &target_id_for_closure, request.clone())?;
             Ok(())
         },
@@ -252,13 +434,7 @@ mod tests {
     }
 
     fn create_target(id: &str, skills_dir: PathBuf) -> Target {
-        Target {
-            id: id.to_string(),
-            name: format!("Target {}", id),
-            skills_dir,
-            created_at: "1".to_string(),
-            updated_at: "1".to_string(),
-        }
+        Target::global_custom(id, format!("Target {}", id), skills_dir, "1", "1")
     }
 
     fn create_valid_skill(main_dir: &std::path::Path, dir_name: &str) -> SkillView {
@@ -477,5 +653,106 @@ mod tests {
         let dto = err.to_dto();
         assert_eq!(dto.code, "invalidTargetDir");
         assert!(dto.message.contains("/target"));
+    }
+
+    #[test]
+    fn parse_target_scope_accepts_global_and_project() {
+        assert_eq!(
+            parse_target_scope("global").expect("global"),
+            crate::models::TargetScope::Global
+        );
+        assert_eq!(
+            parse_target_scope("  PROJECT  ").expect("project"),
+            crate::models::TargetScope::Project
+        );
+    }
+
+    #[test]
+    fn parse_target_scope_rejects_unknown_values() {
+        let error = parse_target_scope("workspace").expect_err("invalid scope");
+        assert!(matches!(error, AppError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn list_agent_presets_for_scope_filters_project_presets() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let presets = list_agent_presets_for_scope(
+            temp.path(),
+            None,
+            crate::models::TargetScope::Project,
+        )
+        .expect("list project presets");
+
+        assert_eq!(presets.len(), 3);
+        assert!(presets.iter().all(|preset| preset.project_relative_path.is_some()));
+    }
+
+    #[test]
+    fn resolve_preset_icon_url_prefers_user_override() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let icons_dir = temp.path().join("agent-icons");
+        fs::create_dir_all(&icons_dir).expect("create icons dir");
+        fs::write(icons_dir.join("cursor.png"), b"user icon").expect("write icon");
+
+        let icon_url = resolve_preset_icon_url(temp.path(), None, Some("cursor.png"))
+            .expect("icon url");
+        assert_eq!(icon_url, icons_dir.join("cursor.png").to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn add_project_via_registry_updates_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = create_config_with_targets(None, Vec::new());
+
+        crate::project_registry::add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.projects[0].name, "My App");
+    }
+
+    #[test]
+    fn add_custom_target_global_via_registry() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = create_config_with_targets(None, Vec::new());
+
+        let target = crate::target_registry::add_custom_target(
+            &mut config,
+            crate::target_registry::AddCustomTargetRequest {
+                scope: crate::models::TargetScope::Global,
+                name: "Tools".to_string(),
+                skills_dir: temp.path().to_path_buf(),
+                project_id: None,
+            },
+        )
+        .expect("add custom target");
+
+        assert_eq!(target.scope, crate::models::TargetScope::Global);
+        assert_eq!(target.kind, crate::models::TargetKind::Custom);
+        assert_eq!(config.targets.len(), 1);
+    }
+
+    #[test]
+    fn update_target_command_logic_ignores_skills_dir() {
+        let first = tempfile::tempdir().expect("first tempdir");
+        let second = tempfile::tempdir().expect("second tempdir");
+        let mut config = create_config_with_targets(None, vec![create_target("target-1", first.path().to_path_buf())]);
+
+        let target = crate::target_registry::update_target(
+            &mut config,
+            "target-1",
+            crate::target_registry::UpdateTargetRequest {
+                name: "Renamed".to_string(),
+                skills_dir: second.path().to_path_buf(),
+            },
+        )
+        .expect("update target");
+
+        assert_eq!(target.name, "Renamed");
+        assert_eq!(target.skills_dir, first.path());
     }
 }
