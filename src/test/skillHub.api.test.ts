@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { DiscoverableSkill } from '../model/types';
+import { emptyV6DiscoverableFields } from '../model/types';
 
 const invokeMock = vi.fn();
 
@@ -21,6 +22,13 @@ import {
   addSkillRepo,
   removeSkillRepo,
   setSkillRepoEnabled,
+  listSkillHubEndpoints,
+  addSkillHubEndpoint,
+  removeSkillHubEndpoint,
+  setSkillHubEndpointEnabled,
+  listHubGroups,
+  createHubGroup,
+  uploadSkillToHub,
 } from '../api/skillHub';
 
 const sampleDiscoverable: DiscoverableSkill = {
@@ -35,6 +43,7 @@ const sampleDiscoverable: DiscoverableSkill = {
   repoName: 'skills',
   repoBranch: 'main',
   source: 'github',
+  ...emptyV6DiscoverableFields,
 };
 
 beforeEach(() => {
@@ -90,7 +99,7 @@ describe('skillHub API', () => {
 
     const result = await discoverSkills();
 
-    expect(invokeMock).toHaveBeenCalledWith('discover_skills');
+    expect(invokeMock).toHaveBeenCalledWith('discover_skills', { force: false });
     expect(result.skills).toEqual([sampleDiscoverable]);
     expect(result.warnings).toEqual([]);
   });
@@ -220,6 +229,76 @@ describe('skillHub API', () => {
       host: 'gitlab.example.com',
       projectPath: 'acme/tools',
       enabled: false,
+    });
+  });
+
+  it('listSkillHubEndpoints calls list_skill_hub_endpoints', async () => {
+    invokeMock.mockResolvedValue([]);
+
+    await listSkillHubEndpoints();
+
+    expect(invokeMock).toHaveBeenCalledWith('list_skill_hub_endpoints');
+  });
+
+  it('addSkillHubEndpoint passes name and baseUrl', async () => {
+    invokeMock.mockResolvedValue({ endpoints: [], discoverSkills: [] });
+
+    await addSkillHubEndpoint('Company Hub', 'https://hub.example.com');
+
+    expect(invokeMock).toHaveBeenCalledWith('add_skill_hub_endpoint', {
+      name: 'Company Hub',
+      baseUrl: 'https://hub.example.com',
+    });
+  });
+
+  it('removeSkillHubEndpoint passes id', async () => {
+    invokeMock.mockResolvedValue({ endpoints: [], discoverSkills: [] });
+
+    await removeSkillHubEndpoint('hub-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('remove_skill_hub_endpoint', { id: 'hub-1' });
+  });
+
+  it('setSkillHubEndpointEnabled passes id and enabled', async () => {
+    invokeMock.mockResolvedValue({ endpoints: [], discoverSkills: [] });
+
+    await setSkillHubEndpointEnabled('hub-1', false);
+
+    expect(invokeMock).toHaveBeenCalledWith('set_skill_hub_endpoint_enabled', {
+      id: 'hub-1',
+      enabled: false,
+    });
+  });
+
+  it('listHubGroups passes hubEndpointId', async () => {
+    invokeMock.mockResolvedValue(['default']);
+
+    const result = await listHubGroups('hub-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('list_hub_groups', { hubEndpointId: 'hub-1' });
+    expect(result).toEqual(['default']);
+  });
+
+  it('createHubGroup passes hubEndpointId and name', async () => {
+    invokeMock.mockResolvedValue(['default', 'new-group']);
+
+    await createHubGroup('hub-1', 'new-group');
+
+    expect(invokeMock).toHaveBeenCalledWith('create_hub_group', {
+      hubEndpointId: 'hub-1',
+      name: 'new-group',
+    });
+  });
+
+  it('uploadSkillToHub passes hubEndpointId group and storageKey', async () => {
+    invokeMock.mockResolvedValue({ endpoints: [], discoverSkills: [] });
+
+    await uploadSkillToHub('hub-1', 'tools', 'github.com--owner/repo/skills/foo');
+
+    expect(invokeMock).toHaveBeenCalledWith('upload_skill_to_hub', {
+      hubEndpointId: 'hub-1',
+      group: 'tools',
+      storageKey: 'github.com--owner/repo/skills/foo',
     });
   });
 });

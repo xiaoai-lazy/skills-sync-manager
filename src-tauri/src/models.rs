@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Current on-disk config schema version. Bump when adding breaking fields.
-pub const CURRENT_CONFIG_VERSION: u32 = 5;
+pub const CURRENT_CONFIG_VERSION: u32 = 6;
 
 pub(crate) fn default_github_host() -> String {
     "github.com".to_string()
@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub gitlab_credential_hosts: Vec<String>,
     #[serde(default)]
     pub projects: Vec<Project>,
+    #[serde(default)]
+    pub skill_hub_endpoints: Vec<SkillHubEndpoint>,
 }
 
 impl Default for AppConfig {
@@ -47,8 +49,18 @@ impl Default for AppConfig {
             skill_update_cache: SkillUpdateCache::default(),
             gitlab_credential_hosts: Vec::new(),
             projects: Vec::new(),
+            skill_hub_endpoints: Vec::new(),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillHubEndpoint {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub enabled: bool,
 }
 
 /// Upgrade an on-disk config to the current schema. Returns true when persisted state changed.
@@ -77,10 +89,12 @@ pub fn migrate_config(config: &mut AppConfig) -> bool {
 
     if config.version < 5 {
         migrate_v4_to_v5(config);
+        config.version = 5;
+        return true;
     }
 
-    config.version = CURRENT_CONFIG_VERSION;
-    true
+    // v5→v6 filesystem migration is handled in config_store before this is called again.
+    false
 }
 
 /// Normalize stored filesystem paths to native platform separators.
@@ -217,6 +231,8 @@ impl Default for Settings {
     }
 }
 
+/// Link creation strategy. Currently only `Auto` is implemented (OS-appropriate
+/// junction/symlink); additional variants are reserved for future use.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum LinkStrategy {
@@ -303,6 +319,24 @@ pub struct Installation {
     pub link_path: PathBuf,
     pub link_type: LinkType,
     pub created_at: String,
+    #[serde(default)]
+    pub skill_storage_key: String,
+}
+
+impl Default for Installation {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            skill_dir_name: String::new(),
+            skill_name: String::new(),
+            source_path: PathBuf::new(),
+            target_id: String::new(),
+            link_path: PathBuf::new(),
+            link_type: LinkType::Junction,
+            created_at: String::new(),
+            skill_storage_key: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -321,6 +355,25 @@ pub struct SkillView {
     pub path: PathBuf,
     pub valid: bool,
     pub validation_errors: Vec<String>,
+    #[serde(default)]
+    pub storage_key: String,
+    #[serde(default)]
+    pub link_name: String,
+}
+
+impl Default for SkillView {
+    fn default() -> Self {
+        Self {
+            dir_name: String::new(),
+            name: None,
+            description: None,
+            path: PathBuf::new(),
+            valid: false,
+            validation_errors: Vec::new(),
+            storage_key: String::new(),
+            link_name: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -448,6 +501,44 @@ pub struct SkillRecord {
     pub directory: String,
     pub content_hash: String,
     pub installed_at: String,
+    #[serde(default)]
+    pub storage_key: String,
+    #[serde(default)]
+    pub link_name: String,
+    #[serde(default)]
+    pub repo_slug: String,
+    #[serde(default)]
+    pub hub_endpoint_id: String,
+    #[serde(default)]
+    pub hub_skill_group: String,
+    #[serde(default)]
+    pub hub_skill_id: String,
+    /// Hub/remote source no longer has this skill; local copy may still exist.
+    #[serde(default)]
+    pub source_missing: bool,
+}
+
+impl Default for SkillRecord {
+    fn default() -> Self {
+        Self {
+            repo_host: default_github_host(),
+            project_path: String::new(),
+            source: String::new(),
+            repo_owner: String::new(),
+            repo_name: String::new(),
+            repo_branch: String::new(),
+            directory: String::new(),
+            content_hash: String::new(),
+            installed_at: String::new(),
+            storage_key: String::new(),
+            link_name: String::new(),
+            repo_slug: String::new(),
+            hub_endpoint_id: String::new(),
+            hub_skill_group: String::new(),
+            hub_skill_id: String::new(),
+            source_missing: false,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -487,12 +578,55 @@ pub struct DiscoverableSkill {
     pub repo_name: String,
     pub repo_branch: String,
     pub source: String,
+    #[serde(default)]
+    pub storage_key: String,
+    #[serde(default)]
+    pub link_name: String,
+    #[serde(default)]
+    pub repo_slug: String,
+    #[serde(default)]
+    pub hub_endpoint_id: String,
+    #[serde(default)]
+    pub hub_skill_group: String,
+    #[serde(default)]
+    pub hub_skill_id: String,
+}
+
+impl Default for DiscoverableSkill {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            name: String::new(),
+            description: String::new(),
+            directory: String::new(),
+            install_dir_name: String::new(),
+            repo_host: default_github_host(),
+            project_path: String::new(),
+            repo_owner: String::new(),
+            repo_name: String::new(),
+            repo_branch: String::new(),
+            source: String::new(),
+            storage_key: String::new(),
+            link_name: String::new(),
+            repo_slug: String::new(),
+            hub_endpoint_id: String::new(),
+            hub_skill_group: String::new(),
+            hub_skill_id: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillRepoChangeResult {
     pub repos: Vec<SkillRepo>,
+    pub discover_skills: Vec<DiscoverableSkill>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillHubEndpointChangeResult {
+    pub endpoints: Vec<SkillHubEndpoint>,
     pub discover_skills: Vec<DiscoverableSkill>,
 }
 
@@ -515,6 +649,20 @@ pub struct SkillUpdateInfo {
     pub name: String,
     pub current_hash: Option<String>,
     pub remote_hash: String,
+    #[serde(default)]
+    pub storage_key: String,
+}
+
+impl Default for SkillUpdateInfo {
+    fn default() -> Self {
+        Self {
+            dir_name: String::new(),
+            name: String::new(),
+            current_hash: None,
+            remote_hash: String::new(),
+            storage_key: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -582,11 +730,33 @@ pub struct UpdateInfoDto {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct MigrationReportDto {
+    pub backed_up_config: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backed_up_main: Option<String>,
+    pub succeeded: Vec<String>,
+    pub failed: Vec<String>,
+    pub orphan_locals: Vec<String>,
+    pub links_repaired: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub config: AppConfig,
     pub skills: Vec<SkillView>,
     pub selected_target_id: Option<String>,
     pub selected_target_skills: Vec<SkillWithTargetState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_migration_report: Option<MigrationReportDto>,
+    /// When false, `skills` may be empty/omitted by the client merge layer.
+    /// Defaults to true for backward compatibility.
+    #[serde(default = "default_true")]
+    pub skills_included: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -635,6 +805,11 @@ pub enum AppError {
         url: String,
         status: Option<u16>,
         message: String,
+    },
+    /// Hub (or similar) reported the skill no longer exists (HTTP 404).
+    HubSkillGone {
+        skill_id: String,
+        group: String,
     },
     DiscoverInProgress,
     DirExists {
@@ -776,6 +951,13 @@ impl AppError {
                     Some(code) => format!("下载失败 {} (HTTP {}): {}", url, code, message),
                     None => format!("下载失败 {}: {}", url, message),
                 },
+            },
+            AppError::HubSkillGone { skill_id, group } => AppErrorDto {
+                code: "hubSkillGone".to_string(),
+                message: format!(
+                    "源中已不存在「{}」（分组 {}）",
+                    skill_id, group
+                ),
             },
             AppError::DiscoverInProgress => AppErrorDto {
                 code: "discoverInProgress".to_string(),
@@ -959,6 +1141,13 @@ impl std::fmt::Display for AppError {
                     write!(formatter, "download failed for {}: {}", url, message)
                 }
             }
+            AppError::HubSkillGone { skill_id, group } => {
+                write!(
+                    formatter,
+                    "hub skill gone: {}/{}",
+                    group, skill_id
+                )
+            }
             AppError::DiscoverInProgress => {
                 write!(formatter, "skill discovery already in progress")
             }
@@ -1048,6 +1237,7 @@ mod tests {
             link_path: PathBuf::from("C:/target/skills/example-skill"),
             link_type: LinkType::Junction,
             created_at: "2026-06-23T00:00:00Z".to_string(),
+            skill_storage_key: String::new(),
         };
 
         let value = serde_json::to_value(installation).expect("installation serializes");
@@ -1178,6 +1368,29 @@ mod tests {
             config.targets[0].skills_dir,
             PathBuf::from("C:/Git/efs/.trae/skills")
         );
+    }
+
+    #[test]
+    fn skill_record_v6_fields_deserialize_with_defaults() {
+        let raw = r#"{
+        "source": "github",
+        "repoOwner": "anthropics",
+        "repoName": "skills",
+        "repoBranch": "main",
+        "directory": "skills/tdd",
+        "contentHash": "abc",
+        "installedAt": "2026-01-01T00:00:00Z"
+    }"#;
+        let record: SkillRecord = serde_json::from_str(raw).expect("parse v5 record");
+        assert_eq!(record.storage_key, "");
+        assert_eq!(record.link_name, "");
+    }
+
+    #[test]
+    fn app_config_deserializes_skill_hub_endpoints_default_empty() {
+        let raw = r#"{"version":5,"settings":{"linkStrategy":"auto"},"targets":[],"installations":[]}"#;
+        let config: AppConfig = serde_json::from_str(raw).expect("parse");
+        assert!(config.skill_hub_endpoints.is_empty());
     }
 
     #[test]

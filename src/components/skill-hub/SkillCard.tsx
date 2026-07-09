@@ -11,6 +11,7 @@ export interface SkillCardProps {
   skill: SkillCardSkill;
   mode: 'installed' | 'discover';
   hasUpdate?: boolean;
+  sourceMissing?: boolean;
   selected?: boolean;
   sourceLabel: string;
   onSelect?: (selected: boolean) => void;
@@ -37,15 +38,14 @@ function getDescription(skill: SkillCardSkill): string {
   return skill.description ?? '';
 }
 
-function getDirName(skill: SkillCardSkill): string {
-  return isDiscoverableSkill(skill) ? skill.installDirName : skill.dirName;
-}
-
-function getSourceMeta(sourceLabel: string, dirName: string, skill: SkillCardSkill): string {
+function getSourceMeta(sourceLabel: string, skill: SkillCardSkill): string {
   if (isDiscoverableSkill(skill) && skill.source === 'gitlab' && skill.repoHost) {
-    return `GitLab · ${skill.repoHost} · ${dirName}`;
+    return `GitLab · ${skill.repoHost}`;
   }
-  return `${sourceLabel} · ${dirName}`;
+  if (isDiscoverableSkill(skill) && skill.source === 'skillhub' && skill.hubSkillGroup) {
+    return `Skill Hub · ${skill.hubSkillGroup}`;
+  }
+  return sourceLabel;
 }
 
 function SkillCard(props: SkillCardProps) {
@@ -53,6 +53,7 @@ function SkillCard(props: SkillCardProps) {
     skill,
     mode,
     hasUpdate = false,
+    sourceMissing = false,
     selected = false,
     sourceLabel,
     onSelect,
@@ -64,10 +65,10 @@ function SkillCard(props: SkillCardProps) {
   const id = getCardId(skill);
   const title = getTitle(skill);
   const desc = getDescription(skill);
-  const dirName = getDirName(skill);
   const invalid = !isDiscoverableSkill(skill) && !skill.valid;
   const isDiscover = mode === 'discover';
-  const sourceMeta = getSourceMeta(sourceLabel, dirName, skill);
+  const sourceMeta = getSourceMeta(sourceLabel, skill);
+  const showUpdate = hasUpdate && !invalid && !sourceMissing;
 
   let actions: React.ReactNode = null;
   if (isDiscover) {
@@ -82,7 +83,7 @@ function SkillCard(props: SkillCardProps) {
         删除
       </button>
     );
-  } else if (hasUpdate) {
+  } else if (showUpdate) {
     actions = (
       <>
         <button type="button" className="btn-sm btn-primary" onClick={onUpdate}>
@@ -106,9 +107,11 @@ function SkillCard(props: SkillCardProps) {
     onSelect(!selected);
   };
 
+  const showBadges = showUpdate || invalid || sourceMissing;
+
   return (
     <article
-      className={`skill-card${selected ? ' selected' : ''}${invalid ? ' invalid' : ''}`}
+      className={`skill-card${selected ? ' selected' : ''}${invalid ? ' invalid' : ''}${sourceMissing ? ' source-missing' : ''}`}
       data-id={id}
       onClick={handleCardClick}
     >
@@ -127,38 +130,28 @@ function SkillCard(props: SkillCardProps) {
       )}
       <div className="skill-card-header">
         <h3 className="skill-card-title">{title}</h3>
-        {(hasUpdate && !invalid) || invalid ? (
+        {showBadges ? (
           <div className="skill-card-badges">
-            {hasUpdate && !invalid && (
-              <span className="badge badge-update">有更新</span>
+            {sourceMissing && (
+              <span className="badge badge-source-missing" title="远程源中已不存在该 Skill，本地副本仍保留">
+                源缺失
+              </span>
             )}
+            {showUpdate && <span className="badge badge-update">有更新</span>}
             {invalid && <span className="badge badge-invalid">无效</span>}
           </div>
         ) : null}
       </div>
       <p className="skill-card-desc">{desc || '—'}</p>
-      <div className="skill-card-meta">
-        {sourceMeta}
+      <div className="skill-card-footer">
+        <div className="skill-card-meta">{sourceMeta}</div>
+        <div
+          className="skill-card-actions"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {actions}
+        </div>
       </div>
-      <div
-        className="skill-card-actions"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {actions}
-      </div>
-      <svg
-        className="skill-card-arrow"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        aria-hidden="true"
-      >
-        <path d="M7 17 17 7" />
-        <path d="M7 7h10v10" />
-      </svg>
     </article>
   );
 }

@@ -71,6 +71,34 @@ pub fn list_configured_gitlab_hosts(config: &AppConfig) -> Vec<String> {
     config.gitlab_credential_hosts.clone()
 }
 
+/// Re-register GitLab hosts that still have a token in the OS keyring but are missing
+/// from config (e.g. after config reset/migration).
+pub fn reconcile_gitlab_credential_hosts(config: &mut AppConfig) -> bool {
+    let mut changed = false;
+    let mut gitlab_hosts = config
+        .skill_repos
+        .iter()
+        .filter(|repo| repo.provider == "gitlab")
+        .map(|repo| normalize_host(&repo.host))
+        .filter(|host| !host.is_empty())
+        .collect::<Vec<_>>();
+    gitlab_hosts.sort();
+    gitlab_hosts.dedup();
+
+    for host in gitlab_hosts {
+        if get_gitlab_token(&host).ok().flatten().is_none() {
+            continue;
+        }
+        let before = config.gitlab_credential_hosts.len();
+        register_gitlab_host(config, &host);
+        if config.gitlab_credential_hosts.len() > before {
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +133,47 @@ mod tests {
             list_configured_gitlab_hosts(&config),
             vec!["gitlab.example.com".to_string()]
         );
+    }
+
+    #[test]
+    fn reconcile_gitlab_credential_hosts_registers_hosts_with_tokens() {
+        let host = "reconcile.example.test";
+        let _ = remove_gitlab_token(host);
+        set_gitlab_token(host, "glpat-reconcile").expect("set");
+
+        let mut config = AppConfig::default();
+        config.skill_repos.push(crate::models::SkillRepo {
+            host: host.to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "group/project".to_string(),
+            owner: "group".to_string(),
+            name: "project".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        });
+
+        assert!(reconcile_gitlab_credential_hosts(&mut config));
+        assert_eq!(config.gitlab_credential_hosts, vec![host.to_string()]);
+
+        assert!(!reconcile_gitlab_credential_hosts(&mut config));
+        remove_gitlab_token(host).expect("remove");
+    }
+
+    #[test]
+    fn reconcile_gitlab_credential_hosts_skips_hosts_without_tokens() {
+        let mut config = AppConfig::default();
+        config.skill_repos.push(crate::models::SkillRepo {
+            host: "missing-token.example.test".to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "group/project".to_string(),
+            owner: "group".to_string(),
+            name: "project".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        });
+
+        assert!(!reconcile_gitlab_credential_hosts(&mut config));
+        assert!(config.gitlab_credential_hosts.is_empty());
     }
 
     #[test]

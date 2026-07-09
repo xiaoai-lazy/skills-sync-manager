@@ -4,21 +4,27 @@ use crate::gitlab_client;
 use crate::models::{
     AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
     PreviewAddRepoResult, SkillDiscoverCache,
-    SkillHubLocalState, SkillRepo, SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState,
+    SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState, SkillRepo,
+    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState,
     SmartPastePreview, UpdateAllSkillsResult,
 };
+use crate::skill_hub_endpoints;
 use crate::skill_repos;
 use crate::skill_discover::{
-    discover_available_with_warnings, iso8601_timestamp_now, merge_repo_into_discover_cache,
-    remove_repo_from_discover_cache,
+    deduplicate_discoverable_skills, discover_available_with_warnings,
+    filter_uninstalled_discoverable_skills, iso8601_timestamp_now,
+    merge_repo_into_discover_cache, remove_repo_from_discover_cache,
 };
+use crate::skill_hub_client;
+use crate::skill_hub_discover;
+use crate::skill_hub_upload;
 use crate::skill_install;
 use crate::skill_library;
 use crate::skill_smart_paste;
 use crate::skill_updates::{self, apply_check_updates_cache};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 static DISCOVER_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static UPDATES_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -61,15 +67,37 @@ fn try_begin_updates_check() -> Result<UpdatesGuard, AppError> {
     Ok(UpdatesGuard)
 }
 
-fn execute_discover(config: &mut AppConfig) -> (Vec<DiscoverableSkill>, Vec<String>) {
+fn execute_discover(
+    config: &mut AppConfig,
+    app_data_dir: &Path,
+    force: bool,
+) -> (Vec<DiscoverableSkill>, Vec<String>) {
     let main_dir = config.settings.main_skills_dir.as_deref();
-    let (skills, warnings) = if config.skill_repos.is_empty()
-        || !config.skill_repos.iter().any(|repo| repo.enabled)
+    let mut all = Vec::new();
+    let mut warnings = Vec::new();
+
+    if config.skill_repos.iter().any(|repo| repo.enabled) {
+        let (repo_skills, repo_warnings) =
+            discover_available_with_warnings(config, main_dir, app_data_dir, force);
+        all.extend(repo_skills);
+        warnings.extend(repo_warnings);
+    }
+
+    if config
+        .skill_hub_endpoints
+        .iter()
+        .any(|endpoint| endpoint.enabled)
     {
-        (Vec::new(), Vec::new())
-    } else {
-        discover_available_with_warnings(config, main_dir)
-    };
+        let (hub_skills, hub_warnings) = skill_hub_discover::discover_all(config);
+        all.extend(hub_skills);
+        warnings.extend(hub_warnings);
+    }
+
+    let skills = deduplicate_discoverable_skills(filter_uninstalled_discoverable_skills(
+        all,
+        main_dir,
+        Some(&config.skill_records),
+    ));
 
     config.skill_discover_cache = SkillDiscoverCache {
         fetched_at: Some(iso8601_timestamp_now()),
@@ -81,10 +109,12 @@ fn execute_discover(config: &mut AppConfig) -> (Vec<DiscoverableSkill>, Vec<Stri
 
 async fn run_discover_task(
     config: AppConfig,
+    app_data_dir: PathBuf,
+    force: bool,
 ) -> Result<(AppConfig, DiscoverSkillsResult), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut config = config;
-        let (skills, warnings) = execute_discover(&mut config);
+        let (skills, warnings) = execute_discover(&mut config, &app_data_dir, force);
         Ok((
             config,
             DiscoverSkillsResult { skills, warnings },
@@ -98,12 +128,25 @@ async fn run_discover_task(
 }
 
 #[tauri::command]
-pub async fn discover_skills(app: AppHandle) -> Result<DiscoverSkillsResult, AppErrorDto> {
+pub async fn discover_skills(
+    app: AppHandle,
+    force: Option<bool>,
+) -> Result<DiscoverSkillsResult, AppErrorDto> {
     let _guard = try_begin_discover().map_err(|err| err.to_dto())?;
+    let force = force.unwrap_or(false);
+
+    let app_data_dir = app.path().app_data_dir().map_err(|err| AppError::Io {
+        path: None,
+        message: format!("failed to resolve app data directory: {}", err),
+    }).map_err(|err| err.to_dto())?;
 
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
-    let config = store.load().map_err(|err| err.to_dto())?;
-    let (config, result) = run_discover_task(config).await.map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    let (config, result) = run_discover_task(config, app_data_dir.clone(), force)
+        .await
+        .map_err(|err| err.to_dto())?;
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(result)
@@ -150,7 +193,16 @@ pub fn build_skill_hub_local_state(
 #[tauri::command]
 pub fn scan_main_library(app: AppHandle) -> Result<SkillHubLocalState, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
-    let config = store.load().map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = require_main_skills_dir(&config).map_err(|err| err.to_dto())?;
     build_skill_hub_local_state(main_dir, &config).map_err(|err| err.to_dto())
 }
@@ -174,14 +226,23 @@ pub async fn install_hub_skill(
     discoverable: DiscoverableSkill,
 ) -> Result<SkillHubLocalState, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = require_main_skills_dir(&config)
         .map_err(|err| err.to_dto())?
         .to_path_buf();
 
     let install_result = tauri::async_runtime::spawn_blocking(move || {
-        skill_install::install_to_main(&mut config, &discoverable, &main_dir)?;
-        Ok::<_, AppError>((config, main_dir))
+        let result = skill_install::install_to_main(&mut config, &discoverable, &main_dir);
+        Ok::<_, AppError>((config, main_dir, result))
     })
     .await
     .map_err(|err| AppErrorDto {
@@ -189,9 +250,23 @@ pub async fn install_hub_skill(
         message: format!("安装任务异常: {}", err),
     })?;
 
-    let (config, main_dir) = install_result.map_err(|err| err.to_dto())?;
-    store.save(&config).map_err(|err| err.to_dto())?;
-    build_skill_hub_local_state(&main_dir, &config).map_err(|err| err.to_dto())
+    let (config, main_dir, result) = install_result.map_err(|err| err.to_dto())?;
+    match result {
+        Ok(()) => {
+            crate::runtime_cache::persist_from_config(&app_data_dir, &config)
+                .map_err(|err| err.to_dto())?;
+            store.save(&config).map_err(|err| err.to_dto())?;
+            build_skill_hub_local_state(&main_dir, &config).map_err(|err| err.to_dto())
+        }
+        Err(err) => {
+            // HubSkillGone already purged discover cache in-memory; persist that cleanup.
+            if matches!(err, AppError::HubSkillGone { .. }) {
+                let _ = crate::runtime_cache::persist_from_config(&app_data_dir, &config);
+                let _ = store.save(&config);
+            }
+            Err(err.to_dto())
+        }
+    }
 }
 
 #[tauri::command]
@@ -199,19 +274,32 @@ pub fn check_skill_updates(app: AppHandle) -> Result<Vec<SkillUpdateInfo>, AppEr
     let _guard = try_begin_updates_check().map_err(|err| err.to_dto())?;
 
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+    // Updates cache lives in runtime-cache; attach before read/modify.
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = require_main_skills_dir(&config)
         .map_err(|err| err.to_dto())?
         .to_path_buf();
 
     if config.skill_records.is_empty() {
         apply_check_updates_cache(&mut config, Vec::new());
+        crate::runtime_cache::persist_from_config(&app_data_dir, &config)
+            .map_err(|err| err.to_dto())?;
         store.save(&config).map_err(|err| err.to_dto())?;
         return Ok(Vec::new());
     }
 
-    let updates = skill_updates::check_updates(&config, &main_dir).map_err(|err| err.to_dto())?;
+    let updates = skill_updates::check_updates(&mut config, &main_dir).map_err(|err| err.to_dto())?;
     apply_check_updates_cache(&mut config, updates.clone());
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(updates)
@@ -220,27 +308,57 @@ pub fn check_skill_updates(app: AppHandle) -> Result<Vec<SkillUpdateInfo>, AppEr
 #[tauri::command]
 pub fn update_skill(app: AppHandle, dir_name: String) -> Result<(), AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = require_main_skills_dir(&config)
         .map_err(|err| err.to_dto())?
         .to_path_buf();
 
-    skill_updates::update_skill(&mut config, &dir_name, &main_dir).map_err(|err| err.to_dto())?;
-    store.save(&config).map_err(|err| err.to_dto())?;
-
-    Ok(())
+    match skill_updates::update_skill(&mut config, &dir_name, &main_dir) {
+        Ok(()) => {
+            crate::runtime_cache::persist_from_config(&app_data_dir, &config)
+                .map_err(|err| err.to_dto())?;
+            store.save(&config).map_err(|err| err.to_dto())?;
+            Ok(())
+        }
+        Err(err) => {
+            if matches!(err, AppError::HubSkillGone { .. }) {
+                let _ = crate::runtime_cache::persist_from_config(&app_data_dir, &config);
+                let _ = store.save(&config);
+            }
+            Err(err.to_dto())
+        }
+    }
 }
 
 #[tauri::command]
 pub fn update_all_skills(app: AppHandle) -> Result<UpdateAllSkillsResult, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = require_main_skills_dir(&config)
         .map_err(|err| err.to_dto())?
         .to_path_buf();
 
     let result =
         skill_updates::update_all_skills(&mut config, &main_dir).map_err(|err| err.to_dto())?;
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(result)
@@ -249,20 +367,6 @@ pub fn update_all_skills(app: AppHandle) -> Result<UpdateAllSkillsResult, AppErr
 #[tauri::command]
 pub fn parse_smart_paste(input: String) -> Result<SmartPastePreview, AppErrorDto> {
     skill_smart_paste::parse_smart_paste(&input).map_err(|err| err.to_dto())
-}
-
-#[tauri::command]
-pub fn search_skills_sh(
-    query: String,
-    limit: Option<u32>,
-    offset: Option<u32>,
-) -> Result<Vec<DiscoverableSkill>, AppErrorDto> {
-    skill_smart_paste::search_skills_sh(
-        &query,
-        limit.unwrap_or(20),
-        offset.unwrap_or(0),
-    )
-    .map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
@@ -288,7 +392,10 @@ pub fn validate_gitlab_pat(app: AppHandle, host: String, pat: String) -> Result<
 #[tauri::command]
 pub fn list_gitlab_credentials(app: AppHandle) -> Result<Vec<String>, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
-    let config = store.load().map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    if credential_store::reconcile_gitlab_credential_hosts(&mut config) {
+        store.save(&config).map_err(|err| err.to_dto())?;
+    }
     Ok(credential_store::list_configured_gitlab_hosts(&config))
 }
 
@@ -348,11 +455,22 @@ pub async fn add_skill_repo(
 
     store.save(&config).map_err(|err| err.to_dto())?;
 
+    let app_data_dir = app.path().app_data_dir().map_err(|err| AppError::Io {
+        path: None,
+        message: format!("failed to resolve app data directory: {}", err),
+    }).map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = config.settings.main_skills_dir.clone();
+    let app_data_dir_for_task = app_data_dir.clone();
     let (config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
         let main_dir = main_dir.as_deref().map(Path::new);
-        let discover_skills =
-            merge_repo_into_discover_cache(&mut config, &added_repo, main_dir)?;
+        let discover_skills = merge_repo_into_discover_cache(
+            &mut config,
+            &added_repo,
+            main_dir,
+            &app_data_dir_for_task,
+            true,
+        )?;
         Ok::<(AppConfig, Vec<DiscoverableSkill>), AppError>((config, discover_skills))
     })
     .await
@@ -363,6 +481,7 @@ pub async fn add_skill_repo(
     .map_err(|err| err.to_dto())?
     .map_err(|err| err.to_dto())?;
 
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(SkillRepoChangeResult {
@@ -378,7 +497,16 @@ pub async fn remove_skill_repo(
     project_path: String,
 ) -> Result<SkillRepoChangeResult, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
 
     let host_for_task = host;
     let project_path_for_task = project_path;
@@ -397,6 +525,7 @@ pub async fn remove_skill_repo(
     .map_err(|err| err.to_dto())?
     .map_err(|err| err.to_dto())?;
 
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(SkillRepoChangeResult {
@@ -437,14 +566,20 @@ pub async fn set_skill_repo_enabled(
 
     store.save(&config).map_err(|err| err.to_dto())?;
 
+    let app_data_dir = app.path().app_data_dir().map_err(|err| AppError::Io {
+        path: None,
+        message: format!("failed to resolve app data directory: {}", err),
+    }).map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     let main_dir = config.settings.main_skills_dir.clone();
     let host_for_discover = host;
     let project_path_for_discover = project_path;
+    let app_data_dir_for_task = app_data_dir.clone();
 
     let (config, discover_skills) = tauri::async_runtime::spawn_blocking(move || {
         let main_dir = main_dir.as_deref().map(Path::new);
         let discover_skills = if enabled {
-            merge_repo_into_discover_cache(&mut config, &repo, main_dir)?
+            merge_repo_into_discover_cache(&mut config, &repo, main_dir, &app_data_dir_for_task, true)?
         } else {
             remove_repo_from_discover_cache(&mut config, &host_for_discover, &project_path_for_discover)
         };
@@ -458,12 +593,242 @@ pub async fn set_skill_repo_enabled(
     .map_err(|err| err.to_dto())?
     .map_err(|err| err.to_dto())?;
 
+    crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
     Ok(SkillRepoChangeResult {
         repos: skill_repos::get_skill_repos(&config),
         discover_skills,
     })
+}
+
+fn hub_endpoint_change_result(config: &AppConfig) -> SkillHubEndpointChangeResult {
+    SkillHubEndpointChangeResult {
+        endpoints: skill_hub_endpoints::list_skill_hub_endpoints(config),
+        discover_skills: config.skill_discover_cache.skills.clone(),
+    }
+}
+
+#[tauri::command]
+pub fn list_skill_hub_endpoints(app: AppHandle) -> Result<Vec<SkillHubEndpoint>, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    Ok(skill_hub_endpoints::list_skill_hub_endpoints(&config))
+}
+
+#[tauri::command]
+pub async fn add_skill_hub_endpoint(
+    app: AppHandle,
+    name: String,
+    base_url: String,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let name_for_task = name;
+    let base_url_for_task = base_url;
+
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        skill_hub_endpoints::add_skill_hub_endpoint(
+            &mut config,
+            &name_for_task,
+            &base_url_for_task,
+        )?;
+        Ok::<AppConfig, AppError>(config)
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("添加 Hub 端点任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = config;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(hub_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub fn remove_skill_hub_endpoint(
+    app: AppHandle,
+    id: String,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    skill_hub_endpoints::remove_skill_hub_endpoint(&mut config, &id).map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(hub_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub async fn set_skill_hub_endpoint_enabled(
+    app: AppHandle,
+    id: String,
+    enabled: bool,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let id_for_task = id;
+
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        skill_hub_endpoints::set_skill_hub_endpoint_enabled(&mut config, &id_for_task, enabled)?;
+        Ok::<AppConfig, AppError>(config)
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("更新 Hub 端点状态任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = config;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(hub_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub async fn list_hub_groups(
+    app: AppHandle,
+    hub_endpoint_id: String,
+) -> Result<Vec<String>, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    let base_url =
+        skill_hub_endpoints::hub_endpoint_base_url(&config, &hub_endpoint_id).map_err(|err| err.to_dto())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let groups = skill_hub_client::fetch_groups(&base_url)?;
+        Ok::<Vec<String>, AppError>(
+            groups
+                .into_iter()
+                .map(|group| group.name)
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("获取 Hub 分组任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub async fn create_hub_group(
+    app: AppHandle,
+    hub_endpoint_id: String,
+    name: String,
+) -> Result<Vec<String>, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    let base_url =
+        skill_hub_endpoints::hub_endpoint_base_url(&config, &hub_endpoint_id).map_err(|err| err.to_dto())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        skill_hub_client::create_group(&base_url, &name)?;
+        let groups = skill_hub_client::fetch_groups(&base_url)?;
+        Ok::<Vec<String>, AppError>(
+            groups
+                .into_iter()
+                .map(|group| group.name)
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("创建 Hub 分组任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub async fn upload_skill_to_hub(
+    app: AppHandle,
+    hub_endpoint_id: String,
+    group: String,
+    storage_key: String,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    let main_dir = require_main_skills_dir(&config)
+        .map_err(|err| err.to_dto())?
+        .to_path_buf();
+
+    let hub_endpoint_id_for_task = hub_endpoint_id;
+    let group_for_task = group;
+    let storage_key_for_task = storage_key;
+
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        skill_hub_upload::upload_skill_to_hub(
+            &mut config,
+            &hub_endpoint_id_for_task,
+            &group_for_task,
+            &storage_key_for_task,
+            &main_dir,
+        )?;
+        Ok::<AppConfig, AppError>(config)
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("上传 Skill 任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    // Persist discover cache only; avoid clobbering concurrent update-cache writes.
+    let mut latest = store.load().map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut latest);
+    latest.skill_discover_cache = config.skill_discover_cache;
+    crate::runtime_cache::persist_from_config(&app_data_dir, &latest).map_err(|err| err.to_dto())?;
+    store.save(&latest).map_err(|err| err.to_dto())?;
+
+    Ok(hub_endpoint_change_result(&latest))
 }
 
 #[cfg(test)]
@@ -511,12 +876,14 @@ mod tests {
                     name: "valid-one".to_string(),
                     current_hash: Some("abc".to_string()),
                     remote_hash: "def".to_string(),
+                    ..Default::default()
                 },
                 SkillUpdateInfo {
                     dir_name: "valid-two".to_string(),
                     name: "valid-two".to_string(),
                     current_hash: Some("111".to_string()),
                     remote_hash: "222".to_string(),
+                    ..Default::default()
                 },
             ],
         };
@@ -532,6 +899,7 @@ mod tests {
                 directory: "skills/valid-one".to_string(),
                 content_hash: "abc".to_string(),
                 installed_at: "2026-06-30T00:00:00Z".to_string(),
+                ..Default::default()
             },
         );
 

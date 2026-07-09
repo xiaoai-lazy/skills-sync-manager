@@ -1,0 +1,108 @@
+/* Status badges */
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.status-notInstalled {
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.status-installed {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-conflict {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.status-mismatch {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.status-missing {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.status-sourceMissing {
+  background: #fff0f7;
+  color: #9d174d;
+}
+
+.status-invalidSkill {
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 0 16px;
+  height: 36px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+  transition: background var(--transition), box-shadow var(--transition);
+}
+
+button:hover:not(:disabled) {
+  background: var(--nav-active);
+  transform: none;
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.secondary-button {
+  background: var(--surface-muted);
+  font-size: 13px;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: var(--nav-active);
+}
+
+.toggle-button {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.toggle-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.danger-button {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.icon-button {
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  height: 30px;
+}
+

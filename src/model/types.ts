@@ -1,4 +1,4 @@
-export type LinkStrategy = 'auto';
+export type LinkStrategy = 'auto'; // currently only auto; reserved for future strategies
 
 export type LinkType = 'junction' | 'symlink';
 
@@ -63,6 +63,7 @@ export interface Installation {
   linkPath: string;
   linkType: LinkType;
   createdAt: string;
+  skillStorageKey: string;
 }
 
 export interface SkillRepo {
@@ -85,6 +86,14 @@ export interface SkillRecord {
   directory: string;
   contentHash: string;
   installedAt: string;
+  storageKey: string;
+  linkName: string;
+  repoSlug: string;
+  hubEndpointId: string;
+  hubSkillGroup: string;
+  hubSkillId: string;
+  /** Hub/remote no longer has this skill; local copy may still exist. */
+  sourceMissing?: boolean;
 }
 
 export interface DiscoverableSkill {
@@ -99,6 +108,12 @@ export interface DiscoverableSkill {
   repoName: string;
   repoBranch: string;
   source: string;
+  storageKey: string;
+  linkName: string;
+  repoSlug: string;
+  hubEndpointId: string;
+  hubSkillGroup: string;
+  hubSkillId: string;
 }
 
 export interface DiscoverSkillsResult {
@@ -126,6 +141,7 @@ export interface SkillUpdateInfo {
   name: string;
   currentHash?: string;
   remoteHash: string;
+  storageKey: string;
 }
 
 export interface SkillDiscoverCache {
@@ -165,6 +181,18 @@ export interface UpdateAllSkillsResult {
   failed: { dirName: string; error: string }[];
 }
 
+export interface SkillHubEndpoint {
+  id: string;
+  name: string;
+  baseUrl: string;
+  enabled: boolean;
+}
+
+export interface SkillHubEndpointChangeResult {
+  endpoints: SkillHubEndpoint[];
+  discoverSkills: DiscoverableSkill[];
+}
+
 export interface AppConfig {
   version: number;
   settings: Settings;
@@ -175,6 +203,9 @@ export interface AppConfig {
   skillRecords?: Record<string, SkillRecord>;
   skillDiscoverCache?: SkillDiscoverCache;
   skillUpdateCache?: SkillUpdateCache;
+  /** Hosts that have a stored GitLab PAT (from credential store; mirrored on config for UI). */
+  gitlabCredentialHosts?: string[];
+  skillHubEndpoints?: SkillHubEndpoint[];
 }
 
 export interface SkillView {
@@ -184,6 +215,8 @@ export interface SkillView {
   path: string;
   valid: boolean;
   validationErrors: string[];
+  storageKey: string;
+  linkName: string;
 }
 
 export interface SkillWithTargetState {
@@ -192,9 +225,45 @@ export interface SkillWithTargetState {
   message: string | null;
 }
 
+export interface MigrationReportDto {
+  backedUpConfig: string;
+  backedUpMain?: string | null;
+  succeeded: string[];
+  failed: string[];
+  orphanLocals: string[];
+  linksRepaired: number;
+}
+
 export interface AppState {
   config: AppConfig;
   skills: SkillView[];
   selectedTargetId: string | null;
   selectedTargetSkills: SkillWithTargetState[];
+  lastMigrationReport?: MigrationReportDto | null;
+  /** When false, client should keep previous skills via mergeAppState. Defaults to true. */
+  skillsIncluded?: boolean;
 }
+
+export const emptyV6DiscoverableFields = {
+  storageKey: '',
+  linkName: '',
+  repoSlug: '',
+  hubEndpointId: '',
+  hubSkillGroup: '',
+  hubSkillId: '',
+} as const;
+
+export const emptyV6SkillRecordFields = {
+  storageKey: '',
+  linkName: '',
+  repoSlug: '',
+  hubEndpointId: '',
+  hubSkillGroup: '',
+  hubSkillId: '',
+  sourceMissing: false,
+} as const;
+
+export const emptyV6SkillViewFields = {
+  storageKey: '',
+  linkName: '',
+} as const;

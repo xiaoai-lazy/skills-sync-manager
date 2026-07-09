@@ -22,6 +22,8 @@ pub mod fixtures {
             path: skill_dir,
             valid: true,
             validation_errors: Vec::new(),
+            link_name: dir_name.to_string(),
+            ..Default::default()
         }
     }
 
@@ -35,6 +37,8 @@ pub mod fixtures {
             path: skill_dir,
             valid: false,
             validation_errors: vec!["Missing SKILL.md".to_string()],
+            link_name: dir_name.to_string(),
+            ..Default::default()
         }
     }
 

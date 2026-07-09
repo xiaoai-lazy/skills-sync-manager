@@ -278,6 +278,7 @@ mod tests {
             link_path: config.targets[0].skills_dir.join("example-skill"),
             link_type: LinkType::Symlink,
             created_at: "1".to_string(),
+            ..Default::default()
         });
 
         let error = delete_project(&mut config, &project.id).expect_err("should refuse delete");

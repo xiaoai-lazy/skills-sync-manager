@@ -1,6 +1,9 @@
 use crate::agent_presets::{self, AgentPreset};
 use crate::agent_presets::normalize_platform_path;
-use crate::models::{AgentPresetDto, AppConfig, AppError, AppErrorDto, AppState, TargetScope};
+use crate::models::{
+    AgentPresetDto, AppConfig, AppError, AppErrorDto, AppState, MigrationReportDto, SkillView,
+    TargetScope,
+};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
@@ -16,11 +19,29 @@ pub(crate) fn store_from_app(app: &tauri::AppHandle) -> Result<crate::config_sto
     Ok(crate::config_store::ConfigStore::new(config_path))
 }
 
-pub fn build_app_state(
-    config: AppConfig,
+pub enum AppStateBuildMode {
+    /// Call list_skills and return a full AppState.
+    Full,
+    /// Reuse a skills snapshot; do not call list_skills again.
+    Light { skills: Vec<SkillView> },
+}
+
+pub fn build_app_state_with_mode(
+    mut config: AppConfig,
     selected_target_id: Option<String>,
+    app_data_dir: Option<&Path>,
+    mode: AppStateBuildMode,
 ) -> Result<AppState, AppError> {
-    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())?;
+    if let Some(dir) = app_data_dir {
+        crate::runtime_cache::attach_to_config(dir, &mut config);
+    }
+
+    let skills = match &mode {
+        AppStateBuildMode::Full => {
+            crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())?
+        }
+        AppStateBuildMode::Light { skills } => skills.clone(),
+    };
     let selected = selected_target_id
         .and_then(|id| config.targets.iter().find(|t| t.id == id).map(|_| id))
         .or_else(|| config.targets.first().map(|t| t.id.clone()));
@@ -39,22 +60,55 @@ pub fn build_app_state(
         skills,
         selected_target_id: selected,
         selected_target_skills,
+        last_migration_report: None,
+        skills_included: true,
     })
+}
+
+pub fn build_app_state(
+    config: AppConfig,
+    selected_target_id: Option<String>,
+    app_data_dir: Option<&Path>,
+) -> Result<AppState, AppError> {
+    build_app_state_with_mode(
+        config,
+        selected_target_id,
+        app_data_dir,
+        AppStateBuildMode::Full,
+    )
 }
 
 fn run_with_config<F>(
     app: tauri::AppHandle,
     mutate: F,
     selected_target_id: Option<String>,
+    rescan_library: bool,
 ) -> Result<AppState, AppErrorDto>
 where
     F: FnOnce(&mut AppConfig) -> Result<(), AppError>,
 {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let light_skills = if rescan_library {
+        None
+    } else {
+        Some(
+            crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+                .map_err(|err| err.to_dto())?,
+        )
+    };
+
     mutate(&mut config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
-    build_app_state(config, selected_target_id).map_err(|err| err.to_dto())
+
+    let mode = match light_skills {
+        Some(skills) => AppStateBuildMode::Light { skills },
+        None => AppStateBuildMode::Full,
+    };
+    build_app_state_with_mode(config, selected_target_id, Some(app_data_dir.as_path()), mode)
+        .map_err(|err| err.to_dto())
 }
 
 fn app_data_dir_from_app(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -138,7 +192,13 @@ pub fn get_app_state(
 ) -> Result<AppState, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let config = store.load().map_err(|err| err.to_dto())?;
-    build_app_state(config, selected_target_id).map_err(|err| err.to_dto())
+    let last_migration_report = crate::config_store::take_last_migration_report()
+        .map(MigrationReportDto::from);
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut state = build_app_state(config, selected_target_id, Some(app_data_dir.as_path()))
+        .map_err(|err| err.to_dto())?;
+    state.last_migration_report = last_migration_report;
+    Ok(state)
 }
 
 #[tauri::command]
@@ -167,6 +227,7 @@ pub fn set_main_skills_dir(
             Ok(())
         },
         None,
+        true,
     )
 }
 
@@ -209,9 +270,17 @@ pub fn add_agent_target(
     let target =
         crate::target_registry::add_agent_target(&mut config, &presets, request)
             .map_err(|err| err.to_dto())?;
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
-    build_app_state(config, Some(target.id)).map_err(|err| err.to_dto())
+    build_app_state_with_mode(
+        config,
+        Some(target.id),
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
+    )
+    .map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
@@ -235,9 +304,18 @@ pub fn add_custom_target(
     let mut config = store.load().map_err(|err| err.to_dto())?;
     let target = crate::target_registry::add_custom_target(&mut config, request)
         .map_err(|err| err.to_dto())?;
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
 
-    build_app_state(config, Some(target.id)).map_err(|err| err.to_dto())
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    build_app_state_with_mode(
+        config,
+        Some(target.id),
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
+    )
+    .map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
@@ -256,6 +334,7 @@ pub fn add_project(
             Ok(())
         },
         selected_target_id,
+        false,
     )
 }
 
@@ -275,6 +354,7 @@ pub fn update_project(
             Ok(())
         },
         selected_target_id,
+        false,
     )
 }
 
@@ -293,6 +373,7 @@ pub fn delete_project(
             Ok(())
         },
         selected_target_id,
+        false,
     )
 }
 
@@ -301,12 +382,8 @@ pub fn update_target(
     app: tauri::AppHandle,
     target_id: String,
     name: String,
-    _skills_dir: String,
 ) -> Result<AppState, AppErrorDto> {
-    let request = crate::target_registry::UpdateTargetRequest {
-        name,
-        skills_dir: PathBuf::new(),
-    };
+    let request = crate::target_registry::UpdateTargetRequest { name };
     let target_id_for_closure = target_id.clone();
 
     run_with_config(
@@ -316,6 +393,7 @@ pub fn update_target(
             Ok(())
         },
         Some(target_id),
+        false,
     )
 }
 
@@ -346,71 +424,97 @@ pub fn delete_target(
             .installations
             .iter()
             .filter(|i| i.target_id == target_id)
-            .map(|i| i.skill_dir_name.clone())
+            .map(|i| {
+                if !i.skill_storage_key.is_empty() {
+                    i.skill_storage_key.clone()
+                } else {
+                    i.skill_dir_name.clone()
+                }
+            })
             .collect();
-        for skill_dir_name in to_uninstall {
-            crate::link_installer::uninstall_skill(&mut config, &target_id, &skill_dir_name)
+        for skill_identifier in to_uninstall {
+            crate::link_installer::uninstall_skill(&mut config, &target_id, &skill_identifier)
                 .map_err(|err| err.to_dto())?;
         }
     }
 
     crate::target_registry::delete_target_config(&mut config, &target_id)
         .map_err(|err| err.to_dto())?;
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
 
-    build_app_state(config, None).map_err(|err| err.to_dto())
+    build_app_state_with_mode(
+        config,
+        None,
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
+    )
+    .map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
 pub fn install_skill(
     app: tauri::AppHandle,
     target_id: String,
-    skill_dir_name: String,
+    skill_identifier: String,
 ) -> Result<AppState, AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
     let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
         .map_err(|err| err.to_dto())?;
-    crate::link_installer::install_skill(&mut config, &target_id, &skill_dir_name, &skills)
+    crate::link_installer::install_skill(&mut config, &target_id, &skill_identifier, &skills)
         .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
-    build_app_state(config, Some(target_id)).map_err(|err| err.to_dto())
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    build_app_state_with_mode(
+        config,
+        Some(target_id),
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
+    )
+    .map_err(|err| err.to_dto())
 }
 
 #[tauri::command]
 pub fn uninstall_skill(
     app: tauri::AppHandle,
     target_id: String,
-    skill_dir_name: String,
+    skill_identifier: String,
 ) -> Result<AppState, AppErrorDto> {
     let target_id_for_closure = target_id.clone();
-    let skill_dir_name_for_closure = skill_dir_name.clone();
+    let skill_identifier_for_closure = skill_identifier.clone();
 
     run_with_config(
         app,
         |config| {
-            crate::link_installer::uninstall_skill(config, &target_id_for_closure, &skill_dir_name_for_closure)?;
+            crate::link_installer::uninstall_skill(
+                config,
+                &target_id_for_closure,
+                &skill_identifier_for_closure,
+            )?;
             Ok(())
         },
         Some(target_id),
+        false,
     )
 }
 
 #[tauri::command]
 pub fn delete_main_skill(
     app: tauri::AppHandle,
-    skill_dir_name: String,
+    skill_identifier: String,
     confirmed: bool,
 ) -> Result<AppState, AppErrorDto> {
-    let skill_dir_name_for_closure = skill_dir_name.clone();
-
     run_with_config(
         app,
         |config| {
-            crate::skill_remover::delete_main_skill(config, &skill_dir_name_for_closure, confirmed)?;
+            crate::skill_remover::delete_main_skill(config, &skill_identifier, confirmed)?;
             Ok(())
         },
         None,
+        true,
     )
 }
 
@@ -455,6 +559,8 @@ mod tests {
             path: skill_dir,
             valid: true,
             validation_errors: Vec::new(),
+            link_name: dir_name.to_string(),
+            ..Default::default()
         }
     }
 
@@ -466,7 +572,7 @@ mod tests {
         let _skill = create_valid_skill(&main_dir, "brainstorming");
 
         let config = create_config_with_targets(Some(main_dir.clone()), Vec::new());
-        let state = build_app_state(config, None).expect("build state");
+        let state = build_app_state(config, None, None).expect("build state");
 
         assert_eq!(state.skills.len(), 1);
         assert_eq!(state.skills[0].dir_name, "brainstorming");
@@ -485,7 +591,7 @@ mod tests {
 
         let targets = vec![create_target("target-1", target_dir.clone())];
         let config = create_config_with_targets(Some(main_dir.clone()), targets);
-        let state = build_app_state(config, None).expect("build state");
+        let state = build_app_state(config, None, None).expect("build state");
 
         assert_eq!(state.selected_target_id, Some("target-1".to_string()));
         assert_eq!(state.selected_target_skills.len(), 1);
@@ -508,7 +614,7 @@ mod tests {
             create_target("target-2", target2_dir.clone()),
         ];
         let config = create_config_with_targets(Some(main_dir.clone()), targets);
-        let state = build_app_state(config, Some("target-2".to_string())).expect("build state");
+        let state = build_app_state(config, Some("target-2".to_string()), None).expect("build state");
 
         assert_eq!(state.selected_target_id, Some("target-2".to_string()));
     }
@@ -524,7 +630,7 @@ mod tests {
 
         let targets = vec![create_target("target-1", target_dir.clone())];
         let config = create_config_with_targets(Some(main_dir.clone()), targets);
-        let state = build_app_state(config, Some("nonexistent".to_string())).expect("build state");
+        let state = build_app_state(config, Some("nonexistent".to_string()), None).expect("build state");
 
         assert_eq!(state.selected_target_id, Some("target-1".to_string()));
     }
@@ -535,7 +641,7 @@ mod tests {
         let missing_dir = temp.path().join("missing");
 
         let config = create_config_with_targets(Some(missing_dir.clone()), Vec::new());
-        let error = build_app_state(config, None).expect_err("should fail");
+        let error = build_app_state(config, None, None).expect_err("should fail");
 
         assert!(matches!(error, AppError::InvalidMainSkillsDir { .. }));
     }
@@ -543,10 +649,36 @@ mod tests {
     #[test]
     fn build_app_state_with_no_main_dir_returns_empty_skills() {
         let config = create_config_with_targets(None, Vec::new());
-        let state = build_app_state(config, None).expect("build state");
+        let state = build_app_state(config, None, None).expect("build state");
 
         assert!(state.skills.is_empty());
         assert!(state.selected_target_skills.is_empty());
+    }
+
+    #[test]
+    fn light_build_reuses_skills_without_listing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let _skill = create_valid_skill(&main_dir, "brainstorming");
+
+        let config = create_config_with_targets(Some(main_dir.clone()), Vec::new());
+        let full = build_app_state(config.clone(), None, None).expect("full build");
+        assert_eq!(full.skills.len(), 1);
+
+        fs::remove_dir_all(&main_dir).expect("remove main dir");
+        let light = build_app_state_with_mode(
+            config,
+            None,
+            None,
+            AppStateBuildMode::Light {
+                skills: full.skills.clone(),
+            },
+        )
+        .expect("light build should not list skills");
+
+        assert_eq!(light.skills, full.skills);
+        assert!(light.skills_included);
     }
 
     #[test]
@@ -737,9 +869,8 @@ mod tests {
     }
 
     #[test]
-    fn update_target_command_logic_ignores_skills_dir() {
+    fn update_target_renames_custom_target_without_changing_path() {
         let first = tempfile::tempdir().expect("first tempdir");
-        let second = tempfile::tempdir().expect("second tempdir");
         let mut config = create_config_with_targets(None, vec![create_target("target-1", first.path().to_path_buf())]);
 
         let target = crate::target_registry::update_target(
@@ -747,7 +878,6 @@ mod tests {
             "target-1",
             crate::target_registry::UpdateTargetRequest {
                 name: "Renamed".to_string(),
-                skills_dir: second.path().to_path_buf(),
             },
         )
         .expect("update target");

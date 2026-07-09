@@ -246,10 +246,21 @@ pub fn get_skill_repos(config: &AppConfig) -> Vec<SkillRepo> {
     config.skill_repos.clone()
 }
 
-pub fn is_skill_repo_enabled(config: &AppConfig, host: &str, project_path: &str) -> bool {
-    find_repo_index(config, host, project_path)
-        .map(|index| config.skill_repos[index].enabled)
-        .unwrap_or(true)
+pub fn record_belongs_to_skill_repo(record: &crate::models::SkillRecord, repo: &SkillRepo) -> bool {
+    if record.source == "local" || record.source == "skillhub" {
+        return false;
+    }
+
+    let record_path = if record.project_path.is_empty() {
+        format!("{}/{}", record.repo_owner, record.repo_name)
+    } else {
+        record.project_path.clone()
+    };
+
+    record
+        .repo_host
+        .eq_ignore_ascii_case(repo.host.trim())
+        && record_path.eq_ignore_ascii_case(repo.project_path.trim())
 }
 
 pub fn set_skill_repo_enabled(
@@ -624,7 +635,6 @@ mod tests {
         let repo = set_skill_repo_enabled(&mut config, "github.com", "anthropics/skills", false)
             .expect("disable repo");
         assert!(!repo.enabled);
-        assert!(!is_skill_repo_enabled(&config, "github.com", "anthropics/skills"));
 
         let repo = set_skill_repo_enabled(&mut config, "github.com", "anthropics/skills", true)
             .expect("enable repo");
@@ -819,6 +829,7 @@ mod tests {
                 directory: "skills/brainstorming".to_string(),
                 content_hash: "abc".to_string(),
                 installed_at: "2026-06-30T00:00:00Z".to_string(),
+                ..Default::default()
             },
         );
 

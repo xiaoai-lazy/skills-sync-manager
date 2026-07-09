@@ -9,6 +9,7 @@ import '@testing-library/jest-dom/vitest';
 import App from '../App';
 
 import type { AppState, SkillInstallState } from '../model/types';
+import { emptyV6SkillViewFields } from '../model/types';
 
 
 
@@ -53,6 +54,10 @@ vi.mock('../api/skillHub', () => ({
   checkSkillUpdates: vi.fn(),
 
   getTargetSkillStates: vi.fn(),
+
+  getSkillRepos: vi.fn().mockResolvedValue([]),
+
+  listSkillHubEndpoints: vi.fn().mockResolvedValue([]),
 
 }));
 
@@ -168,6 +173,12 @@ const baseAppState: AppState = {
 
       validationErrors: [],
 
+      ...emptyV6SkillViewFields,
+
+      storageKey: 'local/brainstorming',
+
+      linkName: 'brainstorming',
+
     },
 
   ],
@@ -192,6 +203,12 @@ const baseAppState: AppState = {
 
         validationErrors: [],
 
+        ...emptyV6SkillViewFields,
+
+        storageKey: 'local/brainstorming',
+
+        linkName: 'brainstorming',
+
       },
 
       state: 'notInstalled',
@@ -201,6 +218,8 @@ const baseAppState: AppState = {
     },
 
   ],
+
+  lastMigrationReport: null,
 
 };
 
@@ -301,6 +320,12 @@ function withInvalidSkill(state: AppState): AppState {
     valid: false,
 
     validationErrors: ['Missing skill.yaml'],
+
+    ...emptyV6SkillViewFields,
+
+    storageKey: 'local/invalid-skill',
+
+    linkName: 'invalid-skill',
 
   };
 
@@ -435,6 +460,7 @@ async function getTargetNames(): Promise<HTMLElement[]> {
 
 
 function withInstallations(state: AppState, skillDirName: string): AppState {
+  const storageKey = `local/${skillDirName}`;
 
   return {
 
@@ -463,6 +489,8 @@ function withInstallations(state: AppState, skillDirName: string): AppState {
           linkType: 'junction',
 
           createdAt: '2026-06-23T00:00:00Z',
+
+          skillStorageKey: storageKey,
 
         },
 
@@ -690,7 +718,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(installSkill).toHaveBeenCalledWith('target_1', 'brainstorming');
+      expect(installSkill).toHaveBeenCalledWith('target_1', 'local/brainstorming');
 
     });
 
@@ -736,7 +764,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(uninstallSkill).toHaveBeenCalledWith('target_1', 'brainstorming');
+      expect(uninstallSkill).toHaveBeenCalledWith('target_1', 'local/brainstorming');
 
     });
 
@@ -968,7 +996,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(deleteMainSkill).toHaveBeenCalledWith('brainstorming', true);
+      expect(deleteMainSkill).toHaveBeenCalledWith('local/brainstorming', true);
 
     });
 
@@ -1170,7 +1198,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Updated Target', '/tmp/target');
+      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Updated Target');
 
     });
 
@@ -1428,7 +1456,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Claude Global', '/tmp/target');
+      expect(updateTarget).toHaveBeenCalledWith('target_1', 'Claude Global');
 
     });
 

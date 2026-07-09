@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [master, feat/v0.6]
+  pull_request:
+    branches: [master, feat/v0.6]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Backend tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml

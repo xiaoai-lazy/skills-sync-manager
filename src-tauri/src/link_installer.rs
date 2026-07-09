@@ -5,20 +5,83 @@ use crate::models::{
 use crate::time_util::{current_timestamp, timestamp_nanos};
 use std::path::Path;
 
+fn skill_link_name(skill: &SkillView) -> &str {
+    if !skill.link_name.is_empty() {
+        &skill.link_name
+    } else {
+        &skill.dir_name
+    }
+}
+
+/// Primary match is `storage_key`. `link_name` / `dir_name` are migration-era
+/// fallbacks — remove after one release once all callers pass storageKey.
+fn skill_matches_identifier(skill: &SkillView, identifier: &str) -> bool {
+    if !skill.storage_key.is_empty() && skill.storage_key == identifier {
+        return true;
+    }
+    // Legacy fallback (remove next major): accept linkName / dirName.
+    skill.link_name == identifier || skill.dir_name == identifier
+}
+
+/// Primary match is `skill_storage_key`. `skill_dir_name` is only used when the
+/// storage key is empty (pre-reconcile records) — remove after one release.
+fn installation_matches_identifier(installation: &Installation, identifier: &str) -> bool {
+    if !installation.skill_storage_key.is_empty() {
+        return installation.skill_storage_key == identifier;
+    }
+    installation.skill_dir_name == identifier
+}
+
+fn installation_matches_skill(installation: &Installation, skill: &SkillView) -> bool {
+    if !installation.skill_storage_key.is_empty() && !skill.storage_key.is_empty() {
+        return installation.skill_storage_key == skill.storage_key;
+    }
+    installation.skill_dir_name == skill_link_name(skill)
+        && same_path(&installation.source_path, &skill.path)
+}
+
+fn find_installation_for_skill<'a>(
+    config: &'a AppConfig,
+    target_id: &str,
+    skill: &SkillView,
+) -> Option<&'a Installation> {
+    if !skill.storage_key.is_empty() {
+        return config.installations.iter().find(|installation| {
+            installation.target_id == target_id
+                && installation.skill_storage_key == skill.storage_key
+        });
+    }
+    if let Some(installation) = find_installation(config, target_id, skill_link_name(skill)) {
+        return Some(installation);
+    }
+    find_installation(config, target_id, &skill.dir_name)
+}
+
+fn find_installation_at_link<'a>(
+    config: &'a AppConfig,
+    target_id: &str,
+    link_path: &Path,
+) -> Option<&'a Installation> {
+    config.installations.iter().find(|installation| {
+        installation.target_id == target_id && same_path(&installation.link_path, link_path)
+    })
+}
+
 pub fn install_skill(
     config: &mut AppConfig,
     target_id: &str,
-    skill_dir_name: &str,
+    skill_identifier: &str,
     skills: &[SkillView],
 ) -> Result<(), AppError> {
     let target = find_target(config, target_id)?;
-    let skill = find_valid_skill(skills, skill_dir_name)?;
+    let skill = find_valid_skill(skills, skill_identifier)?;
 
     crate::target_registry::validate_target_dir(&target.skills_dir)?;
 
-    let link_path = target.skills_dir.join(&skill.dir_name);
+    let link_name = skill_link_name(skill);
+    let link_path = target.skills_dir.join(link_name);
 
-    if let Some(installation) = find_installation(config, target_id, skill_dir_name) {
+    if let Some(installation) = find_installation(config, target_id, skill_identifier) {
         if link_matches_record(&link_path, installation) {
             return Ok(());
         }
@@ -35,13 +98,17 @@ pub fn install_skill(
 
     let installation = Installation {
         id: format!("install-{}", timestamp_nanos()),
-        skill_dir_name: skill.dir_name.clone(),
-        skill_name: skill.name.clone().unwrap_or_else(|| skill.dir_name.clone()),
+        skill_dir_name: link_name.to_string(),
+        skill_name: skill
+            .name
+            .clone()
+            .unwrap_or_else(|| link_name.to_string()),
         source_path: skill.path.clone(),
         target_id: target_id.to_string(),
         link_path,
         link_type: fs_adapter::default_link_type(),
         created_at: current_timestamp(),
+        skill_storage_key: skill.storage_key.clone(),
     };
     config.installations.push(installation);
 
@@ -51,22 +118,22 @@ pub fn install_skill(
 pub fn uninstall_skill(
     config: &mut AppConfig,
     target_id: &str,
-    skill_dir_name: &str,
+    skill_identifier: &str,
 ) -> Result<(), AppError> {
     let installation =
-        find_installation(config, target_id, skill_dir_name).ok_or_else(|| AppError::Io {
+        find_installation(config, target_id, skill_identifier).ok_or_else(|| AppError::Io {
             path: None,
             message: format!(
                 "no installation record found for target '{}' and skill '{}'",
-                target_id, skill_dir_name
+                target_id, skill_identifier
             ),
         })?;
 
     fs_adapter::remove_recorded_link(&installation.link_path, &installation.source_path)?;
 
-    config
-        .installations
-        .retain(|i| i.target_id != target_id || i.skill_dir_name != skill_dir_name);
+    config.installations.retain(|i| {
+        i.target_id != target_id || !installation_matches_identifier(i, skill_identifier)
+    });
 
     Ok(())
 }
@@ -77,9 +144,6 @@ pub fn compute_target_skill_states(
     skills: &[SkillView],
 ) -> Result<Vec<SkillWithTargetState>, AppError> {
     let target = find_target(config, target_id)?;
-
-    let skill_dir_names: std::collections::HashSet<&str> =
-        skills.iter().map(|s| s.dir_name.as_str()).collect();
 
     let mut states = Vec::new();
 
@@ -95,7 +159,10 @@ pub fn compute_target_skill_states(
         .iter()
         .filter(|i| i.target_id == target_id)
     {
-        if !skill_dir_names.contains(installation.skill_dir_name.as_str()) {
+        let skill_still_in_library = skills
+            .iter()
+            .any(|skill| installation_matches_skill(installation, skill));
+        if !skill_still_in_library {
             states.push(SkillWithTargetState {
                 skill: SkillView {
                     dir_name: installation.skill_dir_name.clone(),
@@ -104,6 +171,8 @@ pub fn compute_target_skill_states(
                     path: installation.source_path.clone(),
                     valid: false,
                     validation_errors: vec!["源 skill 已不存在".to_string()],
+                    storage_key: installation.skill_storage_key.clone(),
+                    link_name: installation.skill_dir_name.clone(),
                 },
                 state: SkillInstallState::SourceMissing,
                 message: Some(
@@ -117,13 +186,14 @@ pub fn compute_target_skill_states(
     Ok(states)
 }
 
-pub fn find_installation<'a>(
+fn find_installation<'a>(
     config: &'a AppConfig,
     target_id: &str,
-    skill_dir_name: &str,
+    skill_identifier: &str,
 ) -> Option<&'a Installation> {
     config.installations.iter().find(|installation| {
-        installation.target_id == target_id && installation.skill_dir_name == skill_dir_name
+        installation.target_id == target_id
+            && installation_matches_identifier(installation, skill_identifier)
     })
 }
 
@@ -139,24 +209,68 @@ fn find_target<'a>(config: &'a AppConfig, target_id: &str) -> Result<&'a Target,
 
 fn find_valid_skill<'a>(
     skills: &'a [SkillView],
-    skill_dir_name: &str,
+    skill_identifier: &str,
 ) -> Result<&'a SkillView, AppError> {
     let skill = skills
         .iter()
-        .find(|skill| skill.dir_name == skill_dir_name)
+        .find(|skill| skill_matches_identifier(skill, skill_identifier))
         .ok_or_else(|| AppError::InvalidSkill {
-            skill_dir_name: skill_dir_name.to_string(),
+            skill_dir_name: skill_identifier.to_string(),
             message: "skill not found in library".to_string(),
         })?;
 
     if !skill.valid {
         return Err(AppError::InvalidSkill {
-            skill_dir_name: skill_dir_name.to_string(),
+            skill_dir_name: skill_identifier.to_string(),
             message: format!("skill validation failed: {:?}", skill.validation_errors),
         });
     }
 
     Ok(skill)
+}
+
+/// Remove and recreate a junction/symlink when it is missing or points at the wrong source.
+/// Returns `true` when the link was repaired, `false` when it already matched `expected_source`.
+pub fn repair_installation_link(
+    installation: &Installation,
+    expected_source: &Path,
+) -> Result<bool, AppError> {
+    if !fs_adapter::path_exists(expected_source) {
+        return Ok(false);
+    }
+
+    let link_path = &installation.link_path;
+    let needs_repair = if !fs_adapter::path_exists(link_path) {
+        true
+    } else {
+        match fs_adapter::link_target(link_path) {
+            Ok(Some(actual_target)) => !same_path(&actual_target, expected_source),
+            Ok(None) => true,
+            Err(_) => true,
+        }
+    };
+
+    if !needs_repair {
+        return Ok(false);
+    }
+
+    if fs_adapter::path_exists(link_path) {
+        match fs_adapter::link_target(link_path) {
+            Ok(Some(actual_target)) => {
+                fs_adapter::remove_recorded_link(link_path, &actual_target)?;
+            }
+            Ok(None) => {
+                return Err(AppError::Conflict {
+                    path: link_path.clone(),
+                    message: "无法修复：目标路径存在但不是链接".to_string(),
+                });
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    fs_adapter::create_dir_link(expected_source, link_path, installation.link_type.clone())?;
+    Ok(true)
 }
 
 fn link_matches_record(link_path: &Path, installation: &Installation) -> bool {
@@ -193,9 +307,10 @@ fn compute_skill_state(
         };
     }
 
-    let link_path = target.skills_dir.join(&skill.dir_name);
+    let link_name = skill_link_name(skill);
+    let link_path = target.skills_dir.join(link_name);
 
-    if let Some(installation) = find_installation(config, &target.id, &skill.dir_name) {
+    if let Some(installation) = find_installation_for_skill(config, &target.id, skill) {
         if !fs_adapter::path_exists(&skill.path) {
             return SkillWithTargetState {
                 skill: skill.clone(),
@@ -248,13 +363,23 @@ fn compute_skill_state(
         }
     } else {
         if fs_adapter::path_exists(&link_path) {
+            let message = if let Some(occupying) =
+                find_installation_at_link(config, &target.id, &link_path)
+            {
+                format!(
+                    "目标路径已被其他 Skill 占用（{}）",
+                    occupying.skill_name
+                )
+            } else {
+                format!(
+                    "目标路径已存在同名内容：{}",
+                    link_path.display()
+                )
+            };
             SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::Conflict,
-                message: Some(format!(
-                    "目标路径已存在同名内容：{}",
-                    link_path.display()
-                )),
+                message: Some(message),
             }
         } else {
             SkillWithTargetState {
@@ -291,6 +416,8 @@ mod tests {
             path: skill_dir,
             valid: true,
             validation_errors: Vec::new(),
+            link_name: dir_name.to_string(),
+            ..Default::default()
         }
     }
 
@@ -304,6 +431,8 @@ mod tests {
             path: skill_dir,
             valid: false,
             validation_errors: vec!["Missing SKILL.md".to_string()],
+            link_name: dir_name.to_string(),
+            ..Default::default()
         }
     }
 
@@ -328,6 +457,57 @@ mod tests {
             ..Default::default()
         };
         (config, target_dir)
+    }
+
+    #[test]
+    fn install_creates_flat_link_name_at_target() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        let nested_path = main_dir
+            .join("repo")
+            .join("github.com--anthropics-skills")
+            .join("tdd");
+        fs::create_dir_all(&nested_path).expect("create nested skill dir");
+        fs::write(
+            nested_path.join("SKILL.md"),
+            "---\nname: tdd\ndescription: Test skill.\n---\n\n# Skill\n",
+        )
+        .expect("write skill md");
+
+        let skill = SkillView {
+            dir_name: "tdd".to_string(),
+            name: Some("tdd".to_string()),
+            description: Some("Test skill.".to_string()),
+            path: nested_path.clone(),
+            valid: true,
+            validation_errors: Vec::new(),
+            storage_key: "repo/github.com--anthropics-skills/tdd".to_string(),
+            link_name: "tdd".to_string(),
+        };
+
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(
+            &mut config,
+            "target-1",
+            "repo/github.com--anthropics-skills/tdd",
+            &[skill.clone()],
+        )
+        .expect("install skill");
+
+        let link_path = target_dir.join("tdd");
+        assert!(fs_adapter::path_exists(&link_path));
+        assert!(
+            !target_dir.join("repo").exists(),
+            "target should not contain nested repo path"
+        );
+        assert!(link_path.ends_with("tdd"));
+        assert_eq!(config.installations[0].skill_dir_name, "tdd");
+        assert_eq!(
+            config.installations[0].skill_storage_key,
+            "repo/github.com--anthropics-skills/tdd"
+        );
+        assert_eq!(config.installations[0].source_path, nested_path);
     }
 
     #[test]
@@ -603,6 +783,7 @@ mod tests {
                     link_path: target_dir.join("valid-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
+                    ..Default::default()
                 },
                 Installation {
                     id: "install-2".to_string(),
@@ -613,6 +794,7 @@ mod tests {
                     link_path: target_dir.join("missing-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
+                    ..Default::default()
                 },
                 Installation {
                     id: "install-3".to_string(),
@@ -623,6 +805,7 @@ mod tests {
                     link_path: target_dir.join("mismatch-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
+                    ..Default::default()
                 },
             ],
             ..Default::default()
@@ -699,6 +882,111 @@ mod tests {
         assert_eq!(mismatch_state.state, SkillInstallState::Mismatch);
     }
 
+    fn create_valid_skill_with_storage(
+        main_dir: &Path,
+        dir_name: &str,
+        storage_key: &str,
+    ) -> SkillView {
+        let mut skill = create_valid_skill(main_dir, dir_name);
+        skill.storage_key = storage_key.to_string();
+        skill
+    }
+
+    #[test]
+    fn compute_states_distinguishes_same_link_name_from_different_sources() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let hub_skill = create_valid_skill_with_storage(
+            &main_dir.join("hub-src"),
+            "brainstorming",
+            "hub/oxygen-skill-hub/tools/brainstorming",
+        );
+        let github_skill = create_valid_skill_with_storage(
+            &main_dir.join("github-src"),
+            "brainstorming",
+            "repo/github.com--obra/superpowers/brainstorming",
+        );
+
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(
+            &mut config,
+            "target-1",
+            "hub/oxygen-skill-hub/tools/brainstorming",
+            &[hub_skill.clone(), github_skill.clone()],
+        )
+        .expect("install hub skill");
+
+        let states =
+            compute_target_skill_states(&config, "target-1", &[hub_skill, github_skill])
+                .expect("compute states");
+
+        let hub_state = states
+            .iter()
+            .find(|s| s.skill.storage_key == "hub/oxygen-skill-hub/tools/brainstorming")
+            .unwrap();
+        assert_eq!(hub_state.state, SkillInstallState::Installed);
+
+        let github_state = states
+            .iter()
+            .find(|s| {
+                s.skill.storage_key == "repo/github.com--obra/superpowers/brainstorming"
+            })
+            .unwrap();
+        assert_eq!(github_state.state, SkillInstallState::Conflict);
+        assert!(
+            github_state
+                .message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("已被其他 Skill 占用")
+        );
+
+        let link_path = target_dir.join("brainstorming");
+        assert!(fs_adapter::path_exists(&link_path));
+    }
+
+    #[test]
+    fn installing_duplicate_link_name_from_different_source_returns_conflict() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let hub_skill = create_valid_skill_with_storage(
+            &main_dir.join("hub-src"),
+            "brainstorming",
+            "hub/oxygen-skill-hub/tools/brainstorming",
+        );
+        let github_skill = create_valid_skill_with_storage(
+            &main_dir.join("github-src"),
+            "brainstorming",
+            "repo/github.com--obra/superpowers/brainstorming",
+        );
+
+        let (mut config, _target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(
+            &mut config,
+            "target-1",
+            "hub/oxygen-skill-hub/tools/brainstorming",
+            &[hub_skill.clone(), github_skill.clone()],
+        )
+        .expect("install hub skill");
+
+        let error = install_skill(
+            &mut config,
+            "target-1",
+            "repo/github.com--obra/superpowers/brainstorming",
+            &[hub_skill, github_skill],
+        )
+        .expect_err("second source should conflict");
+
+        assert!(matches!(error, AppError::Conflict { .. }));
+        assert_eq!(config.installations.len(), 1);
+    }
+
     #[test]
     fn compute_states_returns_source_missing_when_source_skill_deleted() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -744,5 +1032,9 @@ mod tests {
             .unwrap();
         assert_eq!(source_missing_state.state, SkillInstallState::SourceMissing);
         assert_eq!(source_missing_state.skill.path, skill.path);
+        assert_eq!(
+            source_missing_state.skill.storage_key,
+            config.installations[0].skill_storage_key
+        );
     }
 }

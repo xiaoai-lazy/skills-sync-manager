@@ -3,17 +3,27 @@ pub mod commands;
 pub mod config_store;
 pub mod credential_store;
 pub mod gitlab_client;
+pub mod skill_hub_client;
+pub mod skill_hub_discover;
+pub mod skill_hub_endpoints;
+pub mod skill_hub_upload;
 pub mod fs_adapter;
 pub mod link_installer;
 pub mod models;
 pub mod project_registry;
+pub mod remote_head;
+pub mod repo_cache;
+pub mod runtime_cache;
 pub mod skill_discover;
 pub mod skill_downloader;
 pub mod skill_install;
 pub mod skill_library;
+pub mod skill_migration;
 pub mod skill_remover;
 pub mod skill_repos;
 pub mod skill_smart_paste;
+pub mod skill_storage;
+pub mod storage_keys;
 pub mod skill_updates;
 pub mod target_registry;
 pub mod time_util;
@@ -54,7 +64,6 @@ pub fn run() {
             commands::skill_hub::update_skill,
             commands::skill_hub::update_all_skills,
             commands::skill_hub::parse_smart_paste,
-            commands::skill_hub::search_skills_sh,
             commands::skill_hub::get_skill_repos,
             commands::skill_hub::preview_add_skill_repo,
             commands::skill_hub::validate_gitlab_pat,
@@ -64,6 +73,13 @@ pub fn run() {
             commands::skill_hub::add_skill_repo,
             commands::skill_hub::remove_skill_repo,
             commands::skill_hub::set_skill_repo_enabled,
+            commands::skill_hub::list_skill_hub_endpoints,
+            commands::skill_hub::add_skill_hub_endpoint,
+            commands::skill_hub::remove_skill_hub_endpoint,
+            commands::skill_hub::set_skill_hub_endpoint_enabled,
+            commands::skill_hub::list_hub_groups,
+            commands::skill_hub::create_hub_group,
+            commands::skill_hub::upload_skill_to_hub,
             commands::updater::check_app_update,
             commands::updater::install_app_update,
         ])

@@ -1,7 +1,8 @@
 use crate::models::{AppError, SkillView};
+use crate::skill_storage;
 use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 const MISSING_SKILL_MD: &str = "Missing SKILL.md";
 const MISSING_FRONTMATTER: &str = "Missing frontmatter";
@@ -34,14 +35,24 @@ pub fn list_skills(main_dir: Option<&Path>) -> Result<Vec<SkillView>, AppError> 
     }
 
     let mut skills = Vec::new();
-    let entries = fs::read_dir(main_dir).map_err(|err| AppError::Io {
-        path: Some(main_dir.to_path_buf()),
+    collect_skills(main_dir, main_dir, &mut skills)?;
+    skills.sort_by(|left, right| left.dir_name.cmp(&right.dir_name));
+    Ok(skills)
+}
+
+fn collect_skills(
+    main_dir: &Path,
+    current_dir: &Path,
+    skills: &mut Vec<SkillView>,
+) -> Result<(), AppError> {
+    let entries = fs::read_dir(current_dir).map_err(|err| AppError::Io {
+        path: Some(current_dir.to_path_buf()),
         message: err.to_string(),
     })?;
 
     for entry in entries {
         let entry = entry.map_err(|err| AppError::Io {
-            path: Some(main_dir.to_path_buf()),
+            path: Some(current_dir.to_path_buf()),
             message: err.to_string(),
         })?;
         let path = entry.path();
@@ -50,20 +61,83 @@ pub fn list_skills(main_dir: Option<&Path>) -> Result<Vec<SkillView>, AppError> 
             message: err.to_string(),
         })?;
 
-        if file_type.is_dir() {
-            skills.push(validate_skill_dir(&path)?);
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        if is_hidden_dir(&path) {
+            continue;
+        }
+
+        let is_top_level = current_dir == main_dir;
+        let has_skill_md = path.join("SKILL.md").exists();
+
+        if has_skill_md {
+            skills.push(validate_skill_dir(main_dir, &path)?);
+        } else if is_top_level && !has_descendant_skill_leaf(&path)? {
+            skills.push(validate_skill_dir(main_dir, &path)?);
+        }
+
+        collect_skills(main_dir, &path, skills)?;
+    }
+
+    Ok(())
+}
+
+fn has_descendant_skill_leaf(dir: &Path) -> Result<bool, AppError> {
+    let entries = fs::read_dir(dir).map_err(|err| AppError::Io {
+        path: Some(dir.to_path_buf()),
+        message: err.to_string(),
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|err| AppError::Io {
+            path: Some(dir.to_path_buf()),
+            message: err.to_string(),
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|err| AppError::Io {
+            path: Some(path.clone()),
+            message: err.to_string(),
+        })?;
+
+        if !file_type.is_dir() || is_hidden_dir(&path) {
+            continue;
+        }
+
+        if path.join("SKILL.md").exists() || has_descendant_skill_leaf(&path)? {
+            return Ok(true);
         }
     }
 
-    skills.sort_by(|left, right| left.dir_name.cmp(&right.dir_name));
-    Ok(skills)
+    Ok(false)
 }
 
-fn validate_skill_dir(skill_dir: &Path) -> Result<SkillView, AppError> {
-    let dir_name = skill_dir
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+fn is_hidden_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.'))
+}
+
+fn storage_key_for_skill_dir(main_dir: &Path, skill_dir: &Path) -> String {
+    let relative = skill_dir
+        .strip_prefix(main_dir)
+        .unwrap_or(skill_dir)
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+
+    relative
+}
+
+fn validate_skill_dir(main_dir: &Path, skill_dir: &Path) -> Result<SkillView, AppError> {
+    let storage_key = storage_key_for_skill_dir(main_dir, skill_dir);
+    let link_name = skill_storage::skill_id_from_directory(&storage_key);
+    let dir_name = link_name.clone();
     let skill_md_path = skill_dir.join("SKILL.md");
 
     if !skill_md_path.exists() {
@@ -74,6 +148,8 @@ fn validate_skill_dir(skill_dir: &Path) -> Result<SkillView, AppError> {
             path: skill_dir.to_path_buf(),
             valid: false,
             validation_errors: vec![MISSING_SKILL_MD.to_string()],
+            storage_key,
+            link_name,
         });
     }
 
@@ -90,6 +166,8 @@ fn validate_skill_dir(skill_dir: &Path) -> Result<SkillView, AppError> {
             path: skill_dir.to_path_buf(),
             valid: true,
             validation_errors: Vec::new(),
+            storage_key,
+            link_name,
         }),
         Err(validation_errors) => Ok(SkillView {
             dir_name,
@@ -98,6 +176,8 @@ fn validate_skill_dir(skill_dir: &Path) -> Result<SkillView, AppError> {
             path: skill_dir.to_path_buf(),
             valid: false,
             validation_errors,
+            storage_key,
+            link_name,
         }),
     }
 }
@@ -201,6 +281,12 @@ mod tests {
         }
     }
 
+    fn create_nested_skill(main_dir: &Path, relative_path: &str, skill_md: &str) {
+        let skill_dir = main_dir.join(relative_path);
+        fs::create_dir_all(&skill_dir).expect("create nested skill dir");
+        fs::write(skill_dir.join("SKILL.md"), skill_md).expect("write skill md");
+    }
+
     #[test]
     fn valid_skill_is_returned_as_installable() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -215,8 +301,32 @@ mod tests {
         assert_eq!(skills.len(), 1);
         assert!(skills[0].valid);
         assert_eq!(skills[0].dir_name, "brainstorming");
+        assert_eq!(skills[0].storage_key, "brainstorming");
+        assert_eq!(skills[0].link_name, "brainstorming");
         assert_eq!(skills[0].name.as_deref(), Some("brainstorming"));
         assert_eq!(skills[0].description.as_deref(), Some("Explore ideas."));
+    }
+
+    #[test]
+    fn list_skills_finds_nested_storage_key_leaf() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        create_nested_skill(
+            temp.path(),
+            "repo/github.com--anthropics-skills/tdd",
+            "---\nname: tdd\ndescription: Test-driven development.\n---\n\n# Skill\n",
+        );
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert_eq!(skills.len(), 1);
+        assert!(skills[0].valid);
+        assert_eq!(
+            skills[0].storage_key,
+            "repo/github.com--anthropics-skills/tdd"
+        );
+        assert_eq!(skills[0].link_name, "tdd");
+        assert_eq!(skills[0].dir_name, "tdd");
+        assert_eq!(skills[0].name.as_deref(), Some("tdd"));
     }
 
     #[test]
@@ -343,20 +453,79 @@ mod tests {
             "parent-skill",
             Some("---\nname: Parent\ndescription: Parent skill.\n---\n"),
         );
-        fs::create_dir_all(temp.path().join("parent-skill").join("nested-skill"))
-            .expect("create nested skill dir");
+        fs::create_dir_all(temp.path().join("parent-skill").join("nested-assets"))
+            .expect("create nested assets dir");
         fs::write(
             temp.path()
                 .join("parent-skill")
-                .join("nested-skill")
-                .join("SKILL.md"),
-            "---\nname: Nested\ndescription: Nested skill.\n---\n",
+                .join("nested-assets")
+                .join("notes.md"),
+            "# Notes\n",
         )
-        .expect("write nested skill md");
+        .expect("write nested asset");
 
         let skills = list_skills(Some(temp.path())).expect("list skills");
 
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].dir_name, "parent-skill");
+        assert_eq!(skills[0].storage_key, "parent-skill");
+    }
+
+    #[test]
+    fn nested_skill_leaves_with_skill_md_are_listed_separately() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        create_skill(
+            temp.path(),
+            "parent-skill",
+            Some("---\nname: Parent\ndescription: Parent skill.\n---\n"),
+        );
+        create_nested_skill(
+            temp.path(),
+            "parent-skill/nested-skill",
+            "---\nname: Nested\ndescription: Nested skill.\n---\n",
+        );
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert_eq!(skills.len(), 2);
+        assert_eq!(skills[0].dir_name, "nested-skill");
+        assert_eq!(skills[0].storage_key, "parent-skill/nested-skill");
+        assert_eq!(skills[1].dir_name, "parent-skill");
+        assert_eq!(skills[1].storage_key, "parent-skill");
+    }
+
+    #[test]
+    fn intermediate_container_directories_without_skill_md_are_skipped() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        create_nested_skill(
+            temp.path(),
+            "repo/github.com--anthropics-skills/tdd",
+            "---\nname: tdd\ndescription: Test-driven development.\n---\n",
+        );
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].link_name, "tdd");
+    }
+
+    #[test]
+    fn hidden_directories_are_skipped() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        create_nested_skill(
+            temp.path(),
+            ".git/hooks/pre-commit-skill",
+            "---\nname: Hidden\ndescription: Should not appear.\n---\n",
+        );
+        create_skill(
+            temp.path(),
+            "visible-skill",
+            Some("---\nname: Visible\ndescription: Visible skill.\n---\n"),
+        );
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].dir_name, "visible-skill");
     }
 }

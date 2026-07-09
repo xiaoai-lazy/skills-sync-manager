@@ -1,0 +1,162 @@
+/* Target detail */
+.target-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: var(--space-2);
+}
+
+.target-detail.empty {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.target-detail.empty h2 {
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary);
+}
+
+.target-detail.empty p {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
+.target-hero {
+  flex-shrink: 0;
+  padding: 0 0 var(--space-2);
+}
+
+.target-hero h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.target-path {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
+}
+
+.target-split {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.target-body-in-panel {
+  padding: var(--panel-padding);
+}
+
+.target-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--panel-padding);
+}
+
+.target-list-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+}
+
+.target-invalid-section {
+  margin-top: 1.5rem;
+}
+
+.target-section-label {
+  margin: 0 0 var(--space-3);
+  font-size: var(--section-label-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.target-list-cards.invalid-section {
+  opacity: 0.85;
+}
+
+.target-skill-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--card-padding);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.target-skill-card:hover {
+  border-color: rgba(15, 118, 110, 0.12);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.target-skill-card.invalid {
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+.target-skill-card.pending {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.target-skill-card .skill-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.target-skill-card .skill-name {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  margin-bottom: 2px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-skill-card .skill-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.target-skill-card .skill-source-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-skill-card .skill-message {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+  line-height: 1.4;
+}
+
+.target-skill-card .skill-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+

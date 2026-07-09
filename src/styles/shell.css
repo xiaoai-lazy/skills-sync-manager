@@ -1,0 +1,276 @@
+/* Frameless window shell — rounded chassis fills the native window */
+.app-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--chassis-bg);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.app-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 var(--space-2);
+  user-select: none;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.window-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.window-btn:hover {
+  background: rgba(17, 24, 39, 0.06);
+  color: var(--text);
+}
+
+.window-btn-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* App shell — gray rounded chassis (Marvis-style) */
+.app-shell {
+  display: grid;
+  grid-template-columns: 228px 1fr;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+/* Sidebar — white inset navigation */
+.sidebar {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  border-right: none;
+  padding: var(--space-4) var(--space-3) var(--space-4) var(--space-4);
+  margin-right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.sidebar h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--section-label-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 var(--space-2);
+}
+
+.sidebar-brand {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  padding: var(--space-1) var(--space-2) var(--space-3);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--list-row-padding-y) var(--list-row-padding-x);
+  border: none;
+  border-radius: var(--list-row-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--list-row-font-size);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+.nav-item:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+  transform: none;
+}
+
+.nav-item.active {
+  background: var(--nav-active);
+  color: var(--text);
+}
+
+.nav-item svg {
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+
+.nav-item.active svg {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.section-label {
+  font-size: var(--section-label-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 var(--space-2) var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-block {
+  margin-top: 10px;
+}
+
+.sidebar-block-projects {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 8px;
+}
+
+.section-label-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.section-add-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+.section-add-btn:hover {
+  background: var(--nav-hover);
+  color: var(--accent);
+  transform: none;
+}
+
+.sidebar-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.target-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  transition: background var(--transition);
+}
+
+.target-item.selected .target-dot {
+  background: var(--accent);
+}
+
+/* Main panel — transparent, content on gray chassis */
+.main-panel {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  position: relative;
+  align-self: stretch;
+}
+
+/* Main panel — dir path edit button in Skill Hub hero */
+.dir-path-edit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+.dir-path-edit:hover:not(:disabled) {
+  background: var(--nav-active);
+  color: var(--accent);
+  transform: none;
+}
+

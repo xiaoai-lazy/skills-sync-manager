@@ -41,16 +41,13 @@ function ProjectTree(props: ProjectTreeProps) {
               <span className="project-chevron" aria-hidden="true">
                 ▶
               </span>
-              <span className="project-folder" aria-hidden="true">
-                📁
-              </span>
               <span className="target-name" title={project.rootPath}>
                 {project.name}
               </span>
               <div className="target-actions project-header-actions">
                 <button
                   type="button"
-                  className="icon-button section-add-btn"
+                  className="section-add-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onAddProjectTarget(project.id);

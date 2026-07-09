@@ -1,0 +1,123 @@
+/* Skills Sync Manager — unified design tokens (v0.6) */
+
+:root {
+  color: #1f2937;
+  background: #eef0f4;
+  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  font-size: var(--font-size-md);
+  line-height: 1.55;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* v0.3 design tokens */
+  --app-bg: #dfe2e8;
+  --chassis-bg: #eef0f4;
+  --surface: #ffffff;
+  --surface-muted: #f7f8fa;
+  --sidebar-bg: #f4f5f7;
+  --text: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --border-soft: rgba(17, 24, 39, 0.06);
+  --accent: #0f766e;
+  --accent-hover: #0d6560;
+  --accent-soft: rgba(15, 118, 110, 0.1);
+  --accent-ring: rgba(15, 118, 110, 0.22);
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --success: #059669;
+  --success-soft: #ecfdf5;
+  --nav-active: rgba(17, 24, 39, 0.06);
+  --nav-hover: rgba(17, 24, 39, 0.04);
+  --scrim: rgba(17, 24, 39, 0.35);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+  --control-height: 32px;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  /* Semantic layout — shared across pages */
+  --page-gutter: var(--space-4);
+  --page-gutter-tight: var(--space-3);
+  --panel-padding: var(--space-4);
+  --panel-padding-lg: var(--space-5);
+  --section-gap: var(--space-3);
+  --list-gap: var(--space-2);
+  --list-row-padding-y: var(--space-2);
+  --list-row-padding-x: var(--space-3);
+  --list-row-font-size: var(--font-size-sm);
+  --list-row-radius: var(--radius-md);
+  --section-label-size: var(--font-size-xs);
+  --section-label-padding: var(--space-3) var(--space-4);
+  --source-tree-width: 228px;
+  --card-padding: var(--space-3) var(--space-4);
+  --card-gap: var(--space-3);
+  --shadow-soft: 0 1px 2px rgba(17, 24, 39, 0.04), 0 8px 24px rgba(17, 24, 39, 0.06);
+  --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.05), 0 4px 16px rgba(17, 24, 39, 0.05);
+  --shadow-card-hover: 0 6px 24px rgba(17, 24, 39, 0.08);
+  --shadow-modal: 0 16px 48px rgba(17, 24, 39, 0.14);
+  --transition: 180ms ease;
+  --transition-fast: var(--transition);
+
+  /* Scrollbars */
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: rgba(17, 24, 39, 0.14);
+  --scrollbar-thumb-hover: rgba(17, 24, 39, 0.28);
+  --scrollbar-thumb-active: rgba(15, 118, 110, 0.42);
+  --scrollbar-track: transparent;
+  --scrollbar-track-hover: transparent;
+
+  /* Legacy v0.2 aliases — keep existing component rules working */
+  --color-canvas: var(--app-bg);
+  --color-canvas-deep: var(--chassis-bg);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-muted);
+  --color-surface-muted: var(--surface-muted);
+  --color-ink: var(--text);
+  --color-text: var(--text);
+  --color-muted: var(--text-secondary);
+  --color-faint: var(--text-tertiary);
+  --color-border: rgba(17, 24, 39, 0.1);
+  --color-border-strong: rgba(17, 24, 39, 0.16);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --shadow-elevated: var(--shadow-modal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+

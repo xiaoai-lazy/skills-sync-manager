@@ -1,9 +1,11 @@
-import type { SkillWithTargetState, SkillInstallState } from '../model/types';
+import type { SkillWithTargetState, SkillInstallState, SkillRecord } from '../model/types';
+import { skillSourceLabelForView } from '../utils/skillSourceLabel';
 
 export interface SkillRowProps {
   item: SkillWithTargetState;
+  skillRecords?: Record<string, SkillRecord>;
   pending: boolean;
-  onToggle: (skillDirName: string, state: SkillInstallState) => void;
+  onToggle: (skillKey: string, state: SkillInstallState) => void;
 }
 
 const statusLabelMap: Record<SkillInstallState, string> = {
@@ -35,7 +37,7 @@ export function stateLabel(state: SkillInstallState): string {
 }
 
 function SkillRow(props: SkillRowProps) {
-  const { item, pending } = props;
+  const { item, skillRecords, pending } = props;
   const { skill, state } = item;
 
   const isInvalid = !skill.valid || state === 'invalidSkill';
@@ -47,11 +49,17 @@ function SkillRow(props: SkillRowProps) {
     state === 'invalidSkill'
       ? skill.validationErrors.join('，')
       : item.message ?? null;
+  const showMessage =
+    state !== 'notInstalled' &&
+    state !== 'installed' &&
+    Boolean(explanation || detailMessage);
 
   const displayName = isInvalid
     ? `(无效) ${skill.name ?? skill.dirName}`
     : skill.name ?? skill.dirName;
   const desc = skill.description ?? skill.dirName;
+  const sourceMeta = skillSourceLabelForView(skill, skillRecords);
+  const skillKey = skill.storageKey;
 
   return (
     <div
@@ -60,7 +68,8 @@ function SkillRow(props: SkillRowProps) {
       <div className="skill-info">
         <div className="skill-name">{displayName}</div>
         <div className="skill-desc">{desc}</div>
-        {(explanation || detailMessage) && (
+        <div className="skill-source-meta">{sourceMeta}</div>
+        {showMessage && (
           <div className="skill-message">
             {explanation && detailMessage
               ? `${explanation}：${detailMessage}`
@@ -74,7 +83,7 @@ function SkillRow(props: SkillRowProps) {
           type="checkbox"
           checked={isInstalled}
           disabled={!toggleEnabled}
-          onChange={() => props.onToggle(skill.dirName, state)}
+          onChange={() => props.onToggle(skillKey, state)}
           title={toggleEnabled ? (isInstalled ? '卸载' : '安装') : '无法切换'}
           aria-label={`${displayName} 安装状态`}
         />

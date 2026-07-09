@@ -4,10 +4,12 @@ use crate::models::{
 };
 use crate::skill_discover::iso8601_timestamp_now;
 use crate::skill_downloader::{self, copy_dir_recursive};
+use crate::skill_hub_client;
+use crate::skill_hub_endpoints;
 use crate::skill_install::resolve_skill_directory;
 use crate::skill_repos;
+use crate::skill_storage;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -36,6 +38,23 @@ pub fn compute_dir_hash(dir: &Path) -> Result<String, AppError> {
     }
 
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Hub 服务端对 SKILL.md 做 SHA256 后取前 12 位十六进制，与 `compute_dir_hash` 不兼容。
+pub fn compute_skill_md_hash_prefix(skill_dir: &Path) -> Result<String, AppError> {
+    let skill_md = skill_dir.join("SKILL.md");
+    let content = fs::read_to_string(&skill_md).map_err(|err| io_error(Some(&skill_md), err.to_string()))?;
+    let digest = Sha256::digest(content.as_bytes());
+    let full = format!("{:x}", digest);
+    Ok(full[..12.min(full.len())].to_string())
+}
+
+fn local_hash_for_hub_compare(local_path: &Path, remote_hash: &str) -> Result<String, AppError> {
+    if remote_hash.len() == 12 && remote_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        compute_skill_md_hash_prefix(local_path)
+    } else {
+        compute_dir_hash(local_path)
+    }
 }
 
 fn collect_files_sorted(
@@ -74,36 +93,94 @@ fn collect_files_sorted(
     Ok(())
 }
 
-pub fn check_updates(config: &AppConfig, main_dir: &Path) -> Result<Vec<SkillUpdateInfo>, AppError> {
-    check_updates_with_download_hook(config, main_dir, |repo_ref| {
-        skill_downloader::download_repo_ref(repo_ref)
-    })
+pub fn check_updates(
+    config: &mut AppConfig,
+    main_dir: &Path,
+) -> Result<Vec<SkillUpdateInfo>, AppError> {
+    check_updates_with_hooks(
+        config,
+        main_dir,
+        |repo_ref| skill_downloader::download_repo_ref(repo_ref),
+        |base_url, group, skill_id| skill_hub_client::download_archive(base_url, group, skill_id),
+    )
 }
 
 pub fn check_updates_with_download_hook<F>(
-    config: &AppConfig,
+    config: &mut AppConfig,
     main_dir: &Path,
     download_repo_ref: F,
 ) -> Result<Vec<SkillUpdateInfo>, AppError>
 where
     F: Fn(&RepoRef) -> Result<PathBuf, AppError>,
 {
-    let mut repo_cache: HashMap<RepoCacheKey, PathBuf> = HashMap::new();
+    check_updates_with_hooks(config, main_dir, download_repo_ref, |_, _, _| {
+        Err(AppError::Io {
+            path: None,
+            message: "Hub 下载未配置".to_string(),
+        })
+    })
+}
+
+pub fn check_updates_with_hooks<F, G>(
+    config: &mut AppConfig,
+    main_dir: &Path,
+    download_repo_ref: F,
+    download_hub_archive: G,
+) -> Result<Vec<SkillUpdateInfo>, AppError>
+where
+    F: Fn(&RepoRef) -> Result<PathBuf, AppError>,
+    G: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
     let mut updates = Vec::new();
 
-    for (dir_name, record) in &config.skill_records {
-        if !skill_repos::is_skill_repo_enabled(config, &record.repo_host, &record.project_path) {
-            continue;
+    for repo in config.skill_repos.iter().filter(|repo| repo.enabled) {
+        let repo_ref = repo.to_repo_ref();
+        let repo_root = match download_repo_ref(&repo_ref) {
+            Ok(root) => root,
+            Err(_) => continue,
+        };
+
+        for (record_key, record) in &config.skill_records {
+            if !skill_repos::record_belongs_to_skill_repo(record, repo) {
+                continue;
+            }
+            if let Some(info) =
+                compare_record_to_repo_root(record_key, record, main_dir, &repo_root)?
+            {
+                updates.push(info);
+            }
         }
-        let update = check_single_record(
-            dir_name,
-            record,
+    }
+
+    let hub_keys: Vec<String> = config
+        .skill_records
+        .iter()
+        .filter(|(_, record)| {
+            record.source == "skillhub"
+                && !record.source_missing
+                && is_hub_endpoint_enabled(config, &record.hub_endpoint_id)
+        })
+        .map(|(key, _)| key.clone())
+        .collect();
+
+    for record_key in hub_keys {
+        let record = match config.skill_records.get(&record_key).cloned() {
+            Some(record) => record,
+            None => continue,
+        };
+        match check_hub_record(
+            &record_key,
+            &record,
             main_dir,
-            &mut repo_cache,
-            &download_repo_ref,
-        )?;
-        if let Some(info) = update {
-            updates.push(info);
+            config,
+            &download_hub_archive,
+        ) {
+            Ok(Some(info)) => updates.push(info),
+            Ok(None) => {}
+            Err(AppError::HubSkillGone { .. }) => {
+                mark_record_source_missing(config, &record_key);
+            }
+            Err(_) => {}
         }
     }
 
@@ -111,33 +188,185 @@ where
     Ok(updates)
 }
 
-type RepoCacheKey = (String, String, String);
+fn mark_record_source_missing(config: &mut AppConfig, record_key: &str) {
+    let link_name = config
+        .skill_records
+        .get(record_key)
+        .map(|record| record_link_name(record_key, record));
+    if let Some(record) = config.skill_records.get_mut(record_key) {
+        record.source_missing = true;
+    }
+    if let Some(link_name) = link_name {
+        config
+            .skill_update_cache
+            .updates
+            .retain(|update| !pending_update_matches(update, &link_name));
+        config
+            .skill_update_cache
+            .updates
+            .retain(|update| !pending_update_matches(update, record_key));
+    }
+}
 
-fn check_single_record<F>(
-    dir_name: &str,
+fn resolve_local_library_path(main_dir: &Path, record_key: &str, record: &SkillRecord) -> PathBuf {
+    if !record.storage_key.is_empty() {
+        skill_storage::main_library_path(main_dir, &record.storage_key)
+    } else {
+        main_dir.join(record_key)
+    }
+}
+
+fn record_link_name(record_key: &str, record: &SkillRecord) -> String {
+    if !record.link_name.is_empty() {
+        return record.link_name.clone();
+    }
+    if !record.directory.is_empty() {
+        return skill_storage::skill_id_from_directory(&record.directory);
+    }
+    if record_key.contains('/') {
+        skill_storage::skill_id_from_directory(record_key)
+    } else {
+        record_key.to_string()
+    }
+}
+
+fn resolve_record_by_identifier(
+    config: &AppConfig,
+    identifier: &str,
+) -> Option<(String, SkillRecord)> {
+    if let Some(record) = config.skill_records.get(identifier) {
+        return Some((identifier.to_string(), record.clone()));
+    }
+
+    config
+        .skill_records
+        .iter()
+        .find(|(key, record)| {
+            record.storage_key == identifier
+                || record.link_name == identifier
+                || key.as_str() == identifier
+        })
+        .map(|(key, record)| (key.clone(), record.clone()))
+}
+
+fn pending_update_matches(update: &SkillUpdateInfo, identifier: &str) -> bool {
+    update.dir_name == identifier
+        || (!update.storage_key.is_empty() && update.storage_key == identifier)
+}
+
+fn is_hub_endpoint_enabled(config: &AppConfig, hub_endpoint_id: &str) -> bool {
+    config
+        .skill_hub_endpoints
+        .iter()
+        .find(|endpoint| endpoint.id == hub_endpoint_id)
+        .map(|endpoint| endpoint.enabled)
+        .unwrap_or(false)
+}
+
+fn check_hub_record<G>(
+    record_key: &str,
     record: &SkillRecord,
     main_dir: &Path,
-    repo_cache: &mut HashMap<RepoCacheKey, PathBuf>,
-    download_repo_ref: &F,
+    config: &AppConfig,
+    download_hub_archive: &G,
 ) -> Result<Option<SkillUpdateInfo>, AppError>
 where
-    F: Fn(&RepoRef) -> Result<PathBuf, AppError>,
+    G: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
 {
-    let repo_ref = record.to_repo_ref();
-    let repo_key = (
-        repo_ref.host.clone(),
-        repo_ref.project_path.clone(),
-        repo_ref.branch.clone(),
-    );
-    let repo_root = if let Some(cached) = repo_cache.get(&repo_key) {
-        cached.clone()
+    let remote_hash = resolve_hub_remote_hash(config, record, download_hub_archive)?;
+    let local_path = resolve_local_library_path(main_dir, record_key, record);
+    let link_name = record_link_name(record_key, record);
+    let current_hash = if local_path.is_dir() {
+        Some(local_hash_for_hub_compare(&local_path, &remote_hash)?)
     } else {
-        let downloaded = download_repo_ref(&repo_ref)?;
-        repo_cache.insert(repo_key, downloaded.clone());
-        downloaded
+        None
     };
 
-    let remote_dir = resolve_skill_directory(&repo_root, &record.directory);
+    if current_hash.as_deref() == Some(remote_hash.as_str()) {
+        return Ok(None);
+    }
+
+    Ok(Some(SkillUpdateInfo {
+        dir_name: link_name.clone(),
+        name: skill_display_name(&local_path, &link_name),
+        current_hash,
+        remote_hash,
+        storage_key: record.storage_key.clone(),
+    }))
+}
+
+fn resolve_hub_remote_hash<G>(
+    config: &AppConfig,
+    record: &SkillRecord,
+    download_hub_archive: &G,
+) -> Result<String, AppError>
+where
+    G: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
+    let base_url =
+        skill_hub_endpoints::hub_endpoint_base_url(config, &record.hub_endpoint_id)?;
+
+    if let Ok(skills) =
+        skill_hub_client::fetch_skills(&base_url, Some(&record.hub_skill_group))
+    {
+        if let Some(dto) = skills.iter().find(|skill| {
+            skill.id == record.hub_skill_id && skill.group == record.hub_skill_group
+        }) {
+            if let Some(hash) = dto.hash.as_ref().filter(|hash| !hash.is_empty()) {
+                return Ok(hash.clone());
+            }
+        } else {
+            return Err(AppError::HubSkillGone {
+                skill_id: record.hub_skill_id.clone(),
+                group: record.hub_skill_group.clone(),
+            });
+        }
+    }
+
+    hash_hub_archive(
+        &base_url,
+        &record.hub_skill_group,
+        &record.hub_skill_id,
+        download_hub_archive,
+    )
+}
+
+fn hash_hub_archive<G>(
+    base_url: &str,
+    group: &str,
+    skill_id: &str,
+    download_hub_archive: &G,
+) -> Result<String, AppError>
+where
+    G: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
+    let zip_path = download_hub_archive(base_url, group, skill_id)?;
+    let temp_dir = create_temp_extract_dir()?;
+    let extract_result = skill_downloader::extract_zip_file(&zip_path, &temp_dir);
+    let _ = fs::remove_file(&zip_path);
+    extract_result?;
+    let hash = compute_dir_hash(&temp_dir)?;
+    let _ = fs::remove_dir_all(&temp_dir);
+    Ok(hash)
+}
+
+fn create_temp_extract_dir() -> Result<PathBuf, AppError> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|err| io_error(None::<&Path>, err.to_string()))?
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("skills-sync-hub-hash-{}", nanos));
+    fs::create_dir_all(&dir).map_err(|err| io_error(Some(&dir), err.to_string()))?;
+    Ok(dir)
+}
+
+fn compare_record_to_repo_root(
+    record_key: &str,
+    record: &SkillRecord,
+    main_dir: &Path,
+    repo_root: &Path,
+) -> Result<Option<SkillUpdateInfo>, AppError> {
+    let remote_dir = resolve_skill_directory(repo_root, &record.directory);
     if !remote_dir.join("SKILL.md").is_file() {
         return Err(AppError::SkillDirNotFound {
             path: remote_dir,
@@ -145,7 +374,8 @@ where
     }
 
     let remote_hash = compute_dir_hash(&remote_dir)?;
-    let local_path = main_dir.join(dir_name);
+    let local_path = resolve_local_library_path(main_dir, record_key, record);
+    let link_name = record_link_name(record_key, record);
     let current_hash = if local_path.is_dir() {
         Some(compute_dir_hash(&local_path)?)
     } else {
@@ -157,10 +387,11 @@ where
     }
 
     Ok(Some(SkillUpdateInfo {
-        dir_name: dir_name.to_string(),
-        name: skill_display_name(&local_path, dir_name),
+        dir_name: link_name.clone(),
+        name: skill_display_name(&local_path, &link_name),
         current_hash,
         remote_hash,
+        storage_key: record.storage_key.clone(),
     }))
 }
 
@@ -181,9 +412,13 @@ pub fn update_skill(
     dir_name: &str,
     main_dir: &Path,
 ) -> Result<(), AppError> {
-    update_skill_with_download_hook(config, dir_name, main_dir, |repo_ref| {
-        skill_downloader::download_repo_ref(repo_ref)
-    })
+    update_skill_with_hooks(
+        config,
+        dir_name,
+        main_dir,
+        |repo_ref| skill_downloader::download_repo_ref(repo_ref),
+        |base_url, group, skill_id| skill_hub_client::download_archive(base_url, group, skill_id),
+    )
 }
 
 pub fn update_skill_with_download_hook<F>(
@@ -195,24 +430,52 @@ pub fn update_skill_with_download_hook<F>(
 where
     F: FnOnce(&RepoRef) -> Result<PathBuf, AppError>,
 {
+    update_skill_with_hooks(config, dir_name, main_dir, download_repo_ref, |_, _, _| {
+        Err(AppError::Io {
+            path: None,
+            message: "Hub 下载未配置".to_string(),
+        })
+    })
+}
+
+pub fn update_skill_with_hooks<F, G>(
+    config: &mut AppConfig,
+    dir_name: &str,
+    main_dir: &Path,
+    download_repo_ref: F,
+    download_hub_archive: G,
+) -> Result<(), AppError>
+where
+    F: FnOnce(&RepoRef) -> Result<PathBuf, AppError>,
+    G: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
     if !config
         .skill_update_cache
         .updates
         .iter()
-        .any(|update| update.dir_name == dir_name)
+        .any(|update| pending_update_matches(update, dir_name))
     {
         return Err(AppError::UpdateNotPending {
             dir_name: dir_name.to_string(),
         });
     }
 
-    let record = config
-        .skill_records
-        .get(dir_name)
-        .cloned()
-        .ok_or_else(|| AppError::UpdateNotPending {
+    let (record_key, record) = resolve_record_by_identifier(config, dir_name).ok_or_else(|| {
+        AppError::UpdateNotPending {
             dir_name: dir_name.to_string(),
-        })?;
+        }
+    })?;
+
+    if record.source == "skillhub" {
+        return update_hub_skill(
+            config,
+            dir_name,
+            &record_key,
+            &record,
+            main_dir,
+            download_hub_archive,
+        );
+    }
 
     let repo_ref = record.to_repo_ref();
     let repo_root = download_repo_ref(&repo_ref)?;
@@ -224,23 +487,89 @@ where
         });
     }
 
-    let install_path = main_dir.join(dir_name);
+    let install_path = resolve_local_library_path(main_dir, &record_key, &record);
     if install_path.exists() {
-        ensure_deletable_skill_dir(&install_path, dir_name)?;
+        ensure_deletable_skill_dir(&install_path, &record_link_name(&record_key, &record))?;
         crate::fs_adapter::delete_real_dir(&install_path)?;
+    }
+
+    if let Some(parent) = install_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| io_error(Some(parent), err.to_string()))?;
     }
 
     copy_dir_recursive(&source_dir, &install_path)?;
     let content_hash = compute_dir_hash(&install_path)?;
 
-    if let Some(record) = config.skill_records.get_mut(dir_name) {
+    if let Some(record) = config.skill_records.get_mut(&record_key) {
         record.content_hash = content_hash;
     }
 
     config
         .skill_update_cache
         .updates
-        .retain(|update| update.dir_name != dir_name);
+        .retain(|update| !pending_update_matches(update, dir_name));
+
+    Ok(())
+}
+
+fn update_hub_skill<G>(
+    config: &mut AppConfig,
+    dir_name: &str,
+    record_key: &str,
+    record: &SkillRecord,
+    main_dir: &Path,
+    download_hub_archive: G,
+) -> Result<(), AppError>
+where
+    G: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
+    let base_url =
+        skill_hub_endpoints::hub_endpoint_base_url(config, &record.hub_endpoint_id)?;
+    let zip_path = match download_hub_archive(
+        &base_url,
+        &record.hub_skill_group,
+        &record.hub_skill_id,
+    ) {
+        Ok(path) => path,
+        Err(err) => {
+            if matches!(&err, AppError::HubSkillGone { .. }) {
+                mark_record_source_missing(config, record_key);
+            }
+            return Err(err);
+        }
+    };
+
+    let install_path = resolve_local_library_path(main_dir, record_key, record);
+    if install_path.exists() {
+        ensure_deletable_skill_dir(&install_path, &record_link_name(record_key, record))?;
+        crate::fs_adapter::delete_real_dir(&install_path)?;
+    }
+
+    if let Some(parent) = install_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| io_error(Some(parent), err.to_string()))?;
+    }
+    fs::create_dir_all(&install_path).map_err(|err| io_error(Some(&install_path), err.to_string()))?;
+
+    let extract_result = skill_downloader::extract_zip_file(&zip_path, &install_path);
+    let _ = fs::remove_file(&zip_path);
+    extract_result?;
+
+    if !install_path.join("SKILL.md").is_file() {
+        return Err(AppError::SkillDirNotFound {
+            path: install_path.join("SKILL.md"),
+        });
+    }
+
+    let content_hash = compute_skill_md_hash_prefix(&install_path)?;
+    if let Some(record) = config.skill_records.get_mut(record_key) {
+        record.content_hash = content_hash;
+        record.source_missing = false;
+    }
+
+    config
+        .skill_update_cache
+        .updates
+        .retain(|update| !pending_update_matches(update, dir_name));
 
     Ok(())
 }
@@ -249,9 +578,12 @@ pub fn update_all_skills(
     config: &mut AppConfig,
     main_dir: &Path,
 ) -> Result<UpdateAllSkillsResult, AppError> {
-    update_all_skills_with_download_hook(config, main_dir, |repo_ref| {
-        skill_downloader::download_repo_ref(repo_ref)
-    })
+    update_all_skills_with_hooks(
+        config,
+        main_dir,
+        |repo_ref| skill_downloader::download_repo_ref(repo_ref),
+        |base_url, group, skill_id| skill_hub_client::download_archive(base_url, group, skill_id),
+    )
 }
 
 pub fn update_all_skills_with_download_hook<F>(
@@ -262,21 +594,48 @@ pub fn update_all_skills_with_download_hook<F>(
 where
     F: FnMut(&RepoRef) -> Result<PathBuf, AppError>,
 {
+    update_all_skills_with_hooks(config, main_dir, move |repo_ref| download_repo_ref(repo_ref), |_, _, _| {
+        Err(AppError::Io {
+            path: None,
+            message: "Hub 下载未配置".to_string(),
+        })
+    })
+}
+
+pub fn update_all_skills_with_hooks<F, G>(
+    config: &mut AppConfig,
+    main_dir: &Path,
+    mut download_repo_ref: F,
+    mut download_hub_archive: G,
+) -> Result<UpdateAllSkillsResult, AppError>
+where
+    F: FnMut(&RepoRef) -> Result<PathBuf, AppError>,
+    G: FnMut(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
     let pending: Vec<String> = config
         .skill_update_cache
         .updates
         .iter()
-        .map(|update| update.dir_name.clone())
+        .map(|update| {
+            if !update.storage_key.is_empty() {
+                update.storage_key.clone()
+            } else {
+                update.dir_name.clone()
+            }
+        })
         .collect();
 
     let mut updated = Vec::new();
     let mut failed = Vec::new();
 
     for dir_name in pending {
-        match update_skill_with_download_hook(config, &dir_name, main_dir, |repo_ref| {
+        match update_skill_with_hooks(config, &dir_name, main_dir, |repo_ref| {
             download_repo_ref(repo_ref)
-        }) {
+        }, |base_url, group, skill_id| download_hub_archive(base_url, group, skill_id)) {
             Ok(()) => updated.push(dir_name),
+            Err(AppError::HubSkillGone { .. }) => {
+                // Local copy kept; source_missing already marked. Not a hard failure.
+            }
             Err(err) => failed.push(UpdateAllSkillsFailure {
                 dir_name,
                 error: err.to_string(),
@@ -350,13 +709,45 @@ mod tests {
             directory: directory.to_string(),
             content_hash: content_hash.to_string(),
             installed_at: "2026-06-30T00:00:00Z".to_string(),
+            ..Default::default()
         }
     }
 
-    fn config_with_record(dir_name: &str, record: SkillRecord) -> AppConfig {
+    fn config_with_record(record_key: &str, record: SkillRecord) -> AppConfig {
         let mut config = AppConfig::default();
-        config.skill_records.insert(dir_name.to_string(), record);
+        config.skill_records.insert(record_key.to_string(), record);
+        config.skill_repos = vec![SkillRepo {
+            host: default_github_host(),
+            provider: "github".to_string(),
+            project_path: "anthropics/skills".to_string(),
+            owner: "anthropics".to_string(),
+            name: "skills".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        }];
         config
+    }
+
+    fn nested_record(storage_key: &str, directory: &str, content_hash: &str) -> SkillRecord {
+        SkillRecord {
+            repo_host: default_github_host(),
+            project_path: "anthropics/skills".to_string(),
+            source: "github".to_string(),
+            repo_owner: "anthropics".to_string(),
+            repo_name: "skills".to_string(),
+            repo_branch: "main".to_string(),
+            directory: directory.to_string(),
+            content_hash: content_hash.to_string(),
+            installed_at: "2026-06-30T00:00:00Z".to_string(),
+            storage_key: storage_key.to_string(),
+            link_name: skill_storage::skill_id_from_directory(directory),
+            repo_slug: "github.com--anthropics-skills".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn nested_install_path(main_dir: &Path, storage_key: &str) -> PathBuf {
+        skill_storage::main_library_path(main_dir, storage_key)
     }
 
     #[test]
@@ -370,6 +761,87 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first.len(), 64);
+    }
+
+    #[test]
+    fn compute_skill_md_hash_prefix_uses_first_12_hex_chars() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        write_valid_skill(&temp.path().join("skill"), "example", "a");
+
+        let prefix = compute_skill_md_hash_prefix(&temp.path().join("skill")).expect("hash prefix");
+        let full = compute_dir_hash(&temp.path().join("skill")).expect("full hash");
+
+        assert_eq!(prefix.len(), 12);
+        assert!(prefix.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(prefix, full);
+    }
+
+    #[test]
+    fn hub_md_hash_prefix_comparison_matches_server_format() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        write_valid_skill(&temp.path().join("skill"), "example", "a");
+        let skill_dir = temp.path().join("skill");
+
+        let remote = compute_skill_md_hash_prefix(&skill_dir).expect("remote hash");
+        let local = local_hash_for_hub_compare(&skill_dir, &remote).expect("local hash");
+
+        assert_eq!(local, remote);
+    }
+
+    #[test]
+    fn check_updates_skips_records_not_from_configured_skill_repos() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let storage_key = "repo/github.com--obra-superpowers/brainstorming";
+        let local_installed =
+            crate::skill_storage::main_library_path(&main_dir, storage_key);
+        write_valid_skill(&local_installed, "brainstorming", "local-old");
+        write_valid_skill(
+            &repo_root.join("skills").join("brainstorming"),
+            "brainstorming",
+            "remote-new",
+        );
+
+        let mut config = config_with_record(
+            storage_key,
+            SkillRecord {
+                repo_host: default_github_host(),
+                project_path: "obra/superpowers".to_string(),
+                source: "github".to_string(),
+                repo_owner: "obra".to_string(),
+                repo_name: "superpowers".to_string(),
+                repo_branch: "main".to_string(),
+                directory: "skills/brainstorming".to_string(),
+                content_hash: "stale".to_string(),
+                installed_at: "2026-06-30T00:00:00Z".to_string(),
+                storage_key: storage_key.to_string(),
+                link_name: "brainstorming".to_string(),
+                repo_slug: "github.com--obra-superpowers".to_string(),
+                ..Default::default()
+            },
+        );
+        config.skill_repos = vec![SkillRepo {
+            host: "git.xkw.cn".to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "mp-oxygen/uc/skills".to_string(),
+            owner: "mp-oxygen/uc".to_string(),
+            name: "skills".to_string(),
+            branch: "master".to_string(),
+            enabled: true,
+        }];
+
+        let download_calls = std::sync::atomic::AtomicUsize::new(0);
+        let updates = check_updates_with_download_hook(&mut config, &main_dir, |_| {
+            download_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(repo_root.clone())
+        })
+        .expect("check updates");
+
+        assert!(updates.is_empty());
+        assert_eq!(download_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -402,7 +874,7 @@ mod tests {
             enabled: false,
         }];
 
-        let updates = check_updates_with_download_hook(&config, &main_dir, |_| {
+        let updates = check_updates_with_download_hook(&mut config, &main_dir, |_| {
             Ok(repo_root.clone())
         })
         .expect("check updates");
@@ -426,12 +898,12 @@ mod tests {
         let local_installed = main_dir.join("brainstorming");
         write_valid_skill(&local_installed, "brainstorming", "local-old");
 
-        let config = config_with_record(
+        let mut config = config_with_record(
             "brainstorming",
             sample_record("skills/brainstorming", "stale-hash"),
         );
 
-        let updates = check_updates_with_download_hook(&config, &main_dir, |_| {
+        let updates = check_updates_with_download_hook(&mut config, &main_dir, |_| {
             Ok(repo_root.clone())
         })
         .expect("check updates");
@@ -462,13 +934,13 @@ mod tests {
             .expect("remote hash");
         assert_ne!(local_hash, remote_hash);
 
-        let config = config_with_record(
+        let mut config = config_with_record(
             "brainstorming",
             sample_record("skills/brainstorming", &local_hash),
         );
 
         let updates =
-            check_updates_with_download_hook(&config, &main_dir, |_| Ok(repo_root.clone()))
+            check_updates_with_download_hook(&mut config, &main_dir, |_| Ok(repo_root.clone()))
                 .expect("check updates");
 
         assert_eq!(updates.len(), 1);
@@ -516,6 +988,7 @@ mod tests {
                 name: "brainstorming".to_string(),
                 current_hash: Some("stale-hash".to_string()),
                 remote_hash: remote_hash.clone(),
+                ..Default::default()
             }],
         };
 
@@ -588,12 +1061,14 @@ mod tests {
                     name: "good".to_string(),
                     current_hash: Some("stale".to_string()),
                     remote_hash: good_remote_hash,
+                    ..Default::default()
                 },
                 SkillUpdateInfo {
                     dir_name: "bad".to_string(),
                     name: "bad".to_string(),
                     current_hash: Some("stale".to_string()),
                     remote_hash: "deadbeef".to_string(),
+                    ..Default::default()
                 },
             ],
         };
@@ -608,5 +1083,177 @@ mod tests {
         assert_eq!(result.failed[0].dir_name, "bad");
         assert_eq!(config.skill_update_cache.updates.len(), 1);
         assert_eq!(config.skill_update_cache.updates[0].dir_name, "bad");
+    }
+
+    #[test]
+    fn check_updates_marks_hub_skill_gone_as_source_missing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let storage_key = "hub/company-hub/tools/brainstorming";
+        let local_installed = nested_install_path(&main_dir, storage_key);
+        write_valid_skill(&local_installed, "brainstorming", "local");
+
+        let mut config = config_with_record(
+            storage_key,
+            SkillRecord {
+                source: "skillhub".to_string(),
+                directory: "tools/brainstorming".to_string(),
+                content_hash: "local".to_string(),
+                installed_at: "2026-06-30T00:00:00Z".to_string(),
+                storage_key: storage_key.to_string(),
+                link_name: "brainstorming".to_string(),
+                hub_endpoint_id: "company-hub".to_string(),
+                hub_skill_group: "tools".to_string(),
+                hub_skill_id: "brainstorming".to_string(),
+                ..Default::default()
+            },
+        );
+        config.skill_hub_endpoints = vec![crate::models::SkillHubEndpoint {
+            id: "company-hub".to_string(),
+            name: "Company Hub".to_string(),
+            base_url: "https://hub.example.com".to_string(),
+            enabled: true,
+        }];
+        config.skill_update_cache = SkillUpdateCache {
+            checked_at: Some("2026-06-30T00:00:00Z".to_string()),
+            updates: vec![SkillUpdateInfo {
+                dir_name: "brainstorming".to_string(),
+                name: "brainstorming".to_string(),
+                current_hash: Some("local".to_string()),
+                remote_hash: "remote".to_string(),
+                storage_key: storage_key.to_string(),
+                ..Default::default()
+            }],
+        };
+
+        let updates = check_updates_with_hooks(
+            &mut config,
+            &main_dir,
+            |_| {
+                Err(AppError::Io {
+                    path: None,
+                    message: "unused".to_string(),
+                })
+            },
+            |_, _, _| {
+                Err(AppError::HubSkillGone {
+                    skill_id: "brainstorming".to_string(),
+                    group: "tools".to_string(),
+                })
+            },
+        )
+        .expect("check updates should not fail on hub gone");
+
+        assert!(updates.is_empty());
+        assert!(
+            config
+                .skill_records
+                .get(storage_key)
+                .expect("record")
+                .source_missing
+        );
+        assert!(config.skill_update_cache.updates.is_empty());
+    }
+
+    #[test]
+    fn check_updates_detects_hash_change_for_nested_storage_key() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let storage_key = "repo/github.com--anthropics-skills/brainstorming";
+        let local_installed = nested_install_path(&main_dir, storage_key);
+        write_valid_skill(&local_installed, "brainstorming", "local-old");
+        let local_hash = compute_dir_hash(&local_installed).expect("local hash");
+
+        write_valid_skill(
+            &repo_root.join("skills").join("brainstorming"),
+            "brainstorming",
+            "remote-new",
+        );
+        let remote_hash = compute_dir_hash(&repo_root.join("skills").join("brainstorming"))
+            .expect("remote hash");
+        assert_ne!(local_hash, remote_hash);
+
+        let mut config = config_with_record(
+            storage_key,
+            nested_record(storage_key, "skills/brainstorming", &local_hash),
+        );
+
+        let updates =
+            check_updates_with_download_hook(&mut config, &main_dir, |_| Ok(repo_root.clone()))
+                .expect("check updates");
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].dir_name, "brainstorming");
+        assert_eq!(updates[0].storage_key, storage_key);
+        assert_eq!(updates[0].current_hash.as_deref(), Some(local_hash.as_str()));
+        assert_eq!(updates[0].remote_hash, remote_hash);
+    }
+
+    #[test]
+    fn update_skill_overwrites_nested_storage_key_directory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let storage_key = "repo/github.com--anthropics-skills/brainstorming";
+        let install_path = nested_install_path(&main_dir, storage_key);
+        write_valid_skill(&install_path, "brainstorming", "local-old");
+        fs::write(install_path.join("stale.txt"), "old").expect("write stale");
+
+        write_valid_skill(
+            &repo_root.join("skills").join("brainstorming"),
+            "brainstorming",
+            "remote-new",
+        );
+        fs::write(
+            repo_root
+                .join("skills")
+                .join("brainstorming")
+                .join("fresh.txt"),
+            "new",
+        )
+        .expect("write fresh");
+
+        let remote_hash =
+            compute_dir_hash(&repo_root.join("skills").join("brainstorming")).expect("remote hash");
+
+        let mut config = config_with_record(
+            storage_key,
+            nested_record(storage_key, "skills/brainstorming", "stale-hash"),
+        );
+        config.skill_update_cache = SkillUpdateCache {
+            checked_at: Some("2026-06-30T00:00:00Z".to_string()),
+            updates: vec![SkillUpdateInfo {
+                dir_name: "brainstorming".to_string(),
+                name: "brainstorming".to_string(),
+                current_hash: Some("stale-hash".to_string()),
+                remote_hash: remote_hash.clone(),
+                storage_key: storage_key.to_string(),
+                ..Default::default()
+            }],
+        };
+
+        update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_| {
+            Ok(repo_root.clone())
+        })
+        .expect("update skill");
+
+        assert!(!install_path.join("stale.txt").exists());
+        assert_eq!(fs::read_to_string(install_path.join("fresh.txt")).unwrap(), "new");
+        assert_eq!(
+            config
+                .skill_records
+                .get(storage_key)
+                .expect("record")
+                .content_hash,
+            remote_hash
+        );
+        assert!(config.skill_update_cache.updates.is_empty());
     }
 }

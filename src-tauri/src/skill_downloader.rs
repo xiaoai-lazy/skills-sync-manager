@@ -1,21 +1,10 @@
 use crate::credential_store;
 use crate::gitlab_client;
-use crate::models::{
-    AppError, RepoRef, default_github_host, default_github_provider,
-};
+use crate::models::{AppError, RepoRef};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-pub fn download_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf, AppError> {
-    download_repo_ref(&RepoRef {
-        host: default_github_host(),
-        provider: default_github_provider(),
-        project_path: format!("{owner}/{name}"),
-        branch: branch.to_string(),
-    })
-}
 
 pub fn download_repo_ref(repo: &RepoRef) -> Result<PathBuf, AppError> {
     if repo.provider == "gitlab" {
@@ -24,6 +13,18 @@ pub fn download_repo_ref(repo: &RepoRef) -> Result<PathBuf, AppError> {
         let (owner, name) = parse_github_project_path(&repo.project_path)?;
         download_github_repo(owner, name, &repo.branch)
     }
+}
+
+/// 下载仓库并解压到目标目录（会先清空 dest_dir）。
+pub fn download_repo_ref_to_dir(dest_dir: &Path, repo: &RepoRef) -> Result<(), AppError> {
+    let extracted = download_repo_ref(repo)?;
+    if dest_dir.exists() {
+        fs::remove_dir_all(dest_dir).map_err(|err| io_error(Some(dest_dir), err.to_string()))?;
+    }
+    if let Some(parent) = dest_dir.parent() {
+        fs::create_dir_all(parent).map_err(|err| io_error(Some(parent), err.to_string()))?;
+    }
+    copy_dir_recursive(&extracted, dest_dir)
 }
 
 fn download_github_repo(owner: &str, name: &str, branch: &str) -> Result<PathBuf, AppError> {
@@ -256,6 +257,11 @@ fn fallback_branches(requested: &str) -> Vec<&'static str> {
         branches.push("master");
     }
     branches
+}
+
+pub fn extract_zip_file(zip_path: &Path, dest: &Path) -> Result<(), AppError> {
+    let bytes = fs::read(zip_path).map_err(|err| io_error(Some(zip_path), err.to_string()))?;
+    extract_zip_bytes(&bytes, dest)
 }
 
 fn extract_zip_bytes(bytes: &[u8], dest: &Path) -> Result<(), AppError> {

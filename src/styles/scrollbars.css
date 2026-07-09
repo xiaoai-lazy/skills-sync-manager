@@ -1,0 +1,160 @@
+/* Scrollbars — thumb only; no track or arrow buttons.
+   Avoid scrollbar-width/color on WebKit hosts: on Windows WebView2 they force
+   native classic scrollbars and ignore ::-webkit-scrollbar-button { display: none }. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  display: none;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:single-button,
+*::-webkit-scrollbar-button:single-button:vertical:decrement,
+*::-webkit-scrollbar-button:single-button:vertical:increment,
+*::-webkit-scrollbar-button:single-button:horizontal:decrement,
+*::-webkit-scrollbar-button:single-button:horizontal:increment,
+*::-webkit-scrollbar-button:vertical:start:decrement,
+*::-webkit-scrollbar-button:vertical:end:increment,
+*::-webkit-scrollbar-button:horizontal:start:decrement,
+*::-webkit-scrollbar-button:horizontal:end:increment,
+*::-webkit-scrollbar-button:vertical:decrement,
+*::-webkit-scrollbar-button:vertical:increment,
+*::-webkit-scrollbar-button:horizontal:decrement,
+*::-webkit-scrollbar-button:horizontal:end:increment {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent !important;
+  background-image: none !important;
+  border: none;
+}
+
+.sidebar,
+.hub-body,
+.target-body,
+.drawer,
+.repo-list,
+.modal {
+  overflow-x: hidden;
+  scrollbar-gutter: auto;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.sidebar::-webkit-scrollbar:horizontal,
+.hub-body::-webkit-scrollbar:horizontal,
+.target-body::-webkit-scrollbar:horizontal,
+.drawer::-webkit-scrollbar:horizontal,
+.repo-list::-webkit-scrollbar:horizontal,
+.modal::-webkit-scrollbar:horizontal {
+  display: none;
+  height: 0;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.hub-body::-webkit-scrollbar-track,
+.target-body::-webkit-scrollbar-track,
+.drawer::-webkit-scrollbar-track,
+.repo-list::-webkit-scrollbar-track,
+.modal::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track-piece,
+.hub-body::-webkit-scrollbar-track-piece,
+.target-body::-webkit-scrollbar-track-piece,
+.drawer::-webkit-scrollbar-track-piece,
+.repo-list::-webkit-scrollbar-track-piece,
+.modal::-webkit-scrollbar-track-piece {
+  margin: 0;
+  background: transparent;
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb,
+.hub-body:hover::-webkit-scrollbar-thumb,
+.target-body:hover::-webkit-scrollbar-thumb,
+.drawer:hover::-webkit-scrollbar-thumb,
+.repo-list:hover::-webkit-scrollbar-thumb,
+.modal:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+

@@ -9,24 +9,30 @@ export async function setMainSkillsDir(path: string): Promise<AppState> {
   return invoke<AppState>('set_main_skills_dir', { path });
 }
 
-export async function updateTarget(targetId: string, name: string, skillsDir: string): Promise<AppState> {
-  return invoke<AppState>('update_target', { targetId, name, skillsDir });
+export async function updateTarget(targetId: string, name: string): Promise<AppState> {
+  return invoke<AppState>('update_target', { targetId, name });
 }
 
 export async function deleteTarget(targetId: string, cleanupRecordedLinks: boolean): Promise<AppState> {
   return invoke<AppState>('delete_target', { targetId, cleanupRecordedLinks });
 }
 
-export async function installSkill(targetId: string, skillDirName: string): Promise<AppState> {
-  return invoke<AppState>('install_skill', { targetId, skillDirName });
+export async function installSkill(targetId: string, skillIdentifier: string): Promise<AppState> {
+  return invoke<AppState>('install_skill', { targetId, skillIdentifier });
 }
 
-export async function uninstallSkill(targetId: string, skillDirName: string): Promise<AppState> {
-  return invoke<AppState>('uninstall_skill', { targetId, skillDirName });
+export async function uninstallSkill(targetId: string, skillIdentifier: string): Promise<AppState> {
+  return invoke<AppState>('uninstall_skill', { targetId, skillIdentifier });
 }
 
-export async function deleteMainSkill(skillDirName: string, confirmed: boolean): Promise<AppState> {
-  return invoke<AppState>('delete_main_skill', { skillDirName, confirmed });
+export async function deleteMainSkill(
+  skillIdentifier: string,
+  confirmed: boolean,
+): Promise<AppState> {
+  return invoke<AppState>('delete_main_skill', {
+    skillIdentifier,
+    confirmed,
+  });
 }
 
 export async function listAgentPresets(

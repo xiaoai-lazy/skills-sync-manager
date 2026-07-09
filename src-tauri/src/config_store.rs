@@ -1,4 +1,5 @@
 use crate::models::{migrate_config, AppConfig, AppError, CURRENT_CONFIG_VERSION};
+use crate::skill_migration::{self, MigrationReport};
 use crate::skill_repos;
 use std::fs;
 use std::io;
@@ -6,6 +7,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 static CONFIG_IO_LOCK: Mutex<()> = Mutex::new(());
+static LAST_MIGRATION_REPORT: Mutex<Option<MigrationReport>> = Mutex::new(None);
+
+pub fn take_last_migration_report() -> Option<MigrationReport> {
+    match LAST_MIGRATION_REPORT.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => None,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ConfigStore {
@@ -43,17 +52,47 @@ impl ConfigStore {
         })?;
 
         let mut changed = false;
-        if config.version < CURRENT_CONFIG_VERSION {
+
+        if config.version < 5 {
             backup_config_file(&self.config_path)?;
+            if migrate_config(&mut config) {
+                changed = true;
+            }
         }
-        if migrate_config(&mut config) {
-            changed = true;
+
+        if config.version == 5 && CURRENT_CONFIG_VERSION == 6 {
+            if let Some(main_dir) = config.settings.main_skills_dir.clone() {
+                let report =
+                    skill_migration::migrate_v5_to_v6(&mut config, &main_dir, &self.config_path)?;
+                if let Ok(mut guard) = LAST_MIGRATION_REPORT.lock() {
+                    *guard = Some(report);
+                }
+                changed = true;
+            } else {
+                config.version = 6;
+                changed = true;
+            }
+        } else if config.version < CURRENT_CONFIG_VERSION {
+            if migrate_config(&mut config) {
+                changed = true;
+            }
         }
         if skill_repos::dedupe_skill_repos(&mut config) {
             changed = true;
         }
         if crate::models::normalize_config_paths(&mut config) {
             changed = true;
+        }
+        if crate::credential_store::reconcile_gitlab_credential_hosts(&mut config) {
+            changed = true;
+        }
+        if crate::storage_keys::reconcile_storage_keys(&mut config) {
+            changed = true;
+        }
+        if let Some(app_data_dir) = self.config_path.parent() {
+            if crate::runtime_cache::migrate_from_config(app_data_dir, &mut config)? {
+                changed = true;
+            }
         }
         if changed {
             self.save_unlocked(&config)?;
@@ -63,6 +102,10 @@ impl ConfigStore {
     }
 
     fn save_unlocked(&self, config: &AppConfig) -> Result<(), AppError> {
+        // Never persist discover/update caches into config.json.
+        let mut to_save = config.clone();
+        crate::runtime_cache::strip_from_config(&mut to_save);
+
         if let Some(parent) = self.config_path.parent() {
             fs::create_dir_all(parent).map_err(|err| AppError::ConfigWrite {
                 path: parent.to_path_buf(),
@@ -71,7 +114,7 @@ impl ConfigStore {
         }
 
         let tmp_path = self.config_path.with_extension("json.tmp");
-        let raw = serde_json::to_string_pretty(config).map_err(|err| AppError::ConfigWrite {
+        let raw = serde_json::to_string_pretty(&to_save).map_err(|err| AppError::ConfigWrite {
             path: self.config_path.clone(),
             message: err.to_string(),
         })?;
@@ -195,12 +238,18 @@ mod tests {
             link_path: temp.path().join("target-skills").join("example-skill"),
             link_type: LinkType::Symlink,
             created_at: "2026-06-23T00:00:00Z".to_string(),
+            ..Default::default()
         });
 
         store.save(&config).expect("save config");
         let loaded = store.load().expect("load saved config");
 
-        assert_eq!(loaded, config);
+        assert_eq!(
+            loaded.installations[0].skill_storage_key,
+            "example-skill"
+        );
+        assert_eq!(loaded.settings, config.settings);
+        assert_eq!(loaded.targets, config.targets);
         assert!(!store.config_path.with_extension("json.tmp").exists());
         assert!(!store.config_path.with_extension("json.bak").exists());
     }
@@ -262,7 +311,7 @@ mod tests {
 
         let on_disk = fs::read_to_string(path).expect("read migrated config");
         assert!(on_disk.contains("skillRepos"));
-        assert!(on_disk.contains("\"version\": 5"));
+        assert!(on_disk.contains("\"version\": 6"));
     }
 
     #[test]
@@ -387,5 +436,57 @@ mod tests {
         assert!(config_path.parent().unwrap().is_dir());
         assert!(!config_path.with_extension("json.tmp").exists());
         assert!(!config_path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn take_last_migration_report_after_v5_load() {
+        use crate::models::SkillRecord;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main = temp.path().join("main");
+        let flat = main.join("tdd");
+        fs::create_dir_all(&flat).expect("create flat skill");
+        fs::write(
+            flat.join("SKILL.md"),
+            "---\nname: tdd\ndescription: Test.\n---\n\n# TDD\n",
+        )
+        .expect("write skill");
+
+        let config_path = temp.path().join("config.json");
+        let mut config = AppConfig::default();
+        config.version = 5;
+        config.settings.main_skills_dir = Some(main.clone());
+        config.skill_records.insert(
+            "tdd".to_string(),
+            SkillRecord {
+                source: "github".to_string(),
+                repo_host: "github.com".to_string(),
+                project_path: "anthropics/skills".to_string(),
+                repo_owner: "anthropics".to_string(),
+                repo_name: "skills".to_string(),
+                repo_branch: "main".to_string(),
+                directory: "skills/tdd".to_string(),
+                content_hash: "abc".to_string(),
+                installed_at: "2026-01-01".to_string(),
+                ..Default::default()
+            },
+        );
+        fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&config).expect("serialize v5 config"),
+        )
+        .expect("write v5 config");
+
+        let store = ConfigStore::new(config_path.clone());
+        let loaded = store.load().expect("load should migrate v5 config");
+
+        assert_eq!(loaded.version, CURRENT_CONFIG_VERSION);
+        assert!(config_path.with_extension("json.backup-v5").exists());
+        assert!(temp.path().join("migration-v5-v6.log").exists());
+
+        let report = take_last_migration_report().expect("report should be available once");
+        assert_eq!(report.succeeded, vec!["repo/github.com--anthropics-skills/tdd"]);
+        assert!(report.failed.is_empty());
+        assert!(take_last_migration_report().is_none());
     }
 }

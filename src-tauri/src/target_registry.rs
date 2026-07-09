@@ -38,7 +38,6 @@ pub struct AddCustomTargetRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTargetRequest {
     pub name: String,
-    pub skills_dir: PathBuf,
 }
 
 pub fn add_target(config: &mut AppConfig, request: AddTargetRequest) -> Result<Target, AppError> {
@@ -374,10 +373,9 @@ mod tests {
         }
     }
 
-    fn update_request(name: &str, skills_dir: PathBuf) -> UpdateTargetRequest {
+    fn update_request(name: &str) -> UpdateTargetRequest {
         UpdateTargetRequest {
             name: name.to_string(),
-            skills_dir,
         }
     }
 
@@ -608,7 +606,7 @@ mod tests {
         let error = update_target(
             &mut config,
             "target-1",
-            update_request("New Name", temp.path().to_path_buf()),
+            update_request("New Name"),
         )
         .expect_err("agent target should not be editable");
 
@@ -621,7 +619,6 @@ mod tests {
     #[test]
     fn update_target_custom_name_only_no_path_change() {
         let first = tempfile::tempdir().expect("first tempdir");
-        let second = tempfile::tempdir().expect("second tempdir");
         let mut config = AppConfig::default();
         config
             .targets
@@ -631,7 +628,7 @@ mod tests {
         let target = update_target(
             &mut config,
             "target-1",
-            update_request("  Updated Target  ", second.path().to_path_buf()),
+            update_request("  Updated Target  "),
         )
         .expect("update target");
 
@@ -645,13 +642,12 @@ mod tests {
 
     #[test]
     fn update_target_rejects_missing_target() {
-        let temp = tempfile::tempdir().expect("tempdir");
         let mut config = AppConfig::default();
 
         let error = update_target(
             &mut config,
             "missing-target",
-            update_request("Target", temp.path().to_path_buf()),
+            update_request("Target"),
         )
         .expect_err("missing target should fail");
 
@@ -693,6 +689,7 @@ mod tests {
             link_path: temp.path().join("target").join("example-skill"),
             link_type: LinkType::Symlink,
             created_at: "1".to_string(),
+            ..Default::default()
         });
 
         let error = delete_target_config(&mut config, "target-1")

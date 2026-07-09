@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { parseSmartPaste } from '../../api/skillHub';
 import { errorMessage } from '../../utils/errorMessage';
 import type { DiscoverableSkill, SmartPastePreview } from '../../model/types';
+import { emptyV6DiscoverableFields } from '../../model/types';
 import InstallConfirmDialog from './InstallConfirmDialog';
 
 const SMART_PASTE_GITHUB_EXAMPLE =
@@ -26,6 +27,7 @@ function previewToDiscoverable(preview: SmartPastePreview): DiscoverableSkill {
     repoName: preview.repoName,
     repoBranch: preview.repoBranch,
     source: preview.source,
+    ...emptyV6DiscoverableFields,
   };
 }
 
@@ -78,8 +80,7 @@ function SmartPasteBar(props: SmartPasteBarProps) {
 
   return (
     <>
-      <div className="smart-paste-card">
-        <label htmlFor="smartPasteInput">粘贴链接快速安装</label>
+      <div className="smart-paste-card smart-paste-compact">
         <div className="smart-paste-row">
           <input
             type="text"
@@ -89,8 +90,8 @@ function SmartPasteBar(props: SmartPasteBarProps) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') void handleParse();
             }}
-            placeholder="粘贴 GitHub / skills.sh 链接"
-            aria-label="Smart Paste 链接"
+            placeholder="粘贴 GitHub Skill 链接…"
+            aria-label="GitHub Skill 链接"
             aria-describedby="smartPasteHint"
             disabled={disabled || parsing || installing}
           />
@@ -115,8 +116,9 @@ function SmartPasteBar(props: SmartPasteBarProps) {
             </svg>
           </button>
         </div>
-        <p id="smartPasteHint" className="smart-paste-hint">
-          示例：{SMART_PASTE_GITHUB_EXAMPLE}
+        <p id="smartPasteHint" className="smart-paste-hint smart-paste-hint-compact">
+          仅支持 GitHub · 示例：
+          <span className="smart-paste-example">{SMART_PASTE_GITHUB_EXAMPLE}</span>
         </p>
       </div>
       <InstallConfirmDialog

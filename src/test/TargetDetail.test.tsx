@@ -3,6 +3,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import TargetDetail from '../components/TargetDetail';
 import type { SkillWithTargetState, Target } from '../model/types';
+import { emptyV6SkillViewFields } from '../model/types';
 
 const target: Target = {
   id: 'target_1',
@@ -23,6 +24,9 @@ const validSkill: SkillWithTargetState = {
     path: '/tmp/main-skills/brainstorming',
     valid: true,
     validationErrors: [],
+    ...emptyV6SkillViewFields,
+    storageKey: 'local/brainstorming',
+    linkName: 'brainstorming',
   },
   state: 'notInstalled',
   message: null,
@@ -36,6 +40,9 @@ const invalidSkill: SkillWithTargetState = {
     path: '/tmp/main-skills/invalid-skill',
     valid: false,
     validationErrors: ['Missing skill.yaml'],
+    ...emptyV6SkillViewFields,
+    storageKey: 'local/invalid-skill',
+    linkName: 'invalid-skill',
   },
   state: 'invalidSkill',
   message: null,
@@ -51,9 +58,12 @@ describe('TargetDetail', () => {
       <TargetDetail
         target={null}
         skills={[]}
+        skillRecords={{}}
+        endpoints={[]}
+        repos={[]}
         pendingSkillKey={null}
         onToggleSkill={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByRole('heading', { name: '未选择目标' })).toBeInTheDocument();
@@ -67,9 +77,12 @@ describe('TargetDetail', () => {
       <TargetDetail
         target={target}
         skills={[validSkill]}
+        skillRecords={{}}
+        endpoints={[]}
+        repos={[]}
         pendingSkillKey={null}
         onToggleSkill={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByRole('heading', { name: 'Claude Global' })).toBeInTheDocument();
@@ -82,9 +95,12 @@ describe('TargetDetail', () => {
       <TargetDetail
         target={target}
         skills={[]}
+        skillRecords={{}}
+        endpoints={[]}
+        repos={[]}
         pendingSkillKey={null}
         onToggleSkill={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText('主库中暂无有效 Skill')).toBeInTheDocument();
@@ -95,9 +111,12 @@ describe('TargetDetail', () => {
       <TargetDetail
         target={target}
         skills={[validSkill, invalidSkill]}
+        skillRecords={{}}
+        endpoints={[]}
+        repos={[]}
         pendingSkillKey={null}
         onToggleSkill={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText('无效 Skill（1）')).toBeInTheDocument();

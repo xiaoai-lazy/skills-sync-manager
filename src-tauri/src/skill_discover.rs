@@ -1,31 +1,25 @@
-use crate::models::{AppConfig, AppError, DiscoverableSkill, RepoRef, SkillDiscoverCache, SkillRepo, default_github_provider};
-use crate::skill_downloader;
+use crate::models::{AppConfig, AppError, DiscoverableSkill, RepoRef, SkillDiscoverCache, SkillRecord, SkillRepo, default_github_provider};
+use crate::repo_cache;
 use crate::skill_library;
-use std::collections::HashSet;
+use crate::skill_storage;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-
-pub fn discover_available(
-    config: &AppConfig,
-    main_dir: Option<&Path>,
-) -> Result<Vec<DiscoverableSkill>, AppError> {
-    let (skills, _) = discover_available_with_warnings(config, main_dir);
-    Ok(skills)
-}
 
 /// 扫描所有已启用来源；单个仓库下载失败时跳过并记录警告，不中断其余来源。
 pub fn discover_available_with_warnings(
     config: &AppConfig,
     main_dir: Option<&Path>,
+    app_data_dir: &Path,
+    force: bool,
 ) -> (Vec<DiscoverableSkill>, Vec<String>) {
-    let installed = existing_install_dir_names(main_dir);
     let mut skills = Vec::new();
     let mut warnings = Vec::new();
 
     for repo in config.skill_repos.iter().filter(|repo| repo.enabled) {
         let repo_ref = repo.to_repo_ref();
         let repo_label = repo_display_label(repo);
-        match skill_downloader::download_repo_ref(&repo_ref) {
+        match repo_cache::ensure_repo_tree(repo, app_data_dir, force) {
             Ok(repo_root) => {
                 skills.extend(fetch_repo_skills_from_path(&repo_root, &repo_ref));
             }
@@ -35,10 +29,11 @@ pub fn discover_available_with_warnings(
         }
     }
 
-    let filtered = skills
-        .into_iter()
-        .filter(|skill| !installed.contains(&skill.install_dir_name.to_lowercase()))
-        .collect();
+    let filtered = filter_uninstalled_discoverable_skills(
+        skills,
+        main_dir,
+        Some(&config.skill_records),
+    );
 
     (deduplicate_discoverable_skills(filtered), warnings)
 }
@@ -55,20 +50,21 @@ fn repo_display_label(repo: &SkillRepo) -> String {
 pub fn discover_repo_skills(
     repo: &SkillRepo,
     main_dir: Option<&Path>,
+    app_data_dir: &Path,
+    force: bool,
 ) -> Result<Vec<DiscoverableSkill>, AppError> {
     if !repo.enabled {
         return Ok(Vec::new());
     }
 
     let repo_ref = repo.to_repo_ref();
-    let repo_root = skill_downloader::download_repo_ref(&repo_ref)?;
-    let installed = existing_install_dir_names(main_dir);
-    let skills = fetch_repo_skills_from_path(&repo_root, &repo_ref)
-        .into_iter()
-        .filter(|skill| !installed.contains(&skill.install_dir_name.to_lowercase()))
-        .collect();
-
-    Ok(skills)
+    let repo_root = repo_cache::ensure_repo_tree(repo, app_data_dir, force)?;
+    let skills = fetch_repo_skills_from_path(&repo_root, &repo_ref);
+    Ok(filter_uninstalled_discoverable_skills(
+        skills,
+        main_dir,
+        None,
+    ))
 }
 
 /// 将单个仓库的 discover 结果合并进缓存，不影响其他来源仓库的缓存条目。
@@ -76,8 +72,10 @@ pub fn merge_repo_into_discover_cache(
     config: &mut AppConfig,
     repo: &SkillRepo,
     main_dir: Option<&Path>,
+    app_data_dir: &Path,
+    force: bool,
 ) -> Result<Vec<DiscoverableSkill>, AppError> {
-    let new_repo_skills = discover_repo_skills(repo, main_dir)?;
+    let new_repo_skills = discover_repo_skills(repo, main_dir, app_data_dir, force)?;
     let retained = config
         .skill_discover_cache
         .skills
@@ -168,6 +166,10 @@ fn scan_dir_recursive(
                 } else {
                     default_github_provider()
                 };
+                let skill_id = skill_storage::skill_id_from_directory(&directory);
+                let repo_slug =
+                    skill_storage::compute_repo_slug(&repo_ref.host, &repo_ref.project_path);
+                let storage_key = skill_storage::storage_key_for_repo(&repo_slug, &skill_id);
 
                 skills.push(DiscoverableSkill {
                     key,
@@ -181,6 +183,12 @@ fn scan_dir_recursive(
                     repo_name,
                     repo_branch: repo_ref.branch.clone(),
                     source,
+                    storage_key,
+                    link_name: skill_id,
+                    repo_slug,
+                    hub_endpoint_id: String::new(),
+                    hub_skill_group: String::new(),
+                    hub_skill_id: String::new(),
                 });
             }
         }
@@ -214,30 +222,111 @@ pub fn deduplicate_discoverable_skills(skills: Vec<DiscoverableSkill>) -> Vec<Di
         .collect()
 }
 
-fn existing_install_dir_names(main_dir: Option<&Path>) -> HashSet<String> {
-    let Some(main_dir) = main_dir else {
-        return HashSet::new();
+pub fn filter_uninstalled_discoverable_skills(
+    skills: Vec<DiscoverableSkill>,
+    main_dir: Option<&Path>,
+    skill_records: Option<&HashMap<String, SkillRecord>>,
+) -> Vec<DiscoverableSkill> {
+    skills
+        .into_iter()
+        .filter(|skill| {
+            !is_skill_installed(skill, main_dir) && !is_skill_in_records(skill, skill_records)
+        })
+        .collect()
+}
+
+fn skill_link_name(skill: &DiscoverableSkill) -> String {
+    if !skill.link_name.is_empty() {
+        skill.link_name.clone()
+    } else {
+        skill.install_dir_name.clone()
+    }
+}
+
+fn is_skill_in_records(
+    skill: &DiscoverableSkill,
+    skill_records: Option<&HashMap<String, SkillRecord>>,
+) -> bool {
+    let Some(records) = skill_records else {
+        return false;
     };
 
-    if !main_dir.is_dir() {
-        return HashSet::new();
+    if skill.source == "skillhub" {
+        return is_hub_skill_in_records(skill, records);
     }
 
-    let mut names = HashSet::new();
-    let entries = match fs::read_dir(main_dir) {
-        Ok(entries) => entries,
-        Err(_) => return names,
-    };
+    if !skill.storage_key.is_empty() && records.contains_key(&skill.storage_key) {
+        return true;
+    }
 
-    for entry in entries.flatten() {
-        if entry.path().is_dir() {
-            if let Some(name) = entry.file_name().to_str() {
-                names.insert(name.to_lowercase());
-            }
+    if !skill.storage_key.is_empty()
+        && records
+            .values()
+            .any(|record| record.storage_key == skill.storage_key)
+    {
+        return true;
+    }
+
+    let link_name = skill_link_name(skill);
+    if records.values().any(|record| record.link_name == link_name) {
+        return true;
+    }
+
+    false
+}
+
+fn is_hub_skill_in_records(
+    skill: &DiscoverableSkill,
+    records: &HashMap<String, SkillRecord>,
+) -> bool {
+    if skill.hub_endpoint_id.is_empty() || skill.hub_skill_id.is_empty() {
+        return false;
+    }
+
+    if !skill.storage_key.is_empty() {
+        if records.contains_key(&skill.storage_key) {
+            return true;
+        }
+        if records
+            .values()
+            .any(|record| record.storage_key == skill.storage_key)
+        {
+            return true;
         }
     }
 
-    names
+    records.values().any(|record| {
+        record.source == "skillhub"
+            && record.hub_endpoint_id == skill.hub_endpoint_id
+            && record.hub_skill_group == skill.hub_skill_group
+            && record.hub_skill_id == skill.hub_skill_id
+    })
+}
+
+fn is_skill_installed(skill: &DiscoverableSkill, main_dir: Option<&Path>) -> bool {
+    let Some(main_dir) = main_dir else {
+        return false;
+    };
+
+    if skill.source == "skillhub" {
+        if skill.storage_key.is_empty() {
+            return false;
+        }
+        return skill_storage::main_library_path(main_dir, &skill.storage_key).is_dir();
+    }
+
+    if main_dir.join(&skill.install_dir_name).is_dir() {
+        return true;
+    }
+
+    if !skill.storage_key.is_empty() {
+        let storage_path = skill_storage::main_library_path(main_dir, &skill.storage_key);
+        if storage_path.is_dir() {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn relative_directory(repo_root: &Path, skill_dir: &Path) -> String {
@@ -298,6 +387,29 @@ mod tests {
 
     fn github_repo_ref(owner: &str, name: &str) -> RepoRef {
         enabled_repo(owner, name).to_repo_ref()
+    }
+
+    #[test]
+    fn discoverable_skill_has_storage_key_for_github() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        write_valid_skill(
+            &temp.path().join("skills").join("brainstorming"),
+            "brainstorming",
+            "Explore ideas.",
+        );
+
+        let repo_ref = github_repo_ref("anthropics", "skills");
+        let skills = fetch_repo_skills_from_path(temp.path(), &repo_ref);
+
+        assert_eq!(skills.len(), 1);
+        let skill = &skills[0];
+        assert_eq!(skill.directory, "skills/brainstorming");
+        assert_eq!(skill.link_name, "brainstorming");
+        assert_eq!(skill.repo_slug, "github.com--anthropics-skills");
+        assert_eq!(
+            skill.storage_key,
+            "repo/github.com--anthropics-skills/brainstorming"
+        );
     }
 
     #[test]
@@ -394,9 +506,11 @@ mod tests {
     fn discover_available_returns_empty_for_empty_repos() {
         let mut config = AppConfig::default();
         config.skill_repos.clear();
-        let skills =
-            discover_available(&config, None).expect("empty repos should succeed without error");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (skills, warnings) =
+            discover_available_with_warnings(&config, None, temp.path(), false);
 
+        assert!(warnings.is_empty());
         assert!(skills.is_empty());
     }
 
@@ -414,6 +528,7 @@ mod tests {
             repo_name: "skills".to_string(),
             repo_branch: "main".to_string(),
             source: "github".to_string(),
+            ..Default::default()
         };
         let duplicate = skill.clone();
 
@@ -437,6 +552,7 @@ mod tests {
             repo_name: "superpowers".to_string(),
             repo_branch: "main".to_string(),
             source: "github".to_string(),
+            ..Default::default()
         };
         let old_gitlab_skill = DiscoverableSkill {
             key: "git.example.com/group/project:skills/old-skill".to_string(),
@@ -450,6 +566,7 @@ mod tests {
             repo_name: "project".to_string(),
             repo_branch: "main".to_string(),
             source: "gitlab".to_string(),
+            ..Default::default()
         };
         let gitlab_repo = SkillRepo {
             host: "git.example.com".to_string(),
@@ -469,7 +586,14 @@ mod tests {
             ..Default::default()
         };
 
-        let merged = merge_repo_into_discover_cache(&mut config, &gitlab_repo, None)
+        let temp = tempfile::tempdir().expect("tempdir");
+        let merged = merge_repo_into_discover_cache(
+            &mut config,
+            &gitlab_repo,
+            None,
+            temp.path(),
+            false,
+        )
             .expect("merge cache");
 
         assert_eq!(merged.len(), 1);
@@ -495,6 +619,7 @@ mod tests {
                         repo_name: "superpowers".to_string(),
                         repo_branch: "main".to_string(),
                         source: "github".to_string(),
+                        ..Default::default()
                     },
                     DiscoverableSkill {
                         key: "git.example.com/group/project:skills/gitlab-skill".to_string(),
@@ -508,6 +633,7 @@ mod tests {
                         repo_name: "project".to_string(),
                         repo_branch: "main".to_string(),
                         source: "gitlab".to_string(),
+                        ..Default::default()
                     },
                 ],
             },
@@ -565,6 +691,192 @@ mod tests {
         assert_eq!(skills[0].install_dir_name, "gitlab-skill");
     }
 
+    #[test]
+    fn filter_uninstalled_keeps_hub_skill_when_only_other_source_shares_link_name() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let hub_skill = DiscoverableSkill {
+            key: "oxygen-skill-hub:common/talos-lecture-json-review".to_string(),
+            source: "skillhub".to_string(),
+            storage_key: "hub/oxygen-skill-hub/common/talos-lecture-json-review".to_string(),
+            link_name: "talos-lecture-json-review".to_string(),
+            install_dir_name: "talos-lecture-json-review".to_string(),
+            hub_endpoint_id: "oxygen-skill-hub".to_string(),
+            hub_skill_group: "common".to_string(),
+            hub_skill_id: "talos-lecture-json-review".to_string(),
+            ..Default::default()
+        };
+
+        let mut records = HashMap::new();
+        records.insert(
+            "repo/git.xkw.cn--mp-oxygen-uc-skills/talos-lecture-json-review".to_string(),
+            SkillRecord {
+                link_name: "talos-lecture-json-review".to_string(),
+                storage_key: "repo/git.xkw.cn--mp-oxygen-uc-skills/talos-lecture-json-review"
+                    .to_string(),
+                ..Default::default()
+            },
+        );
+
+        let filtered = filter_uninstalled_discoverable_skills(
+            vec![hub_skill],
+            Some(&main_dir),
+            Some(&records),
+        );
+
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn filter_uninstalled_hides_hub_skill_when_same_endpoint_group_and_id_installed() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let hub_skill = DiscoverableSkill {
+            key: "oxygen-skill-hub:review/kqs-review".to_string(),
+            source: "skillhub".to_string(),
+            storage_key: "hub/oxygen-skill-hub/review/kqs-review".to_string(),
+            link_name: "kqs-review".to_string(),
+            install_dir_name: "kqs-review".to_string(),
+            hub_endpoint_id: "oxygen-skill-hub".to_string(),
+            hub_skill_group: "review".to_string(),
+            hub_skill_id: "kqs-review".to_string(),
+            ..Default::default()
+        };
+
+        let mut records = HashMap::new();
+        records.insert(
+            "hub/oxygen-skill-hub/review/kqs-review".to_string(),
+            SkillRecord {
+                source: "skillhub".to_string(),
+                link_name: "kqs-review".to_string(),
+                storage_key: "hub/oxygen-skill-hub/review/kqs-review".to_string(),
+                hub_endpoint_id: "oxygen-skill-hub".to_string(),
+                hub_skill_group: "review".to_string(),
+                hub_skill_id: "kqs-review".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let filtered = filter_uninstalled_discoverable_skills(
+            vec![hub_skill],
+            Some(&main_dir),
+            Some(&records),
+        );
+
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn filter_uninstalled_keeps_hub_skill_when_same_id_in_different_group() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let hub_skill = DiscoverableSkill {
+            key: "oxygen-skill-hub:review/kqs-review".to_string(),
+            source: "skillhub".to_string(),
+            storage_key: "hub/oxygen-skill-hub/review/kqs-review".to_string(),
+            link_name: "kqs-review".to_string(),
+            install_dir_name: "kqs-review".to_string(),
+            hub_endpoint_id: "oxygen-skill-hub".to_string(),
+            hub_skill_group: "review".to_string(),
+            hub_skill_id: "kqs-review".to_string(),
+            ..Default::default()
+        };
+
+        let mut records = HashMap::new();
+        records.insert(
+            "hub/oxygen-skill-hub/common/kqs-review".to_string(),
+            SkillRecord {
+                source: "skillhub".to_string(),
+                link_name: "kqs-review".to_string(),
+                storage_key: "hub/oxygen-skill-hub/common/kqs-review".to_string(),
+                hub_endpoint_id: "oxygen-skill-hub".to_string(),
+                hub_skill_group: "common".to_string(),
+                hub_skill_id: "kqs-review".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let filtered = filter_uninstalled_discoverable_skills(
+            vec![hub_skill],
+            Some(&main_dir),
+            Some(&records),
+        );
+
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn second_discover_uses_repo_cache_without_redownload() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_data = temp.path();
+        let repo = enabled_repo("anthropics", "skills");
+        let download_count = AtomicUsize::new(0);
+        const SHA: &str = "abc123deadbeef";
+
+        let fetch_sha = |_repo_ref: &RepoRef| Ok(SHA.to_string());
+        let download_repo = |dest_dir: &Path, _repo_ref: &RepoRef| {
+            download_count.fetch_add(1, Ordering::SeqCst);
+            write_valid_skill(
+                &dest_dir.join("skills").join("writing-plans"),
+                "writing-plans",
+                "Create implementation plans.",
+            );
+            Ok(())
+        };
+
+        for _ in 0..2 {
+            let repo_root = repo_cache::ensure_repo_tree_with_hooks(
+                &repo,
+                app_data,
+                false,
+                fetch_sha,
+                download_repo,
+            )
+            .expect("ensure repo tree");
+            let skills = fetch_repo_skills_from_path(&repo_root, &repo.to_repo_ref());
+            assert_eq!(skills.len(), 1);
+            assert_eq!(skills[0].install_dir_name, "writing-plans");
+        }
+
+        assert_eq!(download_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn force_discover_still_uses_cache_when_sha_unchanged() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_data = temp.path();
+        let repo = enabled_repo("anthropics", "skills");
+        let download_count = AtomicUsize::new(0);
+        const SHA: &str = "abc123deadbeef";
+
+        let fetch_sha = |_repo_ref: &RepoRef| Ok(SHA.to_string());
+        let download_repo = |dest_dir: &Path, _repo_ref: &RepoRef| {
+            download_count.fetch_add(1, Ordering::SeqCst);
+            write_valid_skill(
+                &dest_dir.join("skills").join("writing-plans"),
+                "writing-plans",
+                "Create implementation plans.",
+            );
+            Ok(())
+        };
+
+        repo_cache::ensure_repo_tree_with_hooks(&repo, app_data, false, fetch_sha, download_repo)
+            .expect("seed cache");
+        repo_cache::ensure_repo_tree_with_hooks(&repo, app_data, true, fetch_sha, download_repo)
+            .expect("force discover");
+        assert_eq!(download_count.load(Ordering::SeqCst), 1);
+    }
+
     fn discover_available_with_warnings_from_paths<F>(
         config: &AppConfig,
         main_dir: Option<&Path>,
@@ -573,7 +885,6 @@ mod tests {
     where
         F: FnMut(&RepoRef) -> Result<PathBuf, AppError>,
     {
-        let installed = existing_install_dir_names(main_dir);
         let mut skills = Vec::new();
         let mut warnings = Vec::new();
 
@@ -592,7 +903,7 @@ mod tests {
 
         let filtered = skills
             .into_iter()
-            .filter(|skill| !installed.contains(&skill.install_dir_name.to_lowercase()))
+            .filter(|skill| !is_skill_installed(skill, main_dir))
             .collect();
 
         (deduplicate_discoverable_skills(filtered), warnings)
@@ -606,7 +917,6 @@ mod tests {
     where
         F: FnMut(&RepoRef) -> Result<PathBuf, AppError>,
     {
-        let installed = existing_install_dir_names(main_dir);
         let mut skills = Vec::new();
 
         for repo in config.skill_repos.iter().filter(|repo| repo.enabled) {
@@ -617,7 +927,7 @@ mod tests {
 
         let filtered = skills
             .into_iter()
-            .filter(|skill| !installed.contains(&skill.install_dir_name.to_lowercase()))
+            .filter(|skill| !is_skill_installed(skill, main_dir))
             .collect();
 
         Ok(deduplicate_discoverable_skills(filtered))

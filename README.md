@@ -19,10 +19,11 @@ Maintaining Skills across multiple Agent directories can easily create problems.
 
 - **In-app updates (v0.5)**: check GitHub Releases on startup; install in-app or defer until the next launch.
 - **Agent / Project targets (v0.5)**: sidebar **Agent** (global) and **Projects** tree; quick-add for Cursor, Claude Code, Codex, plus custom paths.
-- **Skill Hub (v0.4)**: browse, install, and update Skills from GitHub, skills.sh, or self-hosted GitLab repos in the **Skill 中心** view.
+- **Private Skill Hub (v0.6)**: connect self-hosted Skill Hub endpoints; browse by source tree (Skill Hub and target detail pages); upload installed Skills to Hub groups (including creating new groups).
+- **Skill 中心 (v0.4+)**: browse, install, and update Skills from GitHub or self-hosted GitLab repos in the **Skill 中心** view.
 - **Self-hosted GitLab**: add private GitLab project URLs as Skill sources; authenticate per site with a Personal Access Token (PAT).
-- **Smart Paste**: paste a GitHub, skills.sh, or GitLab URL to preview and install a Skill into the main library in one step.
-- **Repo management**: add, enable, or disable Skill source repositories from Skill 中心; manage saved GitLab PATs from **密钥管理**.
+- **Smart Paste**: paste a **GitHub** URL to preview and install a Skill into the main library in one step.
+- **Source management**: add, enable, or disable Skill Hub endpoints and Git repos from Skill 中心; manage saved GitLab PATs from **密钥管理**.
 - Set one global Skills source directory (configured in Skill 中心, not in the sidebar).
 - Add global Agent presets or custom targets under **Agent**; manage projects and project-scoped targets under **Projects** in the sidebar.
 - Automatically validate Skills and identify items that need fixing.
@@ -59,23 +60,29 @@ Complete the basic setup in a few steps:
 
 1. Open the Skills Sync Manager client. The default view is **Skill 中心**.
 2. In Skill 中心, set your local Skills main library directory (source directory).
-3. (Optional) Open **仓库管理** to add GitHub, skills.sh, or GitLab repos, then use **Discover** to browse and install Skills into the main library. You can also paste a repo or skills.sh / GitLab link in **Smart Paste** for quick install. For private GitLab sites, configure a PAT when prompted (see [GitLab access keys](#gitlab-access-keys) below).
+3. (Optional) Open **来源管理** to add a Skill Hub endpoint, GitHub, or GitLab repo, then use **可安装** to browse and install Skills into the main library. You can also paste a GitHub link in **Smart Paste** for quick install. For private GitLab sites, configure a PAT when prompted (see [GitLab access keys](#gitlab-access-keys) below).
 4. Under **Agent** or a **Project**, add target directories (preset chips or custom path).
 5. Select a target from the sidebar to open its detail view.
 6. Check and enable the Skills you want to sync; the app will deploy the links automatically.
 
 The sidebar has **Skill 中心** (main library), **Agent** (global targets), and **Projects** (project tree). The main library path is shown and edited only in Skill 中心.
 
-Valid Skill rule: each direct child folder under the main library is treated as one Skill. It must contain a `SKILL.md` file, and the YAML frontmatter must define `name` and `description` fields.
+Valid Skill rule: the main library uses `repo/`, `hub/`, and `local/` container directories. Each **leaf** folder with a `SKILL.md` file and YAML frontmatter defining `name` and `description` is one Skill. Each Skill is identified by its `storageKey` (a path key relative to the main library); the symlink name in target directories is usually the last path segment (`linkName`).
+
+Git repo discovery caches downloaded archives under `{app_data}/repo-cache/` (per repo and branch) to avoid repeated downloads. You may delete that folder manually to free disk space.
+
+Discover/update result lists are stored in `{app_data}/runtime-cache.json` (separate from `config.json`). You may delete that file to clear cached lists; the next discover/update will rebuild it.
+
+Link installation uses `linkStrategy: auto` only (OS-appropriate junction or symlink). Other strategies are not implemented yet.
 
 ### GitLab access keys
 
-Skill 中心 supports self-hosted GitLab private repositories. GitHub and skills.sh public sources work as before; GitLab private projects require a PAT with read access to the project.
+Skill 中心 supports self-hosted GitLab private repositories. GitHub public sources work as before; GitLab private projects require a PAT with read access to the project.
 
-1. In **仓库管理**, add a GitLab project URL (HTTPS or SSH-style host/path).
+1. In **来源管理**, add a GitLab project URL (HTTPS or SSH-style host/path).
 2. When previewing or discovering Skills from a private repo, the app prompts for a **GitLab access key (PAT)** if none is saved for that host.
 3. Enter a PAT with at least read access; the app validates it against the GitLab API, then saves it in the OS credential store (Windows Credential Manager, macOS Keychain, or Linux secret service). One PAT per GitLab host is shared by all repos on that site.
-4. Open **密钥管理** in **仓库管理** to view configured hosts, update a PAT, or remove a saved key.
+4. Open **密钥管理** in **来源管理** to view configured hosts, update a PAT, or remove a saved key.
 
 PATs are never written to config files or logs. Removing a key deletes it from the system credential store.
 
@@ -93,10 +100,18 @@ The tool uses a conservative safety model to avoid data risk:
 
 Tauri commands are split by responsibility:
 
-- **`install_hub_skill`**: download or import a Skill into the **main library** from Skill Hub (GitHub, skills.sh, GitLab, Smart Paste). Returns updated Skill Hub local state.
+- **`install_hub_skill`**: download or import a Skill into the **main library** from Skill Hub (GitHub, GitLab, private Hub, Smart Paste). Returns updated Skill Hub local state.
 - **`install_skill`**: create a **symlink/junction** from an existing main-library Skill into a **target directory**. Used by target sync, not hub discovery.
 
-Other Skill Hub commands include `discover_skills`, `parse_smart_paste`, `check_skill_updates`, `update_skill`, and `update_all_skills`. See `src/api/skillHub.ts` and `src-tauri/src/commands/skill_hub.rs`.
+Other Skill Hub commands include `discover_skills`, `parse_smart_paste`, `list_skill_hub_endpoints`, `list_hub_groups`, `create_hub_group`, `upload_skill_to_hub`, `check_skill_updates`, `update_skill`, and `update_all_skills`. See `src/api/skillHub.ts` and `src-tauri/src/commands/skill_hub.rs`.
+
+### v0.6 migration notes
+
+- Upgrading from v0.5 runs automatic Skill record migration (`storageKey`, Hub fields). Before migration, the app backs up `config.json` as `config.json.backup-v5` and the main library as a timestamped `*.backup-v5-*` folder; details are logged to `migration-v5-v6.log`. If no main library path is set, only the config version is bumped (no file moves).
+- **skills.sh is removed** in v0.6. Existing Skills installed via skills.sh remain usable; they are shown as **GitHub（旧来源）** across the UI. Smart Paste accepts GitHub links only.
+- Add Skill Hub endpoints under **来源管理** → **Skill Hub** (display name and base URL; `id` is auto-generated from the URL, e.g. `hub-example-com`).
+
+The **Skill Hub server** is a separate repository and must be deployed on its own: [skill-hub-server](https://github.com/xiaoai-lazy/skill-hub-server) (for local dev, clone alongside this repo at e.g. `C:\Git\skill-hub-server`).
 
 ### v0.5 config migration
 

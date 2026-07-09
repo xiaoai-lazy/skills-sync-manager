@@ -3,6 +3,8 @@ import type {
   DiscoverableSkill,
   DiscoverSkillsResult,
   PreviewAddRepoResult,
+  SkillHubEndpoint,
+  SkillHubEndpointChangeResult,
   SkillHubLocalState,
   SkillRepo,
   SkillRepoChangeResult,
@@ -16,8 +18,8 @@ export async function scanMainLibrary(): Promise<SkillHubLocalState> {
   return invoke<SkillHubLocalState>('scan_main_library');
 }
 
-export async function discoverSkills(): Promise<DiscoverSkillsResult> {
-  return invoke<DiscoverSkillsResult>('discover_skills');
+export async function discoverSkills(force = false): Promise<DiscoverSkillsResult> {
+  return invoke<DiscoverSkillsResult>('discover_skills', { force });
 }
 
 export async function checkSkillUpdates(): Promise<SkillUpdateInfo[]> {
@@ -99,4 +101,46 @@ export async function setSkillRepoEnabled(
 
 export async function getTargetSkillStates(targetId: string): Promise<SkillWithTargetState[]> {
   return invoke<SkillWithTargetState[]>('get_target_skill_states', { targetId });
+}
+
+export async function listSkillHubEndpoints(): Promise<SkillHubEndpoint[]> {
+  return invoke<SkillHubEndpoint[]>('list_skill_hub_endpoints');
+}
+
+export async function addSkillHubEndpoint(
+  name: string,
+  baseUrl: string,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('add_skill_hub_endpoint', { name, baseUrl });
+}
+
+export async function removeSkillHubEndpoint(id: string): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('remove_skill_hub_endpoint', { id });
+}
+
+export async function setSkillHubEndpointEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('set_skill_hub_endpoint_enabled', { id, enabled });
+}
+
+export async function listHubGroups(hubEndpointId: string): Promise<string[]> {
+  return invoke<string[]>('list_hub_groups', { hubEndpointId });
+}
+
+export async function createHubGroup(hubEndpointId: string, name: string): Promise<string[]> {
+  return invoke<string[]>('create_hub_group', { hubEndpointId, name });
+}
+
+export async function uploadSkillToHub(
+  hubEndpointId: string,
+  group: string,
+  storageKey: string,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('upload_skill_to_hub', {
+    hubEndpointId,
+    group,
+    storageKey,
+  });
 }

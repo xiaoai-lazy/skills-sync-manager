@@ -76,6 +76,7 @@ const sampleAppState: AppState = {
   skills: [],
   selectedTargetId: null,
   selectedTargetSkills: [],
+  lastMigrationReport: null,
 };
 
 describe('AddTargetDialog', () => {

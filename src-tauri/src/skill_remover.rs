@@ -1,8 +1,9 @@
-use crate::models::{AppConfig, AppError, DeleteMainSkillResult, Installation};
+use crate::models::{AppConfig, AppError, DeleteMainSkillResult, Installation, SkillRecord};
+use crate::skill_storage;
 
 pub fn delete_main_skill(
     config: &mut AppConfig,
-    skill_dir_name: &str,
+    identifier: &str,
     confirmed: bool,
 ) -> Result<DeleteMainSkillResult, AppError> {
     if !confirmed {
@@ -12,7 +13,7 @@ pub fn delete_main_skill(
         });
     }
 
-    validate_skill_dir_name(skill_dir_name)?;
+    validate_skill_identifier(identifier)?;
 
     let main_dir = config
         .settings
@@ -23,17 +24,15 @@ pub fn delete_main_skill(
             message: "未配置主 skill 目录".to_string(),
         })?;
 
-    let source_path = main_dir.join(skill_dir_name);
+    let (source_path, record_key, link_name) =
+        resolve_delete_target(config, identifier, main_dir)?;
 
     // Check for symlinks before is_dir to avoid following junctions/symlinks
     match std::fs::symlink_metadata(&source_path) {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(AppError::Io {
                 path: Some(source_path.clone()),
-                message: format!(
-                    "源 skill 路径是链接，无法删除：{}",
-                    skill_dir_name
-                ),
+                message: format!("源 skill 路径是链接，无法删除：{}", link_name),
             });
         }
         _ => {}
@@ -42,16 +41,15 @@ pub fn delete_main_skill(
     if !source_path.is_dir() {
         return Err(AppError::Io {
             path: Some(source_path.clone()),
-            message: format!("源 skill 目录不存在：{}", skill_dir_name),
+            message: format!("源 skill 目录不存在：{}", link_name),
         });
     }
 
     let related: Vec<Installation> = config
         .installations
         .iter()
-        .filter(|i| {
-            i.skill_dir_name == skill_dir_name
-                || crate::link_installer::same_path(&i.source_path, &source_path)
+        .filter(|installation| {
+            installation_matches_delete(installation, &source_path, &record_key, &link_name, identifier)
         })
         .cloned()
         .collect();
@@ -65,31 +63,137 @@ pub fn delete_main_skill(
 
     crate::fs_adapter::delete_real_dir(&source_path)?;
 
-    config
-        .installations
-        .retain(|i| {
-            i.skill_dir_name != skill_dir_name
-                && !crate::link_installer::same_path(&i.source_path, &source_path)
-        });
+    config.installations.retain(|installation| {
+        !installation_matches_delete(installation, &source_path, &record_key, &link_name, identifier)
+    });
 
-    cleanup_skill_hub_metadata(config, skill_dir_name);
+    cleanup_skill_hub_metadata(config, &record_key, &link_name);
 
     Ok(DeleteMainSkillResult {
-        deleted_skill_dir_name: skill_dir_name.to_string(),
+        deleted_skill_dir_name: link_name,
         removed_link_count: related.len(),
     })
 }
 
-fn cleanup_skill_hub_metadata(config: &mut AppConfig, skill_dir_name: &str) {
-    config.skill_records.remove(skill_dir_name);
-    config
-        .skill_update_cache
-        .updates
-        .retain(|update| update.dir_name != skill_dir_name);
+fn resolve_local_library_path(
+    main_dir: &std::path::Path,
+    record_key: &str,
+    record: &SkillRecord,
+) -> std::path::PathBuf {
+    if !record.storage_key.is_empty() {
+        skill_storage::main_library_path(main_dir, &record.storage_key)
+    } else {
+        main_dir.join(record_key)
+    }
+}
+
+fn record_link_name(record_key: &str, record: &SkillRecord) -> String {
+    if !record.link_name.is_empty() {
+        return record.link_name.clone();
+    }
+    if !record.directory.is_empty() {
+        return skill_storage::skill_id_from_directory(&record.directory);
+    }
+    if record_key.contains('/') {
+        skill_storage::skill_id_from_directory(record_key)
+    } else {
+        record_key.to_string()
+    }
+}
+
+fn resolve_delete_target(
+    config: &AppConfig,
+    identifier: &str,
+    main_dir: &std::path::Path,
+) -> Result<(std::path::PathBuf, String, String), AppError> {
+    if let Some(record) = config.skill_records.get(identifier) {
+        let link_name = record_link_name(identifier, record);
+        return Ok((
+            resolve_local_library_path(main_dir, identifier, record),
+            identifier.to_string(),
+            link_name,
+        ));
+    }
+
+    if let Some((record_key, record)) = config
+        .skill_records
+        .iter()
+        .find(|(_, record)| {
+            record.storage_key == identifier || record.link_name == identifier
+        })
+        .map(|(key, record)| (key.clone(), record.clone()))
+    {
+        let link_name = record_link_name(&record_key, &record);
+        return Ok((
+            resolve_local_library_path(main_dir, &record_key, &record),
+            record_key,
+            link_name,
+        ));
+    }
+
+    validate_skill_dir_name(identifier)?;
+    Ok((
+        main_dir.join(identifier),
+        identifier.to_string(),
+        identifier.to_string(),
+    ))
+}
+
+fn installation_matches_delete(
+    installation: &Installation,
+    source_path: &std::path::Path,
+    record_key: &str,
+    link_name: &str,
+    identifier: &str,
+) -> bool {
+    if !installation.skill_storage_key.is_empty()
+        && (installation.skill_storage_key == record_key
+            || installation.skill_storage_key == identifier)
+    {
+        return true;
+    }
+
+    if installation.skill_dir_name == link_name || installation.skill_dir_name == identifier {
+        return crate::link_installer::same_path(&installation.source_path, source_path);
+    }
+
+    crate::link_installer::same_path(&installation.source_path, source_path)
+}
+
+fn cleanup_skill_hub_metadata(config: &mut AppConfig, record_key: &str, link_name: &str) {
+    config.skill_records.remove(record_key);
+    config.skill_update_cache.updates.retain(|update| {
+        update.storage_key != record_key && update.dir_name != link_name
+    });
     config
         .skill_discover_cache
         .skills
-        .retain(|skill| skill.install_dir_name != skill_dir_name);
+        .retain(|skill| skill.install_dir_name != link_name && skill.storage_key != record_key);
+}
+
+fn validate_skill_identifier(identifier: &str) -> Result<(), AppError> {
+    if identifier.is_empty() {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: identifier.to_string(),
+            message: "skill identifier must not be empty".to_string(),
+        });
+    }
+    if identifier.contains("..") {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: identifier.to_string(),
+            message: "skill identifier must not contain '..'".to_string(),
+        });
+    }
+    if identifier.contains('\\') {
+        return Err(AppError::InvalidSkill {
+            skill_dir_name: identifier.to_string(),
+            message: "skill identifier must not contain path separators".to_string(),
+        });
+    }
+    if !identifier.contains('/') {
+        validate_skill_dir_name(identifier)?;
+    }
+    Ok(())
 }
 
 fn validate_skill_dir_name(name: &str) -> Result<(), AppError> {
@@ -143,6 +247,32 @@ mod tests {
             path: skill_dir,
             valid: true,
             validation_errors: Vec::new(),
+            link_name: dir_name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn create_nested_valid_skill(main_dir: &Path, storage_key: &str, link_name: &str) -> SkillView {
+        let skill_dir = skill_storage::main_library_path(main_dir, storage_key);
+        fs::create_dir_all(&skill_dir).expect("create skill dir");
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            format!(
+                "---\nname: {}\ndescription: Test skill.\n---\n\n# Skill\n",
+                link_name
+            ),
+        )
+        .expect("write skill md");
+        SkillView {
+            dir_name: link_name.to_string(),
+            name: Some(link_name.to_string()),
+            description: Some("Test skill.".to_string()),
+            path: skill_dir,
+            valid: true,
+            validation_errors: Vec::new(),
+            storage_key: storage_key.to_string(),
+            link_name: link_name.to_string(),
+            ..Default::default()
         }
     }
 
@@ -184,6 +314,71 @@ mod tests {
     }
 
     #[test]
+    fn deletes_nested_skill_by_storage_key() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (mut config, main_dir) = create_config_with_main_dir(temp.path());
+        let storage_key = "repo/github.com--anthropics-skills/brainstorming";
+        let skill = create_nested_valid_skill(&main_dir, storage_key, "brainstorming");
+        config.skill_records.insert(
+            storage_key.to_string(),
+            SkillRecord {
+                repo_host: default_github_host(),
+                project_path: "anthropics/skills".to_string(),
+                source: "github".to_string(),
+                repo_owner: "anthropics".to_string(),
+                repo_name: "skills".to_string(),
+                repo_branch: "main".to_string(),
+                directory: "skills/brainstorming".to_string(),
+                content_hash: "hash".to_string(),
+                installed_at: "2026-01-01T00:00:00Z".to_string(),
+                storage_key: storage_key.to_string(),
+                link_name: "brainstorming".to_string(),
+                repo_slug: "github.com--anthropics-skills".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let result = delete_main_skill(&mut config, storage_key, true).expect("delete nested skill");
+
+        assert_eq!(result.deleted_skill_dir_name, "brainstorming");
+        assert!(!skill.path.exists());
+        assert!(!config.skill_records.contains_key(storage_key));
+    }
+
+    #[test]
+    fn deletes_nested_skill_by_link_name() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (mut config, main_dir) = create_config_with_main_dir(temp.path());
+        let storage_key = "repo/github.com--anthropics-skills/brainstorming";
+        let skill = create_nested_valid_skill(&main_dir, storage_key, "brainstorming");
+        config.skill_records.insert(
+            storage_key.to_string(),
+            SkillRecord {
+                repo_host: default_github_host(),
+                project_path: "anthropics/skills".to_string(),
+                source: "github".to_string(),
+                repo_owner: "anthropics".to_string(),
+                repo_name: "skills".to_string(),
+                repo_branch: "main".to_string(),
+                directory: "skills/brainstorming".to_string(),
+                content_hash: "hash".to_string(),
+                installed_at: "2026-01-01T00:00:00Z".to_string(),
+                storage_key: storage_key.to_string(),
+                link_name: "brainstorming".to_string(),
+                repo_slug: "github.com--anthropics-skills".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let result = delete_main_skill(&mut config, "brainstorming", true)
+            .expect("delete nested skill by link name");
+
+        assert_eq!(result.deleted_skill_dir_name, "brainstorming");
+        assert!(!skill.path.exists());
+        assert!(!config.skill_records.contains_key(storage_key));
+    }
+
+    #[test]
     fn cleans_multiple_recorded_links_before_deleting_source_skill() {
         let temp = tempfile::tempdir().expect("tempdir");
         let (mut config, main_dir) = create_config_with_main_dir(temp.path());
@@ -217,6 +412,7 @@ mod tests {
                 link_path: link1.clone(),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
             Installation {
                 id: "install-2".to_string(),
@@ -227,6 +423,7 @@ mod tests {
                 link_path: link2.clone(),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
         ];
 
@@ -279,6 +476,7 @@ mod tests {
                 link_path: link1.clone(),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
             Installation {
                 id: "install-2".to_string(),
@@ -289,6 +487,7 @@ mod tests {
                 link_path: link2.clone(),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
         ];
 
@@ -335,6 +534,7 @@ mod tests {
                 link_path: link1.clone(),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
             Installation {
                 id: "install-2".to_string(),
@@ -345,6 +545,7 @@ mod tests {
                 link_path: target1_dir.join("other-skill"),
                 link_type: crate::fs_adapter::default_link_type(),
                 created_at: "1".to_string(),
+                ..Default::default()
             },
         ];
 
@@ -378,6 +579,7 @@ mod tests {
                 directory: "skills/brainstorming".to_string(),
                 content_hash: "hash".to_string(),
                 installed_at: "2026-01-01T00:00:00Z".to_string(),
+                ..Default::default()
             },
         );
         config.skill_update_cache = SkillUpdateCache {
@@ -388,12 +590,14 @@ mod tests {
                     name: "brainstorming".to_string(),
                     current_hash: Some("old".to_string()),
                     remote_hash: "new".to_string(),
+                    ..Default::default()
                 },
                 SkillUpdateInfo {
                     dir_name: "other-skill".to_string(),
                     name: "other-skill".to_string(),
                     current_hash: Some("a".to_string()),
                     remote_hash: "b".to_string(),
+                    ..Default::default()
                 },
             ],
         };
@@ -412,6 +616,7 @@ mod tests {
                     repo_name: "repo".to_string(),
                     repo_branch: "main".to_string(),
                     source: "github".to_string(),
+                    ..Default::default()
                 },
                 DiscoverableSkill {
                     key: "owner/repo/skills/other".to_string(),
@@ -425,6 +630,7 @@ mod tests {
                     repo_name: "repo".to_string(),
                     repo_branch: "main".to_string(),
                     source: "github".to_string(),
+                    ..Default::default()
                 },
             ],
         };
@@ -446,7 +652,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let (mut config, _main_dir) = create_config_with_main_dir(temp.path());
 
-        let invalid_names = vec!["", ".", "..", "foo/bar", "foo\\bar"];
+        let invalid_names = vec!["", ".", "..", "foo\\bar", "../escape"];
         for name in invalid_names {
             let error = delete_main_skill(&mut config, name, true)
                 .expect_err(&format!("should reject invalid name '{}'", name));

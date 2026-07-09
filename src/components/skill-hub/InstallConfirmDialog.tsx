@@ -1,5 +1,6 @@
 import Dialog from '../Dialog';
 import type { DiscoverableSkill, SmartPastePreview } from '../../model/types';
+import { formatSkillSourceLabel } from '../../utils/skillSourceLabel';
 
 export type InstallPreview = DiscoverableSkill | SmartPastePreview;
 
@@ -54,15 +55,7 @@ function InstallConfirmDialog(props: InstallConfirmDialogProps) {
           </div>
           <div>
             <dt>来源</dt>
-            <dd>
-              {preview.source === 'skillssh'
-                ? 'skills.sh'
-                : preview.source === 'github'
-                  ? 'GitHub'
-                  : preview.source === 'gitlab'
-                    ? 'GitLab'
-                    : preview.source}
-            </dd>
+            <dd>{formatSkillSourceLabel(preview.source)}</dd>
           </div>
           {'projectPath' in preview && preview.projectPath && (
             <div>

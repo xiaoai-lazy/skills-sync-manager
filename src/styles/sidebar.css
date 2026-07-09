@@ -1,0 +1,187 @@
+/* Target list */
+.target-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2);
+}
+
+.target-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+  padding: 6px var(--list-row-padding-x);
+  border: none;
+  border-radius: var(--list-row-radius);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--list-row-font-size);
+  transition: background var(--transition), color var(--transition);
+}
+
+.target-item:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+}
+
+.target-item.selected {
+  background: var(--nav-active);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+  border: none;
+}
+
+.target-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.target-item:hover .target-actions,
+.target-item.selected .target-actions {
+  opacity: 1;
+}
+
+.target-actions .icon-button,
+.target-actions .section-add-btn,
+.project-header-actions .icon-button,
+.project-header-actions .section-add-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+.target-actions .icon-button:hover,
+.target-actions .section-add-btn:hover,
+.project-header-actions .icon-button:hover,
+.project-header-actions .section-add-btn:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+  transform: none;
+}
+
+.target-actions .danger-button,
+.project-header-actions .danger-button {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.target-actions .danger-button:hover:not(:disabled),
+.project-header-actions .danger-button:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--danger);
+}
+
+/* Project tree */
+.project-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-1);
+}
+
+.project-node {
+  margin-bottom: 2px;
+}
+
+.project-row {
+  list-style: none;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--list-row-padding-x);
+  border-radius: var(--list-row-radius);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--list-row-font-size);
+  font-weight: 600;
+  transition: background var(--transition), color var(--transition);
+}
+
+.project-header:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+}
+
+.project-header.active {
+  color: var(--text);
+}
+
+.project-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  transition: transform var(--transition);
+}
+
+.project-header.expanded .project-chevron {
+  transform: rotate(90deg);
+}
+
+.project-children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: none;
+}
+
+.project-children.visible {
+  display: block;
+}
+
+.project-children .target-item {
+  font-size: 12px;
+  padding: 5px 10px;
+  margin-bottom: 2px;
+}
+
+.project-header .target-actions,
+.project-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+}
+
+.project-header:hover .target-actions,
+.project-header:hover .project-header-actions {
+  opacity: 1;
+}
+
