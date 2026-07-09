@@ -5,7 +5,9 @@ import { errorMessage } from '../utils/errorMessage';
 
 function buildMigrationToastMessage(report: MigrationReportDto): string | null {
   if (report.failed.length > 0) {
-    return `升级至 v0.6 时部分 Skill 迁移失败（${report.failed.length} 个）`;
+    const repaired =
+      report.linksRepaired > 0 ? `，已修复 ${report.linksRepaired} 条链接` : '';
+    return `升级/修复时有 ${report.failed.length} 条链接未完成${repaired}`;
   }
   if (report.succeeded.length > 0) {
     let message = `已升级至 v0.6，迁移 ${report.succeeded.length} 个 Skill`;
@@ -16,6 +18,9 @@ function buildMigrationToastMessage(report: MigrationReportDto): string | null {
       message += `，${report.orphanLocals.length} 个本地目录待确认`;
     }
     return message;
+  }
+  if (report.linksRepaired > 0) {
+    return `已修复 ${report.linksRepaired} 条目标链接（对齐主库新路径）`;
   }
   return null;
 }

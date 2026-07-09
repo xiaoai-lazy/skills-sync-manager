@@ -77,6 +77,31 @@ impl ConfigStore {
                 changed = true;
             }
         }
+
+        // Users who already reached v6 with config rewritten but stale junctions
+        // still need a one-shot link repair on startup.
+        if config.version >= 6
+            && !config.installations.is_empty()
+            && skill_migration::has_stale_installation_links(&config)
+        {
+            let (repaired, failures) =
+                skill_migration::repair_stale_installation_links(&config);
+            if repaired > 0 || !failures.is_empty() {
+                let report = skill_migration::MigrationReport {
+                    backed_up_config: PathBuf::new(),
+                    backed_up_main: None,
+                    succeeded: Vec::new(),
+                    failed: failures,
+                    orphan_locals: Vec::new(),
+                    links_repaired: repaired,
+                };
+                if let Ok(mut guard) = LAST_MIGRATION_REPORT.lock() {
+                    if guard.is_none() {
+                        *guard = Some(report);
+                    }
+                }
+            }
+        }
         if skill_repos::dedupe_skill_repos(&mut config) {
             changed = true;
         }

@@ -62,6 +62,28 @@ pub fn remove_recorded_link(link_path: &Path, expected_target: &Path) -> Result<
         ));
     }
 
+    remove_link_entry(link_path)
+}
+
+/// Remove a junction/symlink without requiring the recorded target to still match.
+/// Refuses to delete real directories or regular files.
+pub fn remove_link_force(link_path: &Path) -> Result<(), AppError> {
+    if !path_exists(link_path) {
+        return Ok(());
+    }
+    if link_target(link_path)?.is_none() {
+        return Err(io_error(
+            Some(link_path),
+            format!(
+                "无法删除：{} 不是链接，软件不会删除未知内容",
+                link_path.display()
+            ),
+        ));
+    }
+    remove_link_entry(link_path)
+}
+
+fn remove_link_entry(link_path: &Path) -> Result<(), AppError> {
     if link_path.is_dir() {
         fs::remove_dir(link_path)
     } else {

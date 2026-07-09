@@ -256,8 +256,8 @@ pub fn repair_installation_link(
 
     if fs_adapter::path_exists(link_path) {
         match fs_adapter::link_target(link_path) {
-            Ok(Some(actual_target)) => {
-                fs_adapter::remove_recorded_link(link_path, &actual_target)?;
+            Ok(Some(_)) => {
+                fs_adapter::remove_link_force(link_path)?;
             }
             Ok(None) => {
                 return Err(AppError::Conflict {

@@ -338,6 +338,9 @@ pub fn migrate_v5_to_v6(
         None
     };
 
+    // Detach target links first so moves cannot leave junctions pointing at old flat paths.
+    let mut link_failures = detach_all_installation_links(config);
+
     let planned = plan_v5_migration(config, main_dir);
     let planned_old_paths: HashSet<PathBuf> = planned.iter().map(|item| item.old_path.clone()).collect();
     let orphan_plans = plan_orphan_local_dirs(main_dir, &planned_old_paths);
@@ -363,7 +366,8 @@ pub fn migrate_v5_to_v6(
     }
 
     apply_config_after_moves(config, &move_result.succeeded, &orphan_locals);
-    let links_repaired = repair_all_installation_links(config);
+    let (links_repaired, recreate_failures) = recreate_all_installation_links(config);
+    link_failures.extend(recreate_failures);
 
     config.version = 6;
 
@@ -377,7 +381,7 @@ pub fn migrate_v5_to_v6(
         backed_up_config,
         backed_up_main,
         succeeded,
-        failed: Vec::new(),
+        failed: link_failures,
         orphan_locals,
         links_repaired,
     };
@@ -457,22 +461,75 @@ fn update_installation_after_move(
     }
 }
 
-fn repair_all_installation_links(config: &AppConfig) -> u32 {
+fn detach_all_installation_links(config: &AppConfig) -> Vec<String> {
+    let mut failures = Vec::new();
+    for installation in &config.installations {
+        if !crate::fs_adapter::path_exists(&installation.link_path) {
+            continue;
+        }
+        match crate::fs_adapter::remove_link_force(&installation.link_path) {
+            Ok(()) => {}
+            Err(err) => {
+                let message = format!(
+                    "{}: 迁移前删除链接失败: {}",
+                    installation.link_path.display(),
+                    err
+                );
+                eprintln!("[migration] {}", message);
+                failures.push(message);
+            }
+        }
+    }
+    failures
+}
+
+fn recreate_all_installation_links(config: &AppConfig) -> (u32, Vec<String>) {
     let mut repaired = 0;
+    let mut failures = Vec::new();
     for installation in &config.installations {
         match repair_installation_link(installation) {
             Ok(true) => repaired += 1,
             Ok(false) => {}
             Err(err) => {
-                eprintln!(
-                    "[migration] link repair skipped for {}: {}",
+                let message = format!(
+                    "{}: 重建链接失败: {}",
                     installation.link_path.display(),
                     err
                 );
+                eprintln!("[migration] {}", message);
+                failures.push(message);
             }
         }
     }
-    repaired
+    (repaired, failures)
+}
+
+/// Repair installation links that still point at old flat main-library paths after a
+/// v5→v6 config migration (or any other source_path drift). Safe to call repeatedly.
+pub fn repair_stale_installation_links(config: &AppConfig) -> (u32, Vec<String>) {
+    recreate_all_installation_links(config)
+}
+
+/// Returns true when at least one installation link is missing or points away from
+/// the recorded `source_path` (while that source still exists).
+pub fn has_stale_installation_links(config: &AppConfig) -> bool {
+    for installation in &config.installations {
+        if !crate::fs_adapter::path_exists(&installation.source_path) {
+            continue;
+        }
+        if !crate::fs_adapter::path_exists(&installation.link_path) {
+            return true;
+        }
+        match crate::fs_adapter::link_target(&installation.link_path) {
+            Ok(Some(actual)) => {
+                if !link_installer::same_path(&actual, &installation.source_path) {
+                    return true;
+                }
+            }
+            Ok(None) | Err(_) => return true,
+        }
+    }
+    false
 }
 
 fn repair_installation_link(installation: &Installation) -> Result<bool, AppError> {
@@ -490,6 +547,7 @@ fn write_migration_log(config_path: &Path, report: &MigrationReport) -> Result<(
          backed up config: {}\n\
          backed up main: {}\n\
          succeeded: {}\n\
+         failed: {}\n\
          orphan locals: {}\n\
          links repaired: {}\n",
         report.backed_up_config.display(),
@@ -499,6 +557,7 @@ fn write_migration_log(config_path: &Path, report: &MigrationReport) -> Result<(
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "(none)".to_string()),
         report.succeeded.join(", "),
+        report.failed.join("; "),
         report.orphan_locals.join(", "),
         report.links_repaired,
     );
@@ -513,7 +572,7 @@ fn write_migration_log(config_path: &Path, report: &MigrationReport) -> Result<(
 mod tests {
     use super::*;
     use crate::models::{
-        AppConfig, AppError, Installation, LinkType, Target,
+        AppConfig, AppError, Installation, Target,
     };
     use std::collections::HashSet;
 
@@ -698,6 +757,14 @@ mod tests {
 
         let target_dir = temp.path().join("target");
         fs::create_dir_all(&target_dir).expect("create target");
+        let link_path = target_dir.join("tdd");
+        crate::fs_adapter::create_dir_link(
+            &flat,
+            &link_path,
+            crate::fs_adapter::default_link_type(),
+        )
+        .expect("create pre-migration link");
+
         config.targets.push(Target::global_custom(
             "t1",
             "Target",
@@ -711,8 +778,8 @@ mod tests {
             skill_name: "tdd".to_string(),
             source_path: flat.clone(),
             target_id: "t1".to_string(),
-            link_path: target_dir.join("tdd"),
-            link_type: LinkType::Junction,
+            link_path: link_path.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
             created_at: "1".to_string(),
             ..Default::default()
         });
@@ -730,9 +797,63 @@ mod tests {
             config.installations[0].skill_storage_key,
             "repo/github.com--anthropics-skills/tdd"
         );
-        assert_eq!(config.installations[0].link_path, target_dir.join("tdd"));
+        assert_eq!(config.installations[0].link_path, link_path);
         assert!(config_path.with_extension("json.backup-v5").exists());
         assert_eq!(report.succeeded, vec!["repo/github.com--anthropics-skills/tdd"]);
+        assert!(report.failed.is_empty());
+        assert!(report.links_repaired >= 1);
+        let actual = crate::fs_adapter::link_target(&link_path)
+            .expect("read link")
+            .expect("link exists");
+        assert!(link_installer::same_path(&actual, &nested));
+    }
+
+    #[test]
+    fn repair_stale_links_rewrites_old_flat_target() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main = temp.path().join("main");
+        let nested = main.join("repo/github.com--anthropics-skills/tdd");
+        fs::create_dir_all(&nested).expect("create nested");
+        fs::write(nested.join("SKILL.md"), "ok").expect("write skill");
+
+        let old_flat = main.join("tdd");
+        fs::create_dir_all(&old_flat).expect("create old flat");
+        fs::write(old_flat.join("SKILL.md"), "old").expect("write old");
+
+        let target_dir = temp.path().join("target");
+        fs::create_dir_all(&target_dir).expect("create target");
+        let link_path = target_dir.join("tdd");
+        crate::fs_adapter::create_dir_link(
+            &old_flat,
+            &link_path,
+            crate::fs_adapter::default_link_type(),
+        )
+        .expect("create stale link");
+
+        let mut config = AppConfig::default();
+        config.version = 6;
+        config.installations.push(Installation {
+            id: "i1".to_string(),
+            skill_dir_name: "tdd".to_string(),
+            skill_name: "tdd".to_string(),
+            source_path: nested.clone(),
+            target_id: "t1".to_string(),
+            link_path: link_path.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            skill_storage_key: "repo/github.com--anthropics-skills/tdd".to_string(),
+            ..Default::default()
+        });
+
+        assert!(has_stale_installation_links(&config));
+        let (repaired, failures) = repair_stale_installation_links(&config);
+        assert!(failures.is_empty());
+        assert_eq!(repaired, 1);
+        assert!(!has_stale_installation_links(&config));
+        let actual = crate::fs_adapter::link_target(&link_path)
+            .expect("read link")
+            .expect("link exists");
+        assert!(link_installer::same_path(&actual, &nested));
     }
 
     #[test]
