@@ -340,7 +340,8 @@ mod tests {
         let dto = err.to_dto();
         assert_eq!(dto.code, "hubSkillGone");
         assert!(dto.message.contains("brainstorming"));
-        assert!(dto.message.contains("已从可安装列表移除"));
+        assert!(dto.message.contains("源中已不存在"));
+        assert!(dto.message.contains("tools"));
     }
 
     #[test]
