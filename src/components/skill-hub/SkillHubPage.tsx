@@ -139,10 +139,12 @@ function SkillHubPage(props: SkillHubPageProps) {
   }, []);
 
   useEffect(() => {
-    if (initialEndpoints) {
+    if (initialEndpoints && initialEndpoints.length > 0) {
       setEndpoints(initialEndpoints);
       return;
     }
+    // `[]` / undefined from appState must not skip the IPC load — SourceManageDrawer
+    // was the only place that refreshed endpoints, which hid configured hubs until opened.
     void listSkillHubEndpoints()
       .then(setEndpoints)
       .catch((err) => onError?.(errorMessage(err)));

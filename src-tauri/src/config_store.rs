@@ -78,8 +78,13 @@ impl ConfigStore {
             }
         }
 
-        // Users who already reached v6 with config rewritten but stale junctions
-        // still need a one-shot link repair on startup.
+        // Drop installation records whose main-library source is gone.
+        let purged = skill_migration::purge_installations_with_missing_source(&mut config);
+        if purged > 0 {
+            changed = true;
+        }
+
+        // Recreate missing target links (never deletes existing wrong links).
         if config.version >= 6
             && !config.installations.is_empty()
             && skill_migration::has_stale_installation_links(&config)

@@ -129,7 +129,11 @@ pub fn uninstall_skill(
             ),
         })?;
 
-    fs_adapter::remove_recorded_link(&installation.link_path, &installation.source_path)?;
+    // Only remove links that still match the installation record. Missing links are
+    // fine (just clear the record). Drifted links must be removed manually.
+    if fs_adapter::path_exists(&installation.link_path) {
+        fs_adapter::remove_recorded_link(&installation.link_path, &installation.source_path)?;
+    }
 
     config.installations.retain(|i| {
         i.target_id != target_id || !installation_matches_identifier(i, skill_identifier)
@@ -229,8 +233,10 @@ fn find_valid_skill<'a>(
     Ok(skill)
 }
 
-/// Remove and recreate a junction/symlink when it is missing or points at the wrong source.
-/// Returns `true` when the link was repaired, `false` when it already matched `expected_source`.
+/// Recreate a junction/symlink only when the link path is missing.
+/// Never deletes an existing wrong link or real directory (avoids Windows access-denied
+/// when the path is locked); those must be removed manually, then repaired on next startup.
+/// Returns `true` when a missing link was created.
 pub fn repair_installation_link(
     installation: &Installation,
     expected_source: &Path,
@@ -240,33 +246,8 @@ pub fn repair_installation_link(
     }
 
     let link_path = &installation.link_path;
-    let needs_repair = if !fs_adapter::path_exists(link_path) {
-        true
-    } else {
-        match fs_adapter::link_target(link_path) {
-            Ok(Some(actual_target)) => !same_path(&actual_target, expected_source),
-            Ok(None) => true,
-            Err(_) => true,
-        }
-    };
-
-    if !needs_repair {
-        return Ok(false);
-    }
-
     if fs_adapter::path_exists(link_path) {
-        match fs_adapter::link_target(link_path) {
-            Ok(Some(_)) => {
-                fs_adapter::remove_link_force(link_path)?;
-            }
-            Ok(None) => {
-                return Err(AppError::Conflict {
-                    path: link_path.clone(),
-                    message: "无法修复：目标路径存在但不是链接".to_string(),
-                });
-            }
-            Err(err) => return Err(err),
-        }
+        return Ok(false);
     }
 
     fs_adapter::create_dir_link(expected_source, link_path, installation.link_type.clone())?;
@@ -342,7 +323,7 @@ fn compute_skill_state(
                         skill: skill.clone(),
                         state: SkillInstallState::Mismatch,
                         message: Some(format!(
-                            "链接目标与记录不符：{} 指向 {}，但记录为 {}",
+                            "请到目标目录手动删除该链接后重启应用，将自动恢复正确安装。当前 {} 指向 {}，记录为 {}",
                             link_path.display(),
                             actual_target.display(),
                             installation.source_path.display()
@@ -353,7 +334,10 @@ fn compute_skill_state(
             Ok(None) => SkillWithTargetState {
                 skill: skill.clone(),
                 state: SkillInstallState::Mismatch,
-                message: Some("路径存在，但不是链接".to_string()),
+                message: Some(format!(
+                    "目标路径存在但不是链接，请手动删除后再重启应用以自动恢复：{}",
+                    link_path.display()
+                )),
             },
             Err(err) => SkillWithTargetState {
                 skill: skill.clone(),
@@ -701,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_preserves_record_on_missing_link() {
+    fn uninstall_clears_record_when_link_missing() {
         let temp = tempfile::tempdir().expect("tempdir");
         let main_dir = temp.path().join("main-skills");
         fs::create_dir_all(&main_dir).expect("create main dir");
@@ -715,15 +699,14 @@ mod tests {
         fs_adapter::remove_recorded_link(&link_path, &skill.path).expect("remove link externally");
         assert!(!fs_adapter::path_exists(&link_path));
 
-        let error = uninstall_skill(&mut config, "target-1", "brainstorming")
-            .expect_err("missing link should fail");
+        uninstall_skill(&mut config, "target-1", "brainstorming").expect("uninstall missing link");
 
-        assert!(matches!(error, AppError::Io { .. }));
-        assert_eq!(config.installations.len(), 1);
+        assert!(config.installations.is_empty());
+        assert!(!link_path.exists());
     }
 
     #[test]
-    fn uninstall_preserves_record_on_mismatch_link() {
+    fn uninstall_refuses_mismatch_link_and_preserves_record() {
         let temp = tempfile::tempdir().expect("tempdir");
         let main_dir = temp.path().join("main-skills");
         fs::create_dir_all(&main_dir).expect("create main dir");
@@ -741,10 +724,12 @@ mod tests {
             .expect("create mismatch link");
 
         let error = uninstall_skill(&mut config, "target-1", "brainstorming")
-            .expect_err("mismatch link should fail");
+            .expect_err("mismatch uninstall should fail");
 
         assert!(matches!(error, AppError::Io { .. }));
         assert_eq!(config.installations.len(), 1);
+        assert!(fs_adapter::path_exists(&link_path));
+        assert!(other_source.exists());
     }
 
     #[test]

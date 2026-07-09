@@ -55,10 +55,18 @@ pub fn delete_main_skill(
         .collect();
 
     for installation in &related {
-        crate::fs_adapter::remove_recorded_link(
+        if !crate::fs_adapter::path_exists(&installation.link_path) {
+            continue;
+        }
+        match crate::fs_adapter::remove_recorded_link(
             &installation.link_path,
             &installation.source_path,
-        )?;
+        ) {
+            Ok(()) => {}
+            // Leave drifted links for the user to delete manually.
+            Err(err) if err.to_string().contains("指向的目标与记录不符") => {}
+            Err(err) => return Err(err),
+        }
     }
 
     crate::fs_adapter::delete_real_dir(&source_path)?;
@@ -500,6 +508,54 @@ mod tests {
         assert!(skill.path.join("SKILL.md").is_file());
         // Installation records should still be present
         assert_eq!(config.installations.len(), 2);
+    }
+
+    #[test]
+    fn deletes_skill_and_record_even_when_link_target_mismatches() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let (mut config, main_dir) = create_config_with_main_dir(temp.path());
+        let skill = create_valid_skill(&main_dir, "brainstorming");
+
+        let target_dir = temp.path().join("target-1");
+        fs::create_dir_all(&target_dir).expect("create target dir");
+        let link = target_dir.join("brainstorming");
+        let other_source = temp.path().join("other-source");
+        fs::create_dir_all(&other_source).expect("create other source");
+        crate::fs_adapter::create_dir_link(
+            &other_source,
+            &link,
+            crate::fs_adapter::default_link_type(),
+        )
+        .expect("create mismatch link");
+
+        config.targets = vec![Target::global_custom(
+            "target-1",
+            "Target One",
+            target_dir.clone(),
+            "1",
+            "1",
+        )];
+        config.installations = vec![Installation {
+            id: "install-1".to_string(),
+            skill_dir_name: "brainstorming".to_string(),
+            skill_name: "brainstorming".to_string(),
+            source_path: skill.path.clone(),
+            target_id: "target-1".to_string(),
+            link_path: link.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            ..Default::default()
+        }];
+
+        let result = delete_main_skill(&mut config, "brainstorming", true)
+            .expect("mismatch link should not block source delete");
+
+        assert_eq!(result.removed_link_count, 1);
+        assert!(!skill.path.exists());
+        // Drifted link is left for the user; record is still cleared.
+        assert!(crate::fs_adapter::path_exists(&link));
+        assert!(other_source.exists());
+        assert!(config.installations.is_empty());
     }
 
     #[test]

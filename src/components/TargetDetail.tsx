@@ -14,6 +14,7 @@ import {
   resolveSkillRecord,
 } from './skill-hub/sourceTreeUtils';
 import SkillRow from './SkillRow';
+import SkillListEmptyState from './skill-hub/SkillListEmptyState';
 
 export interface TargetDetailProps {
   target: Target | null;
@@ -105,9 +106,9 @@ function TargetDetail(props: TargetDetailProps) {
 
           <div className="target-body target-body-in-panel">
             {validSkills.length === 0 && invalidSkills.length === 0 ? (
-              <div className="empty-hint">
-                {skills.length === 0 ? '主库中暂无有效 Skill' : '当前来源下暂无 Skill'}
-              </div>
+              <SkillListEmptyState
+                title={skills.length === 0 ? '主库中暂无有效 Skill' : '当前来源下暂无 Skill'}
+              />
             ) : (
               <div className="target-list-cards">
                 {validSkills.map((item) => (

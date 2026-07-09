@@ -338,9 +338,10 @@ pub fn migrate_v5_to_v6(
         None
     };
 
-    // Detach target links first so moves cannot leave junctions pointing at old flat paths.
-    let mut link_failures = detach_all_installation_links(config);
-
+    // Do not detach existing target links during migration: deleting junctions can hit
+    // Windows access-denied when Cursor/agents hold the path. After the main-library
+    // move, stale links are left for the user to remove manually; missing links are
+    // recreated below, and again on later startups.
     let planned = plan_v5_migration(config, main_dir);
     let planned_old_paths: HashSet<PathBuf> = planned.iter().map(|item| item.old_path.clone()).collect();
     let orphan_plans = plan_orphan_local_dirs(main_dir, &planned_old_paths);
@@ -366,8 +367,7 @@ pub fn migrate_v5_to_v6(
     }
 
     apply_config_after_moves(config, &move_result.succeeded, &orphan_locals);
-    let (links_repaired, recreate_failures) = recreate_all_installation_links(config);
-    link_failures.extend(recreate_failures);
+    let (links_repaired, link_failures) = recreate_all_installation_links(config);
 
     config.version = 6;
 
@@ -461,28 +461,6 @@ fn update_installation_after_move(
     }
 }
 
-fn detach_all_installation_links(config: &AppConfig) -> Vec<String> {
-    let mut failures = Vec::new();
-    for installation in &config.installations {
-        if !crate::fs_adapter::path_exists(&installation.link_path) {
-            continue;
-        }
-        match crate::fs_adapter::remove_link_force(&installation.link_path) {
-            Ok(()) => {}
-            Err(err) => {
-                let message = format!(
-                    "{}: 迁移前删除链接失败: {}",
-                    installation.link_path.display(),
-                    err
-                );
-                eprintln!("[migration] {}", message);
-                failures.push(message);
-            }
-        }
-    }
-    failures
-}
-
 fn recreate_all_installation_links(config: &AppConfig) -> (u32, Vec<String>) {
     let mut repaired = 0;
     let mut failures = Vec::new();
@@ -504,14 +482,14 @@ fn recreate_all_installation_links(config: &AppConfig) -> (u32, Vec<String>) {
     (repaired, failures)
 }
 
-/// Repair installation links that still point at old flat main-library paths after a
-/// v5→v6 config migration (or any other source_path drift). Safe to call repeatedly.
+/// Repair installation links that are missing (source still exists).
+/// Does not delete or rewrite existing wrong links — those require manual removal.
 pub fn repair_stale_installation_links(config: &AppConfig) -> (u32, Vec<String>) {
     recreate_all_installation_links(config)
 }
 
-/// Returns true when at least one installation link is missing or points away from
-/// the recorded `source_path` (while that source still exists).
+/// Returns true when at least one installation has a missing link that can be recreated
+/// (source exists, link path does not). Wrong existing links are not considered repairable.
 pub fn has_stale_installation_links(config: &AppConfig) -> bool {
     for installation in &config.installations {
         if !crate::fs_adapter::path_exists(&installation.source_path) {
@@ -520,16 +498,18 @@ pub fn has_stale_installation_links(config: &AppConfig) -> bool {
         if !crate::fs_adapter::path_exists(&installation.link_path) {
             return true;
         }
-        match crate::fs_adapter::link_target(&installation.link_path) {
-            Ok(Some(actual)) => {
-                if !link_installer::same_path(&actual, &installation.source_path) {
-                    return true;
-                }
-            }
-            Ok(None) | Err(_) => return true,
-        }
     }
     false
+}
+
+/// Drop installation records whose `source_path` no longer exists in the main library.
+/// Returns how many records were removed.
+pub fn purge_installations_with_missing_source(config: &mut AppConfig) -> u32 {
+    let before = config.installations.len();
+    config
+        .installations
+        .retain(|installation| crate::fs_adapter::path_exists(&installation.source_path));
+    (before - config.installations.len()) as u32
 }
 
 fn repair_installation_link(installation: &Installation) -> Result<bool, AppError> {
@@ -801,7 +781,44 @@ mod tests {
         assert!(config_path.with_extension("json.backup-v5").exists());
         assert_eq!(report.succeeded, vec!["repo/github.com--anthropics-skills/tdd"]);
         assert!(report.failed.is_empty());
-        assert!(report.links_repaired >= 1);
+        // Existing pre-migration link is left alone (may still point at old flat path).
+        // Only missing links are recreated; user deletes stale links manually.
+        assert_eq!(report.links_repaired, 0);
+        assert!(crate::fs_adapter::path_exists(&link_path));
+    }
+
+    #[test]
+    fn repair_stale_links_recreates_missing_link_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main = temp.path().join("main");
+        let nested = main.join("repo/github.com--anthropics-skills/tdd");
+        fs::create_dir_all(&nested).expect("create nested");
+        fs::write(nested.join("SKILL.md"), "ok").expect("write skill");
+
+        let target_dir = temp.path().join("target");
+        fs::create_dir_all(&target_dir).expect("create target");
+        let link_path = target_dir.join("tdd");
+
+        let mut config = AppConfig::default();
+        config.version = 6;
+        config.installations.push(Installation {
+            id: "i1".to_string(),
+            skill_dir_name: "tdd".to_string(),
+            skill_name: "tdd".to_string(),
+            source_path: nested.clone(),
+            target_id: "t1".to_string(),
+            link_path: link_path.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            skill_storage_key: "repo/github.com--anthropics-skills/tdd".to_string(),
+            ..Default::default()
+        });
+
+        assert!(has_stale_installation_links(&config));
+        let (repaired, failures) = repair_stale_installation_links(&config);
+        assert!(failures.is_empty());
+        assert_eq!(repaired, 1);
+        assert!(!has_stale_installation_links(&config));
         let actual = crate::fs_adapter::link_target(&link_path)
             .expect("read link")
             .expect("link exists");
@@ -809,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn repair_stale_links_rewrites_old_flat_target() {
+    fn repair_stale_links_leaves_mismatch_link_untouched() {
         let temp = tempfile::tempdir().expect("tempdir");
         let main = temp.path().join("main");
         let nested = main.join("repo/github.com--anthropics-skills/tdd");
@@ -845,15 +862,51 @@ mod tests {
             ..Default::default()
         });
 
-        assert!(has_stale_installation_links(&config));
+        assert!(!has_stale_installation_links(&config));
         let (repaired, failures) = repair_stale_installation_links(&config);
         assert!(failures.is_empty());
-        assert_eq!(repaired, 1);
-        assert!(!has_stale_installation_links(&config));
+        assert_eq!(repaired, 0);
         let actual = crate::fs_adapter::link_target(&link_path)
             .expect("read link")
             .expect("link exists");
-        assert!(link_installer::same_path(&actual, &nested));
+        assert!(link_installer::same_path(&actual, &old_flat));
+    }
+
+    #[test]
+    fn purge_installations_with_missing_source_removes_orphan_records() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main = temp.path().join("main");
+        let existing = main.join("keep");
+        fs::create_dir_all(&existing).expect("create keep");
+
+        let mut config = AppConfig::default();
+        config.installations.push(Installation {
+            id: "gone".to_string(),
+            skill_dir_name: "gone".to_string(),
+            skill_name: "gone".to_string(),
+            source_path: main.join("missing-skill"),
+            target_id: "t1".to_string(),
+            link_path: temp.path().join("target/gone"),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            ..Default::default()
+        });
+        config.installations.push(Installation {
+            id: "keep".to_string(),
+            skill_dir_name: "keep".to_string(),
+            skill_name: "keep".to_string(),
+            source_path: existing.clone(),
+            target_id: "t1".to_string(),
+            link_path: temp.path().join("target/keep"),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            ..Default::default()
+        });
+
+        let purged = purge_installations_with_missing_source(&mut config);
+        assert_eq!(purged, 1);
+        assert_eq!(config.installations.len(), 1);
+        assert_eq!(config.installations[0].id, "keep");
     }
 
     #[test]

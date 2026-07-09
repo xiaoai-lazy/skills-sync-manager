@@ -22,9 +22,9 @@ const stateExplanationMap: Record<SkillInstallState, string | null> = {
   notInstalled: null,
   installed: null,
   conflict: '目标路径已存在同名内容',
-  mismatch: '链接目标与记录不符',
-  missing: '安装记录存在，但链接已不存在',
-  sourceMissing: '源 skill 已不存在',
+  mismatch: '链接与记录不符，请到目标目录手动删除该链接后重启应用',
+  missing: '安装记录存在，但链接已不存在（重启应用将自动恢复）',
+  sourceMissing: '源 skill 已不存在（启动时会自动清理安装记录）',
   invalidSkill: null,
 };
 
@@ -53,6 +53,16 @@ function SkillRow(props: SkillRowProps) {
     state !== 'notInstalled' &&
     state !== 'installed' &&
     Boolean(explanation || detailMessage);
+  const messageText = (() => {
+    if (!showMessage) return null;
+    if (explanation && detailMessage) {
+      if (detailMessage.includes('手动删除') || detailMessage.includes(explanation)) {
+        return detailMessage;
+      }
+      return `${explanation}：${detailMessage}`;
+    }
+    return explanation || detailMessage;
+  })();
 
   const displayName = isInvalid
     ? `(无效) ${skill.name ?? skill.dirName}`
@@ -60,6 +70,11 @@ function SkillRow(props: SkillRowProps) {
   const desc = skill.description ?? skill.dirName;
   const sourceMeta = skillSourceLabelForView(skill, skillRecords);
   const skillKey = skill.storageKey;
+  const toggleTitle = !toggleEnabled
+    ? '无法切换'
+    : isInstalled
+      ? '卸载'
+      : '安装';
 
   return (
     <div
@@ -69,13 +84,7 @@ function SkillRow(props: SkillRowProps) {
         <div className="skill-name">{displayName}</div>
         <div className="skill-desc">{desc}</div>
         <div className="skill-source-meta">{sourceMeta}</div>
-        {showMessage && (
-          <div className="skill-message">
-            {explanation && detailMessage
-              ? `${explanation}：${detailMessage}`
-              : (explanation || detailMessage)}
-          </div>
-        )}
+        {showMessage && <div className="skill-message">{messageText}</div>}
       </div>
       <span className={`status-badge status-${state}`}>{stateLabel(state)}</span>
       <div className="skill-actions">
@@ -84,7 +93,7 @@ function SkillRow(props: SkillRowProps) {
           checked={isInstalled}
           disabled={!toggleEnabled}
           onChange={() => props.onToggle(skillKey, state)}
-          title={toggleEnabled ? (isInstalled ? '卸载' : '安装') : '无法切换'}
+          title={toggleTitle}
           aria-label={`${displayName} 安装状态`}
         />
       </div>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_HUB_GROUP,
   dedupeInstalledSkills,
+  hubEndpointVisible,
   matchesInstalledNode,
   resolveEffectiveFilterNodeId,
   resolveSkillRecord,
@@ -138,5 +139,16 @@ describe('sourceTreeUtils hub grouping', () => {
       linkName: 'brainstorming',
     };
     expect(resolveSkillRecord(skill, legacyRecords)?.storageKey).toBe('brainstorming');
+  });
+
+  it('hubEndpointVisible keeps configured hubs without installs', () => {
+    const endpoint: SkillHubEndpoint = {
+      id: 'company-hub',
+      name: 'Company Hub',
+      baseUrl: 'https://hub.example.com',
+      enabled: true,
+    };
+    expect(hubEndpointVisible(endpoint, {})).toBe(true);
+    expect(hubEndpointVisible({ ...endpoint, enabled: false }, {})).toBe(true);
   });
 });

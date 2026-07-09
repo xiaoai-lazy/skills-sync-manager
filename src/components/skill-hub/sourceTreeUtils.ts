@@ -161,10 +161,12 @@ export function hasInstalledSkillsForRepo(
 
 export function hubEndpointVisible(
   endpoint: SkillHubEndpoint,
-  skillRecords: Record<string, SkillRecord>,
+  _skillRecords: Record<string, SkillRecord>,
 ): boolean {
-  if (endpoint.enabled) return true;
-  return hasInstalledSkillsForHub(endpoint.id, skillRecords);
+  // Always list configured Hub endpoints (muted when disabled). Hiding disabled hubs
+  // with zero installs made them look "missing" until 来源管理 refreshed the tree.
+  void _skillRecords;
+  return Boolean(endpoint.id);
 }
 
 export function repoVisible(repo: SkillRepo, skillRecords: Record<string, SkillRecord>): boolean {
