@@ -250,6 +250,16 @@ mod tests {
     fn save_then_load_round_trips_config() {
         let temp = tempfile::tempdir().expect("tempdir");
         let store = ConfigStore::new(temp.path().join("config.json"));
+        let source_path = temp.path().join("main-skills").join("example-skill");
+        let link_path = temp.path().join("target-skills").join("example-skill");
+        fs::create_dir_all(&source_path).expect("create source skill dir");
+        fs::create_dir_all(temp.path().join("target-skills")).expect("create target skills dir");
+        crate::fs_adapter::create_dir_link(
+            &source_path,
+            &link_path,
+            crate::fs_adapter::default_link_type(),
+        )
+        .expect("create installation link");
         let mut config = AppConfig::default();
         config.settings.main_skills_dir = Some(temp.path().join("main-skills"));
         config.targets.push(Target::global_custom(
@@ -263,10 +273,10 @@ mod tests {
             id: "install-1".to_string(),
             skill_dir_name: "example-skill".to_string(),
             skill_name: "Example Skill".to_string(),
-            source_path: temp.path().join("main-skills").join("example-skill"),
+            source_path: source_path.clone(),
             target_id: "target-1".to_string(),
-            link_path: temp.path().join("target-skills").join("example-skill"),
-            link_type: LinkType::Symlink,
+            link_path: link_path.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
             created_at: "2026-06-23T00:00:00Z".to_string(),
             ..Default::default()
         });
@@ -282,6 +292,30 @@ mod tests {
         assert_eq!(loaded.targets, config.targets);
         assert!(!store.config_path.with_extension("json.tmp").exists());
         assert!(!store.config_path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn load_purges_installations_whose_source_path_is_missing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = ConfigStore::new(temp.path().join("config.json"));
+        let mut config = AppConfig::default();
+        config.settings.main_skills_dir = Some(temp.path().join("main-skills"));
+        config.installations.push(Installation {
+            id: "install-1".to_string(),
+            skill_dir_name: "gone-skill".to_string(),
+            skill_name: "Gone Skill".to_string(),
+            source_path: temp.path().join("main-skills").join("gone-skill"),
+            target_id: "target-1".to_string(),
+            link_path: temp.path().join("target-skills").join("gone-skill"),
+            link_type: LinkType::Symlink,
+            created_at: "2026-06-23T00:00:00Z".to_string(),
+            ..Default::default()
+        });
+
+        store.save(&config).expect("save config");
+        let loaded = store.load().expect("load saved config");
+
+        assert!(loaded.installations.is_empty());
     }
 
     #[test]
