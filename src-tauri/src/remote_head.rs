@@ -56,6 +56,14 @@ fn fetch_github_head_sha(repo: &RepoRef) -> Result<String, AppError> {
         });
     }
 
+    if status == 403 {
+        return Err(AppError::DownloadFailed {
+            url,
+            status: Some(status),
+            message: "GitHub 请求受限，请稍后再试".to_string(),
+        });
+    }
+
     if !(200..300).contains(&status) {
         return Err(AppError::DownloadFailed {
             url,

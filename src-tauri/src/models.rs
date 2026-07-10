@@ -947,9 +947,13 @@ impl AppError {
                 message,
             } => AppErrorDto {
                 code: "downloadFailed".to_string(),
-                message: match status {
-                    Some(code) => format!("下载失败 {} (HTTP {}): {}", url, code, message),
-                    None => format!("下载失败 {}: {}", url, message),
+                message: if *status == Some(403) && message.contains("请稍后再试") {
+                    message.clone()
+                } else {
+                    match status {
+                        Some(code) => format!("下载失败 {} (HTTP {}): {}", url, code, message),
+                        None => format!("下载失败 {}: {}", url, message),
+                    }
                 },
             },
             AppError::HubSkillGone { skill_id, group } => AppErrorDto {
@@ -1131,7 +1135,9 @@ impl std::fmt::Display for AppError {
                 status,
                 message,
             } => {
-                if let Some(status) = status {
+                if *status == Some(403) && message.contains("请稍后再试") {
+                    write!(formatter, "{}", message)
+                } else if let Some(status) = status {
                     write!(
                         formatter,
                         "download failed for {} (HTTP {}): {}",

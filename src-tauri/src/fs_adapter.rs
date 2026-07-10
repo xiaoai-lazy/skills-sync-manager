@@ -84,12 +84,25 @@ pub fn remove_link_force(link_path: &Path) -> Result<(), AppError> {
 }
 
 fn remove_link_entry(link_path: &Path) -> Result<(), AppError> {
-    if link_path.is_dir() {
-        fs::remove_dir(link_path)
-    } else {
+    #[cfg(unix)]
+    {
+        // Directory symlinks look like directories when followed (`Path::is_dir`), but
+        // `remove_dir` then fails with ENOTDIR (os error 20). Unlink with remove_file.
         fs::remove_file(link_path)
+            .map_err(|err| io_error(Some(link_path), format!("failed to remove link: {}", err)))
     }
-    .map_err(|err| io_error(Some(link_path), format!("failed to remove link: {}", err)))
+
+    #[cfg(windows)]
+    {
+        // Junctions and directory symlinks must use remove_dir; remove_file returns
+        // access denied for junctions.
+        if link_path.is_dir() {
+            fs::remove_dir(link_path)
+        } else {
+            fs::remove_file(link_path)
+        }
+        .map_err(|err| io_error(Some(link_path), format!("failed to remove link: {}", err)))
+    }
 }
 
 pub fn delete_real_dir(path: &Path) -> Result<(), AppError> {
@@ -290,6 +303,25 @@ mod tests {
 
         assert!(!path_exists(&link));
         assert!(source.is_dir());
+        assert!(source.join("SKILL.md").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_link_force_removes_directory_symlink_without_enotdir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let link = temp.path().join("linked");
+        fs::create_dir(&source).expect("create source");
+        fs::write(source.join("SKILL.md"), "content").expect("write source file");
+
+        create_dir_link(&source, &link, LinkType::Symlink).expect("create dir symlink");
+        // Followed metadata looks like a directory; removal must still succeed.
+        assert!(link.is_dir());
+
+        remove_link_force(&link).expect("remove directory symlink");
+
+        assert!(!path_exists(&link));
         assert!(source.join("SKILL.md").is_file());
     }
 

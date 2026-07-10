@@ -45,15 +45,8 @@ export function findPendingUpdate(
   skill: Pick<SkillView, 'dirName' | 'storageKey' | 'linkName'>,
   pendingUpdates: SkillUpdateInfo[],
 ): SkillUpdateInfo | undefined {
-  if (skill.storageKey) {
-    const byKey = pendingUpdates.find((update) => update.storageKey === skill.storageKey);
-    if (byKey) return byKey;
-  }
-  // Legacy fallback (remove next major): match by dirName / linkName.
-  const linkName = skill.linkName || skill.dirName;
-  return pendingUpdates.find(
-    (update) => update.dirName === skill.dirName || update.dirName === linkName,
-  );
+  if (!skill.storageKey) return undefined;
+  return pendingUpdates.find((update) => update.storageKey === skill.storageKey);
 }
 
 export function skillHasPendingUpdate(
@@ -70,7 +63,6 @@ export function pendingUpdateIdentifier(
   const match = findPendingUpdate(skill, pendingUpdates);
   if (match?.storageKey) return match.storageKey;
   if (skill.storageKey) return skill.storageKey;
-  if (match?.dirName) return match.dirName;
   return skill.dirName;
 }
 

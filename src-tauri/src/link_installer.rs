@@ -13,31 +13,21 @@ fn skill_link_name(skill: &SkillView) -> &str {
     }
 }
 
-/// Primary match is `storage_key`. `link_name` / `dir_name` are migration-era
-/// fallbacks — remove after one release once all callers pass storageKey.
+/// Match by `storage_key` only. Callers must pass storageKey (not link_name).
 fn skill_matches_identifier(skill: &SkillView, identifier: &str) -> bool {
-    if !skill.storage_key.is_empty() && skill.storage_key == identifier {
-        return true;
-    }
-    // Legacy fallback (remove next major): accept linkName / dirName.
-    skill.link_name == identifier || skill.dir_name == identifier
+    !skill.storage_key.is_empty() && skill.storage_key == identifier
 }
 
-/// Primary match is `skill_storage_key`. `skill_dir_name` is only used when the
-/// storage key is empty (pre-reconcile records) — remove after one release.
+/// Match by `skill_storage_key` only. Empty keys never match.
 fn installation_matches_identifier(installation: &Installation, identifier: &str) -> bool {
-    if !installation.skill_storage_key.is_empty() {
-        return installation.skill_storage_key == identifier;
-    }
-    installation.skill_dir_name == identifier
+    !installation.skill_storage_key.is_empty() && installation.skill_storage_key == identifier
 }
 
 fn installation_matches_skill(installation: &Installation, skill: &SkillView) -> bool {
-    if !installation.skill_storage_key.is_empty() && !skill.storage_key.is_empty() {
-        return installation.skill_storage_key == skill.storage_key;
+    if installation.skill_storage_key.is_empty() || skill.storage_key.is_empty() {
+        return false;
     }
-    installation.skill_dir_name == skill_link_name(skill)
-        && same_path(&installation.source_path, &skill.path)
+    installation.skill_storage_key == skill.storage_key
 }
 
 fn find_installation_for_skill<'a>(
@@ -45,16 +35,12 @@ fn find_installation_for_skill<'a>(
     target_id: &str,
     skill: &SkillView,
 ) -> Option<&'a Installation> {
-    if !skill.storage_key.is_empty() {
-        return config.installations.iter().find(|installation| {
-            installation.target_id == target_id
-                && installation.skill_storage_key == skill.storage_key
-        });
+    if skill.storage_key.is_empty() {
+        return None;
     }
-    if let Some(installation) = find_installation(config, target_id, skill_link_name(skill)) {
-        return Some(installation);
-    }
-    find_installation(config, target_id, &skill.dir_name)
+    config.installations.iter().find(|installation| {
+        installation.target_id == target_id && installation.skill_storage_key == skill.storage_key
+    })
 }
 
 fn find_installation_at_link<'a>(
@@ -400,6 +386,7 @@ mod tests {
             path: skill_dir,
             valid: true,
             validation_errors: Vec::new(),
+            storage_key: dir_name.to_string(),
             link_name: dir_name.to_string(),
             ..Default::default()
         }
@@ -768,7 +755,7 @@ mod tests {
                     link_path: target_dir.join("valid-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
-                    ..Default::default()
+                    skill_storage_key: "valid-skill".to_string(),
                 },
                 Installation {
                     id: "install-2".to_string(),
@@ -779,7 +766,7 @@ mod tests {
                     link_path: target_dir.join("missing-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
-                    ..Default::default()
+                    skill_storage_key: "missing-skill".to_string(),
                 },
                 Installation {
                     id: "install-3".to_string(),
@@ -790,7 +777,7 @@ mod tests {
                     link_path: target_dir.join("mismatch-skill"),
                     link_type: fs_adapter::default_link_type(),
                     created_at: "1".to_string(),
-                    ..Default::default()
+                    skill_storage_key: "mismatch-skill".to_string(),
                 },
             ],
             ..Default::default()

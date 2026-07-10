@@ -5,9 +5,6 @@ use crate::skill_storage;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-
-pub const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -70,29 +67,80 @@ where
     let tree_dir = cache_dir.join("tree");
     let meta_path = cache_dir.join("meta.json");
     let repo_ref = repo.to_repo_ref();
+    let tree_exists = tree_dir.is_dir();
+
+    // First pull: skip commits API (avoids rate limit); download by branch, then best-effort SHA.
+    if !tree_exists {
+        return refresh_repo_tree(
+            repo,
+            &cache_dir,
+            &tree_dir,
+            &meta_path,
+            &repo_ref,
+            ShaForMeta::BestEffort,
+            &fetch_remote_sha,
+            &download_repo,
+        );
+    }
 
     let remote_sha = fetch_remote_sha(&repo_ref);
     let meta = read_meta(&meta_path).ok();
 
-    match decide_cache_action(meta.as_ref(), remote_sha.as_deref(), tree_dir.is_dir(), force) {
+    match decide_cache_action(meta.as_ref(), remote_sha.as_deref(), tree_exists, force) {
         CacheDecision::UseCache => return Ok(tree_dir),
-        CacheDecision::UseStaleOnApiFailure => {
-            if tree_dir.is_dir() {
-                return Ok(tree_dir);
-            }
-            return Err(remote_sha.err().expect("stale only when api failed"));
-        }
+        CacheDecision::UseStaleOnApiFailure => return Ok(tree_dir),
         CacheDecision::Refresh => {}
     }
 
-    let commit_sha = remote_sha?;
+    let sha_for_meta = match remote_sha {
+        Ok(sha) => ShaForMeta::Known(sha),
+        // Already failed; do not burn another rate-limit call after download.
+        Err(_) => ShaForMeta::Skip,
+    };
+    refresh_repo_tree(
+        repo,
+        &cache_dir,
+        &tree_dir,
+        &meta_path,
+        &repo_ref,
+        sha_for_meta,
+        &fetch_remote_sha,
+        &download_repo,
+    )
+}
 
+enum ShaForMeta {
+    Known(String),
+    BestEffort,
+    Skip,
+}
+
+fn refresh_repo_tree<F, G>(
+    repo: &SkillRepo,
+    cache_dir: &Path,
+    tree_dir: &Path,
+    meta_path: &Path,
+    repo_ref: &RepoRef,
+    sha_for_meta: ShaForMeta,
+    fetch_remote_sha: &F,
+    download_repo: &G,
+) -> Result<PathBuf, AppError>
+where
+    F: Fn(&RepoRef) -> Result<String, AppError>,
+    G: Fn(&Path, &RepoRef) -> Result<(), AppError>,
+{
     let tree_tmp = cache_dir.join("tree.tmp");
     if tree_tmp.exists() {
         fs::remove_dir_all(&tree_tmp)
             .map_err(|err| io_error(Some(&tree_tmp), err.to_string()))?;
     }
-    download_repo(&tree_tmp, &repo_ref)?;
+    download_repo(&tree_tmp, repo_ref)?;
+
+    let commit_sha = match sha_for_meta {
+        ShaForMeta::Known(sha) => sha,
+        ShaForMeta::BestEffort => fetch_remote_sha(repo_ref).unwrap_or_default(),
+        ShaForMeta::Skip => String::new(),
+    };
 
     let project_path = if repo.project_path.is_empty() {
         format!("{}/{}", repo.owner, repo.name)
@@ -109,10 +157,10 @@ where
         fetched_at: chrono::Utc::now().to_rfc3339(),
     };
 
-    write_meta_atomic(&meta_path, &new_meta)?;
-    replace_tree_dir(&tree_dir, &tree_tmp)?;
+    write_meta_atomic(meta_path, &new_meta)?;
+    replace_tree_dir(tree_dir, &tree_tmp)?;
 
-    Ok(tree_dir)
+    Ok(tree_dir.to_path_buf())
 }
 
 pub(crate) fn decide_cache_action(
@@ -123,7 +171,7 @@ pub(crate) fn decide_cache_action(
 ) -> CacheDecision {
     if let Ok(sha) = remote_sha {
         if let Some(meta) = meta {
-            if tree_exists && meta.commit_sha == sha {
+            if tree_exists && !meta.commit_sha.is_empty() && meta.commit_sha == sha {
                 return CacheDecision::UseCache;
             }
         }
@@ -134,24 +182,12 @@ pub(crate) fn decide_cache_action(
         return CacheDecision::Refresh;
     }
 
-    if let Some(meta) = meta {
-        if tree_exists && meta_within_ttl(meta, DEFAULT_CACHE_TTL) {
-            return CacheDecision::UseStaleOnApiFailure;
-        }
+    // Prefer existing tree when commits API fails (rate limit / offline), even past TTL.
+    if tree_exists {
+        return CacheDecision::UseStaleOnApiFailure;
     }
 
     CacheDecision::Refresh
-}
-
-pub(crate) fn meta_within_ttl(meta: &RepoCacheMeta, ttl: Duration) -> bool {
-    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(&meta.fetched_at) else {
-        return false;
-    };
-    let age = chrono::Utc::now()
-        .signed_duration_since(parsed.with_timezone(&chrono::Utc))
-        .num_seconds()
-        .unsigned_abs();
-    age < ttl.as_secs()
 }
 
 fn read_meta(path: &Path) -> Result<RepoCacheMeta, AppError> {
@@ -265,6 +301,20 @@ mod tests {
     }
 
     #[test]
+    fn decide_cache_action_uses_stale_on_api_failure_past_ttl() {
+        let meta = sample_meta("2020-01-01T00:00:00Z", "abc");
+        let api_err = AppError::DownloadFailed {
+            url: "https://api.github.com/repos/o/n/commits/main".to_string(),
+            status: Some(403),
+            message: "GitHub 请求受限，请稍后再试".to_string(),
+        };
+        assert_eq!(
+            decide_cache_action(Some(&meta), Err(&api_err), true, false),
+            CacheDecision::UseStaleOnApiFailure
+        );
+    }
+
+    #[test]
     fn decide_cache_action_force_refresh_on_api_failure() {
         let fetched_at = chrono::Utc::now().to_rfc3339();
         let meta = sample_meta(&fetched_at, "abc");
@@ -274,6 +324,15 @@ mod tests {
         };
         assert_eq!(
             decide_cache_action(Some(&meta), Err(&api_err), true, true),
+            CacheDecision::Refresh
+        );
+    }
+
+    #[test]
+    fn decide_cache_action_refreshes_when_cached_sha_empty() {
+        let meta = sample_meta("2026-07-08T09:00:00Z", "");
+        assert_eq!(
+            decide_cache_action(Some(&meta), Ok("abc"), true, false),
             CacheDecision::Refresh
         );
     }
@@ -389,6 +448,78 @@ mod tests {
             .expect("seed cache");
         ensure_repo_tree_with_hooks(&repo, &app_data, true, fetch_sha, download_repo)
             .expect("force discover with unchanged sha");
+        assert_eq!(download_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn ensure_repo_tree_first_pull_skips_sha_and_succeeds_when_sha_api_fails() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_data = temp.path().join("app-data");
+        let repo = sample_repo();
+        let download_count = AtomicUsize::new(0);
+        let sha_count = AtomicUsize::new(0);
+
+        let fetch_sha = |_repo_ref: &RepoRef| {
+            sha_count.fetch_add(1, Ordering::SeqCst);
+            Err(AppError::DownloadFailed {
+                url: "https://api.github.com/repos/anthropics/skills/commits/main".to_string(),
+                status: Some(403),
+                message: "GitHub 请求受限，请稍后再试".to_string(),
+            })
+        };
+        let download_repo = |dest_dir: &Path, _repo_ref: &RepoRef| {
+            download_count.fetch_add(1, Ordering::SeqCst);
+            write_cached_skill_tree(dest_dir);
+            Ok(())
+        };
+
+        let tree = ensure_repo_tree_with_hooks(&repo, &app_data, false, fetch_sha, download_repo)
+            .expect("first pull should download without requiring SHA");
+        assert_eq!(download_count.load(Ordering::SeqCst), 1);
+        assert!(tree.join("skills/writing-plans/SKILL.md").is_file());
+
+        let meta = read_meta(&cache_dir(&app_data, &repo).join("meta.json")).expect("meta");
+        assert!(meta.commit_sha.is_empty());
+        // Best-effort SHA after download still attempted once.
+        assert_eq!(sha_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn ensure_repo_tree_uses_stale_when_sha_api_fails_after_cache() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_data = temp.path().join("app-data");
+        let repo = sample_repo();
+        let download_count = AtomicUsize::new(0);
+        let allow_sha = std::sync::atomic::AtomicBool::new(true);
+
+        let fetch_sha = |_repo_ref: &RepoRef| {
+            if allow_sha.load(Ordering::SeqCst) {
+                Ok("abc123deadbeef".to_string())
+            } else {
+                Err(AppError::DownloadFailed {
+                    url: "https://api.github.com/repos/anthropics/skills/commits/main".to_string(),
+                    status: Some(403),
+                    message: "GitHub 请求受限，请稍后再试".to_string(),
+                })
+            }
+        };
+        let download_repo = |dest_dir: &Path, _repo_ref: &RepoRef| {
+            download_count.fetch_add(1, Ordering::SeqCst);
+            write_cached_skill_tree(dest_dir);
+            Ok(())
+        };
+
+        ensure_repo_tree_with_hooks(&repo, &app_data, false, fetch_sha, download_repo)
+            .expect("seed");
+        assert_eq!(download_count.load(Ordering::SeqCst), 1);
+
+        allow_sha.store(false, Ordering::SeqCst);
+        ensure_repo_tree_with_hooks(&repo, &app_data, false, fetch_sha, download_repo)
+            .expect("stale cache on 403");
         assert_eq!(download_count.load(Ordering::SeqCst), 1);
     }
 }

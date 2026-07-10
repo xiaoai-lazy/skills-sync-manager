@@ -74,7 +74,12 @@ fn collect_skills(
 
         if has_skill_md {
             skills.push(validate_skill_dir(main_dir, &path)?);
-        } else if is_top_level && !has_descendant_skill_leaf(&path)? {
+        } else if is_top_level
+            && !is_storage_namespace_root(&path)
+            && !has_descendant_skill_leaf(&path)?
+        {
+            // Flat local dirs missing SKILL.md stay visible as invalid.
+            // Namespace roots (hub/repo/local) are containers, never skills.
             skills.push(validate_skill_dir(main_dir, &path)?);
         }
 
@@ -82,6 +87,12 @@ fn collect_skills(
     }
 
     Ok(())
+}
+
+fn is_storage_namespace_root(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, "hub" | "repo" | "local"))
 }
 
 fn has_descendant_skill_leaf(dir: &Path) -> Result<bool, AppError> {
@@ -507,6 +518,29 @@ mod tests {
 
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].link_name, "tdd");
+    }
+
+    #[test]
+    fn empty_storage_namespace_roots_are_not_listed_as_invalid_skills() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for name in ["hub", "repo", "local"] {
+            fs::create_dir_all(temp.path().join(name)).expect("create namespace root");
+        }
+        // Leftover intermediate dirs after deleting the last nested skill.
+        fs::create_dir_all(temp.path().join("hub/company-hub/common")).expect("create hub nest");
+        fs::create_dir_all(temp.path().join("repo/git.xkw.cn--mp-oxygen-uc-skills"))
+            .expect("create repo nest");
+
+        let skills = list_skills(Some(temp.path())).expect("list skills");
+
+        assert!(
+            skills.is_empty(),
+            "empty hub/repo/local containers must not appear as Missing SKILL.md locals: {:?}",
+            skills
+                .iter()
+                .map(|s| s.storage_key.clone())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

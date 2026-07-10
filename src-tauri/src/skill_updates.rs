@@ -189,23 +189,13 @@ where
 }
 
 fn mark_record_source_missing(config: &mut AppConfig, record_key: &str) {
-    let link_name = config
-        .skill_records
-        .get(record_key)
-        .map(|record| record_link_name(record_key, record));
     if let Some(record) = config.skill_records.get_mut(record_key) {
         record.source_missing = true;
     }
-    if let Some(link_name) = link_name {
-        config
-            .skill_update_cache
-            .updates
-            .retain(|update| !pending_update_matches(update, &link_name));
-        config
-            .skill_update_cache
-            .updates
-            .retain(|update| !pending_update_matches(update, record_key));
-    }
+    config
+        .skill_update_cache
+        .updates
+        .retain(|update| !pending_update_matches(update, record_key));
 }
 
 fn resolve_local_library_path(main_dir: &Path, record_key: &str, record: &SkillRecord) -> PathBuf {
@@ -242,16 +232,13 @@ fn resolve_record_by_identifier(
         .skill_records
         .iter()
         .find(|(key, record)| {
-            record.storage_key == identifier
-                || record.link_name == identifier
-                || key.as_str() == identifier
+            record.storage_key == identifier || key.as_str() == identifier
         })
         .map(|(key, record)| (key.clone(), record.clone()))
 }
 
 fn pending_update_matches(update: &SkillUpdateInfo, identifier: &str) -> bool {
-    update.dir_name == identifier
-        || (!update.storage_key.is_empty() && update.storage_key == identifier)
+    !update.storage_key.is_empty() && update.storage_key == identifier
 }
 
 fn is_hub_endpoint_enabled(config: &AppConfig, hub_endpoint_id: &str) -> bool {
@@ -449,27 +436,32 @@ where
     F: FnOnce(&RepoRef) -> Result<PathBuf, AppError>,
     G: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
 {
+    let (record_key, record) = resolve_record_by_identifier(config, dir_name).ok_or_else(|| {
+        AppError::UpdateNotPending {
+            dir_name: dir_name.to_string(),
+        }
+    })?;
+    let update_key = if !record.storage_key.is_empty() {
+        record.storage_key.clone()
+    } else {
+        record_key.clone()
+    };
+
     if !config
         .skill_update_cache
         .updates
         .iter()
-        .any(|update| pending_update_matches(update, dir_name))
+        .any(|update| pending_update_matches(update, &update_key))
     {
         return Err(AppError::UpdateNotPending {
             dir_name: dir_name.to_string(),
         });
     }
 
-    let (record_key, record) = resolve_record_by_identifier(config, dir_name).ok_or_else(|| {
-        AppError::UpdateNotPending {
-            dir_name: dir_name.to_string(),
-        }
-    })?;
-
     if record.source == "skillhub" {
         return update_hub_skill(
             config,
-            dir_name,
+            &update_key,
             &record_key,
             &record,
             main_dir,
@@ -507,14 +499,14 @@ where
     config
         .skill_update_cache
         .updates
-        .retain(|update| !pending_update_matches(update, dir_name));
+        .retain(|update| !pending_update_matches(update, &update_key));
 
     Ok(())
 }
 
 fn update_hub_skill<G>(
     config: &mut AppConfig,
-    dir_name: &str,
+    update_key: &str,
     record_key: &str,
     record: &SkillRecord,
     main_dir: &Path,
@@ -569,7 +561,7 @@ where
     config
         .skill_update_cache
         .updates
-        .retain(|update| !pending_update_matches(update, dir_name));
+        .retain(|update| !pending_update_matches(update, update_key));
 
     Ok(())
 }
@@ -616,11 +608,11 @@ where
         .skill_update_cache
         .updates
         .iter()
-        .map(|update| {
-            if !update.storage_key.is_empty() {
-                update.storage_key.clone()
+        .filter_map(|update| {
+            if update.storage_key.is_empty() {
+                None
             } else {
-                update.dir_name.clone()
+                Some(update.storage_key.clone())
             }
         })
         .collect();
@@ -699,6 +691,7 @@ mod tests {
     }
 
     fn sample_record(directory: &str, content_hash: &str) -> SkillRecord {
+        let link_name = skill_storage::skill_id_from_directory(directory);
         SkillRecord {
             repo_host: default_github_host(),
             project_path: "anthropics/skills".to_string(),
@@ -709,6 +702,8 @@ mod tests {
             directory: directory.to_string(),
             content_hash: content_hash.to_string(),
             installed_at: "2026-06-30T00:00:00Z".to_string(),
+            storage_key: link_name.clone(),
+            link_name,
             ..Default::default()
         }
     }
@@ -988,6 +983,7 @@ mod tests {
                 name: "brainstorming".to_string(),
                 current_hash: Some("stale-hash".to_string()),
                 remote_hash: remote_hash.clone(),
+                storage_key: "brainstorming".to_string(),
                 ..Default::default()
             }],
         };
@@ -1061,6 +1057,7 @@ mod tests {
                     name: "good".to_string(),
                     current_hash: Some("stale".to_string()),
                     remote_hash: good_remote_hash,
+                    storage_key: "good".to_string(),
                     ..Default::default()
                 },
                 SkillUpdateInfo {
@@ -1068,6 +1065,7 @@ mod tests {
                     name: "bad".to_string(),
                     current_hash: Some("stale".to_string()),
                     remote_hash: "deadbeef".to_string(),
+                    storage_key: "bad".to_string(),
                     ..Default::default()
                 },
             ],
@@ -1239,7 +1237,7 @@ mod tests {
             }],
         };
 
-        update_skill_with_download_hook(&mut config, "brainstorming", &main_dir, |_| {
+        update_skill_with_download_hook(&mut config, storage_key, &main_dir, |_| {
             Ok(repo_root.clone())
         })
         .expect("update skill");

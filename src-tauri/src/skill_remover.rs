@@ -70,17 +70,39 @@ pub fn delete_main_skill(
     }
 
     crate::fs_adapter::delete_real_dir(&source_path)?;
+    prune_empty_storage_parents(main_dir, &source_path);
 
     config.installations.retain(|installation| {
         !installation_matches_delete(installation, &source_path, &record_key, &link_name, identifier)
     });
 
-    cleanup_skill_hub_metadata(config, &record_key, &link_name);
+    cleanup_skill_hub_metadata(config, &record_key);
 
     Ok(DeleteMainSkillResult {
         deleted_skill_dir_name: link_name,
         removed_link_count: related.len(),
     })
+}
+
+/// Remove empty ancestor directories under the main library after deleting a nested skill
+/// (e.g. `repo/<slug>/` and `repo/` when the last leaf is gone). Stops at `main_dir`.
+fn prune_empty_storage_parents(main_dir: &std::path::Path, deleted_path: &std::path::Path) {
+    let mut current = deleted_path.parent().map(|p| p.to_path_buf());
+    while let Some(dir) = current {
+        if dir == main_dir || !dir.starts_with(main_dir) {
+            break;
+        }
+        let is_empty = std::fs::read_dir(&dir)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+        if !is_empty {
+            break;
+        }
+        if std::fs::remove_dir(&dir).is_err() {
+            break;
+        }
+        current = dir.parent().map(|p| p.to_path_buf());
+    }
 }
 
 fn resolve_local_library_path(
@@ -126,9 +148,7 @@ fn resolve_delete_target(
     if let Some((record_key, record)) = config
         .skill_records
         .iter()
-        .find(|(_, record)| {
-            record.storage_key == identifier || record.link_name == identifier
-        })
+        .find(|(_, record)| record.storage_key == identifier)
         .map(|(key, record)| (key.clone(), record.clone()))
     {
         let link_name = record_link_name(&record_key, &record);
@@ -151,7 +171,7 @@ fn installation_matches_delete(
     installation: &Installation,
     source_path: &std::path::Path,
     record_key: &str,
-    link_name: &str,
+    _link_name: &str,
     identifier: &str,
 ) -> bool {
     if !installation.skill_storage_key.is_empty()
@@ -161,22 +181,18 @@ fn installation_matches_delete(
         return true;
     }
 
-    if installation.skill_dir_name == link_name || installation.skill_dir_name == identifier {
-        return crate::link_installer::same_path(&installation.source_path, source_path);
-    }
-
     crate::link_installer::same_path(&installation.source_path, source_path)
 }
 
-fn cleanup_skill_hub_metadata(config: &mut AppConfig, record_key: &str, link_name: &str) {
+fn cleanup_skill_hub_metadata(config: &mut AppConfig, record_key: &str) {
     config.skill_records.remove(record_key);
     config.skill_update_cache.updates.retain(|update| {
-        update.storage_key != record_key && update.dir_name != link_name
+        update.storage_key != record_key
     });
     config
         .skill_discover_cache
         .skills
-        .retain(|skill| skill.install_dir_name != link_name && skill.storage_key != record_key);
+        .retain(|skill| skill.storage_key != record_key);
 }
 
 fn validate_skill_identifier(identifier: &str) -> Result<(), AppError> {
@@ -351,10 +367,14 @@ mod tests {
         assert_eq!(result.deleted_skill_dir_name, "brainstorming");
         assert!(!skill.path.exists());
         assert!(!config.skill_records.contains_key(storage_key));
+        assert!(
+            !main_dir.join("repo").exists(),
+            "empty storage namespace parents should be pruned after deleting the last skill"
+        );
     }
 
     #[test]
-    fn deletes_nested_skill_by_link_name() {
+    fn rejects_delete_by_link_name_alone_for_nested_skill() {
         let temp = tempfile::tempdir().expect("tempdir");
         let (mut config, main_dir) = create_config_with_main_dir(temp.path());
         let storage_key = "repo/github.com--anthropics-skills/brainstorming";
@@ -378,12 +398,12 @@ mod tests {
             },
         );
 
-        let result = delete_main_skill(&mut config, "brainstorming", true)
-            .expect("delete nested skill by link name");
+        let error = delete_main_skill(&mut config, "brainstorming", true)
+            .expect_err("link_name alone must not resolve nested skills");
 
-        assert_eq!(result.deleted_skill_dir_name, "brainstorming");
-        assert!(!skill.path.exists());
-        assert!(!config.skill_records.contains_key(storage_key));
+        assert!(matches!(error, AppError::Io { .. }));
+        assert!(skill.path.exists());
+        assert!(config.skill_records.contains_key(storage_key));
     }
 
     #[test]
@@ -635,6 +655,8 @@ mod tests {
                 directory: "skills/brainstorming".to_string(),
                 content_hash: "hash".to_string(),
                 installed_at: "2026-01-01T00:00:00Z".to_string(),
+                storage_key: "brainstorming".to_string(),
+                link_name: "brainstorming".to_string(),
                 ..Default::default()
             },
         );
@@ -646,6 +668,7 @@ mod tests {
                     name: "brainstorming".to_string(),
                     current_hash: Some("old".to_string()),
                     remote_hash: "new".to_string(),
+                    storage_key: "brainstorming".to_string(),
                     ..Default::default()
                 },
                 SkillUpdateInfo {
@@ -653,6 +676,7 @@ mod tests {
                     name: "other-skill".to_string(),
                     current_hash: Some("a".to_string()),
                     remote_hash: "b".to_string(),
+                    storage_key: "other-skill".to_string(),
                     ..Default::default()
                 },
             ],
@@ -666,6 +690,7 @@ mod tests {
                     description: "Test".to_string(),
                     directory: "skills/brainstorming".to_string(),
                     install_dir_name: "brainstorming".to_string(),
+                    storage_key: "brainstorming".to_string(),
                     repo_host: default_github_host(),
                     project_path: "owner/repo".to_string(),
                     repo_owner: "owner".to_string(),
@@ -680,6 +705,7 @@ mod tests {
                     description: "Other".to_string(),
                     directory: "skills/other".to_string(),
                     install_dir_name: "other-skill".to_string(),
+                    storage_key: "other-skill".to_string(),
                     repo_host: default_github_host(),
                     project_path: "owner/repo".to_string(),
                     repo_owner: "owner".to_string(),

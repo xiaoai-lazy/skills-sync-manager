@@ -235,14 +235,6 @@ pub fn filter_uninstalled_discoverable_skills(
         .collect()
 }
 
-fn skill_link_name(skill: &DiscoverableSkill) -> String {
-    if !skill.link_name.is_empty() {
-        skill.link_name.clone()
-    } else {
-        skill.install_dir_name.clone()
-    }
-}
-
 fn is_skill_in_records(
     skill: &DiscoverableSkill,
     skill_records: Option<&HashMap<String, SkillRecord>>,
@@ -255,24 +247,17 @@ fn is_skill_in_records(
         return is_hub_skill_in_records(skill, records);
     }
 
-    if !skill.storage_key.is_empty() && records.contains_key(&skill.storage_key) {
+    if skill.storage_key.is_empty() {
+        return false;
+    }
+
+    if records.contains_key(&skill.storage_key) {
         return true;
     }
 
-    if !skill.storage_key.is_empty()
-        && records
-            .values()
-            .any(|record| record.storage_key == skill.storage_key)
-    {
-        return true;
-    }
-
-    let link_name = skill_link_name(skill);
-    if records.values().any(|record| record.link_name == link_name) {
-        return true;
-    }
-
-    false
+    records
+        .values()
+        .any(|record| record.storage_key == skill.storage_key)
 }
 
 fn is_hub_skill_in_records(
@@ -727,6 +712,51 @@ mod tests {
         );
 
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn filter_uninstalled_keeps_repo_skill_when_only_hub_shares_link_name() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let repo_skill = DiscoverableSkill {
+            key: "git.xkw.cn/mp-oxygen-uc-skills:skills/oxygen-standard-code".to_string(),
+            source: "gitlab".to_string(),
+            storage_key: "repo/git.xkw.cn--mp-oxygen-uc-skills/oxygen-standard-code".to_string(),
+            link_name: "oxygen-standard-code".to_string(),
+            install_dir_name: "oxygen-standard-code".to_string(),
+            repo_host: "git.xkw.cn".to_string(),
+            repo_owner: "mp-oxygen".to_string(),
+            repo_name: "uc-skills".to_string(),
+            ..Default::default()
+        };
+
+        let mut records = HashMap::new();
+        records.insert(
+            "hub/company-hub/common/oxygen-standard-code".to_string(),
+            SkillRecord {
+                source: "skillhub".to_string(),
+                link_name: "oxygen-standard-code".to_string(),
+                storage_key: "hub/company-hub/common/oxygen-standard-code".to_string(),
+                hub_endpoint_id: "company-hub".to_string(),
+                hub_skill_group: "common".to_string(),
+                hub_skill_id: "oxygen-standard-code".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let filtered = filter_uninstalled_discoverable_skills(
+            vec![repo_skill],
+            Some(&main_dir),
+            Some(&records),
+        );
+
+        assert_eq!(
+            filtered.len(),
+            1,
+            "same link_name from Hub must not hide a different-source repo skill"
+        );
     }
 
     #[test]
