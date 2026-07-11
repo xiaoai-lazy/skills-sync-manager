@@ -753,6 +753,9 @@ pub struct AppState {
     /// Defaults to true for backward compatibility.
     #[serde(default = "default_true")]
     pub skills_included: bool,
+    /// Soft warnings from the last force-cleanup (target/project/skill).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cleanup_warnings: Vec<String>,
 }
 
 fn default_true() -> bool {

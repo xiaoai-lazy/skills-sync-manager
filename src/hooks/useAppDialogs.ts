@@ -39,6 +39,11 @@ export function useAppDialogs() {
   const [deleteTargetData, setDeleteTargetData] = useState<Target | null>(null);
   const [deleteTargetForce, setDeleteTargetForce] = useState(false);
 
+  const [deleteProjectForce, setDeleteProjectForce] = useState(false);
+
+  const [forceClearSkillKey, setForceClearSkillKey] = useState<string | null>(null);
+  const [forceClearSkillConfirmOpen, setForceClearSkillConfirmOpen] = useState(false);
+
   const [deleteSkillDirName, setDeleteSkillDirName] = useState<string | null>(null);
   const [deleteSkillStorageKey, setDeleteSkillStorageKey] = useState<string | null>(null);
 
@@ -72,6 +77,12 @@ export function useAppDialogs() {
     setDeleteTargetData,
     deleteTargetForce,
     setDeleteTargetForce,
+    deleteProjectForce,
+    setDeleteProjectForce,
+    forceClearSkillKey,
+    setForceClearSkillKey,
+    forceClearSkillConfirmOpen,
+    setForceClearSkillConfirmOpen,
     deleteSkillDirName,
     setDeleteSkillDirName,
     deleteSkillStorageKey,

@@ -128,6 +128,81 @@ pub fn uninstall_skill(
     Ok(())
 }
 
+/// Best-effort link removal + always clear one installation record.
+/// Returns a warning when the on-disk path was left for manual cleanup.
+pub fn force_clear_installation(config: &mut AppConfig, installation_id: &str) -> Option<String> {
+    let Some(installation) = config
+        .installations
+        .iter()
+        .find(|installation| installation.id == installation_id)
+        .cloned()
+    else {
+        return None;
+    };
+
+    let warning = try_remove_matching_link_for_force(&installation);
+    config
+        .installations
+        .retain(|installation| installation.id != installation_id);
+    warning
+}
+
+/// Force-clear every installation for a target. Does not delete the skills directory.
+pub fn force_cleanup_target_installations(
+    config: &mut AppConfig,
+    target_id: &str,
+) -> Vec<String> {
+    let ids: Vec<String> = config
+        .installations
+        .iter()
+        .filter(|installation| installation.target_id == target_id)
+        .map(|installation| installation.id.clone())
+        .collect();
+
+    let mut warnings = Vec::new();
+    for id in ids {
+        if let Some(warning) = force_clear_installation(config, &id) {
+            warnings.push(warning);
+        }
+    }
+    warnings
+}
+
+/// Force-clear one skill installation by identifier (storage_key).
+pub fn force_uninstall_skill(
+    config: &mut AppConfig,
+    target_id: &str,
+    skill_identifier: &str,
+) -> Result<Vec<String>, AppError> {
+    let installation =
+        find_installation(config, target_id, skill_identifier).ok_or_else(|| AppError::Io {
+            path: None,
+            message: format!(
+                "no installation record found for target '{}' and skill '{}'",
+                target_id, skill_identifier
+            ),
+        })?;
+    let installation_id = installation.id.clone();
+    Ok(force_clear_installation(config, &installation_id)
+        .into_iter()
+        .collect())
+}
+
+fn try_remove_matching_link_for_force(installation: &Installation) -> Option<String> {
+    let link_path = &installation.link_path;
+    if !fs_adapter::path_exists(link_path) {
+        return None;
+    }
+
+    match fs_adapter::remove_recorded_link(link_path, &installation.source_path) {
+        Ok(()) => None,
+        Err(_) => Some(format!(
+            "{} 异常已保留，仅清除安装记录，请到该路径手动清理",
+            link_path.display()
+        )),
+    }
+}
+
 pub fn compute_target_skill_states(
     config: &AppConfig,
     target_id: &str,
@@ -717,6 +792,99 @@ mod tests {
         assert_eq!(config.installations.len(), 1);
         assert!(fs_adapter::path_exists(&link_path));
         assert!(other_source.exists());
+    }
+
+    #[test]
+    fn force_clear_removes_matching_link_and_record() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let skill = create_valid_skill(&main_dir, "brainstorming");
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(&mut config, "target-1", "brainstorming", &[skill.clone()])
+            .expect("install skill");
+        let link_path = target_dir.join("brainstorming");
+        let installation_id = config.installations[0].id.clone();
+
+        let warning = force_clear_installation(&mut config, &installation_id);
+        assert!(warning.is_none());
+        assert!(config.installations.is_empty());
+        assert!(!fs_adapter::path_exists(&link_path));
+        assert!(target_dir.is_dir());
+        assert!(skill.path.is_dir());
+    }
+
+    #[test]
+    fn force_clear_keeps_mismatch_link_but_clears_record() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let skill = create_valid_skill(&main_dir, "brainstorming");
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(&mut config, "target-1", "brainstorming", &[skill.clone()])
+            .expect("install skill");
+        let link_path = target_dir.join("brainstorming");
+        fs_adapter::remove_recorded_link(&link_path, &skill.path).expect("remove original link");
+        let other_source = temp.path().join("other-source");
+        fs::create_dir_all(&other_source).expect("create other source");
+        fs_adapter::create_dir_link(&other_source, &link_path, fs_adapter::default_link_type())
+            .expect("create mismatch link");
+        let installation_id = config.installations[0].id.clone();
+
+        let warning = force_clear_installation(&mut config, &installation_id);
+        assert!(warning.is_some());
+        assert!(warning.unwrap().contains("手动清理"));
+        assert!(config.installations.is_empty());
+        assert!(fs_adapter::path_exists(&link_path));
+        assert!(target_dir.is_dir());
+    }
+
+    #[test]
+    fn force_cleanup_target_clears_all_records_despite_mismatch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let skill_a = create_valid_skill(&main_dir, "skill-a");
+        let skill_b = create_valid_skill(&main_dir, "skill-b");
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(&mut config, "target-1", "skill-a", &[skill_a.clone()]).expect("install a");
+        install_skill(&mut config, "target-1", "skill-b", &[skill_b.clone()]).expect("install b");
+
+        let mismatch_path = target_dir.join("skill-b");
+        fs_adapter::remove_recorded_link(&mismatch_path, &skill_b.path).expect("remove b");
+        let other_source = temp.path().join("other-source");
+        fs::create_dir_all(&other_source).expect("other");
+        fs_adapter::create_dir_link(&other_source, &mismatch_path, fs_adapter::default_link_type())
+            .expect("mismatch b");
+
+        let warnings = force_cleanup_target_installations(&mut config, "target-1");
+        assert_eq!(warnings.len(), 1);
+        assert!(config.installations.is_empty());
+        assert!(!fs_adapter::path_exists(&target_dir.join("skill-a")));
+        assert!(fs_adapter::path_exists(&mismatch_path));
+        assert!(target_dir.is_dir());
+    }
+
+    #[test]
+    fn force_uninstall_skill_clears_missing_link_record() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let skill = create_valid_skill(&main_dir, "brainstorming");
+        let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
+
+        install_skill(&mut config, "target-1", "brainstorming", &[skill.clone()])
+            .expect("install skill");
+        let link_path = target_dir.join("brainstorming");
+        fs_adapter::remove_recorded_link(&link_path, &skill.path).expect("remove link");
+
+        let warnings =
+            force_uninstall_skill(&mut config, "target-1", "brainstorming").expect("force");
+        assert!(warnings.is_empty());
+        assert!(config.installations.is_empty());
     }
 
     #[test]

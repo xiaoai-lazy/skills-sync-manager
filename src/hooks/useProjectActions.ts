@@ -1,7 +1,9 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import type { AppState, Project } from '../model/types';
 import { deleteProject } from '../api/commands';
+import { cleanupWarningsMessage } from '../utils/cleanupWarnings';
 import { errorMessage } from '../utils/errorMessage';
+import { errorCode } from '../utils/ipcError';
 
 export type ProjectFormDialogState = {
   open: boolean;
@@ -22,6 +24,8 @@ export function useProjectActions(args: {
   deleteProjectData: Project | null;
   setDeleteProjectData: (project: Project | null) => void;
   setDeleteProjectConfirmOpen: (open: boolean) => void;
+  deleteProjectForce: boolean;
+  setDeleteProjectForce: (force: boolean) => void;
 }) {
   const {
     applyAppStateSuccess,
@@ -36,6 +40,8 @@ export function useProjectActions(args: {
     deleteProjectData,
     setDeleteProjectData,
     setDeleteProjectConfirmOpen,
+    deleteProjectForce,
+    setDeleteProjectForce,
   } = args;
 
   const handleAddProject = useCallback(() => {
@@ -88,20 +94,23 @@ export function useProjectActions(args: {
 
   const handleDeleteProject = useCallback(
     (project: Project) => {
+      setDeleteProjectForce(false);
       setDeleteProjectData(project);
       setDeleteProjectConfirmOpen(true);
     },
-    [setDeleteProjectConfirmOpen, setDeleteProjectData]
+    [setDeleteProjectConfirmOpen, setDeleteProjectData, setDeleteProjectForce]
   );
 
   const handleConfirmDeleteProject = useCallback(async () => {
     if (!deleteProjectData) return;
     const project = deleteProjectData;
+    const force = deleteProjectForce;
     setPendingSkillKey(`delete-project-${project.id}`);
     try {
-      const next = await deleteProject(project.id, selectedTargetId);
+      const next = await deleteProject(project.id, selectedTargetId, force);
       setDeleteProjectConfirmOpen(false);
       setDeleteProjectData(null);
+      setDeleteProjectForce(false);
       applyAppStateSuccess(next);
       if (selectedProjectId === project.id) {
         setSelectedProjectId(null);
@@ -111,18 +120,28 @@ export function useProjectActions(args: {
         nextSet.delete(project.id);
         return nextSet;
       });
+      setError(cleanupWarningsMessage(next));
     } catch (err) {
-      setError(errorMessage(err));
+      if (
+        !force &&
+        errorCode(err) === 'projectHasTargetsWithInstallations'
+      ) {
+        setDeleteProjectForce(true);
+      } else {
+        setError(errorMessage(err));
+      }
     } finally {
       setPendingSkillKey(null);
     }
   }, [
     applyAppStateSuccess,
     deleteProjectData,
+    deleteProjectForce,
     selectedProjectId,
     selectedTargetId,
     setDeleteProjectConfirmOpen,
     setDeleteProjectData,
+    setDeleteProjectForce,
     setError,
     setExpandedProjectIds,
     setPendingSkillKey,
@@ -132,7 +151,8 @@ export function useProjectActions(args: {
   const handleCancelDeleteProject = useCallback(() => {
     setDeleteProjectConfirmOpen(false);
     setDeleteProjectData(null);
-  }, [setDeleteProjectConfirmOpen, setDeleteProjectData]);
+    setDeleteProjectForce(false);
+  }, [setDeleteProjectConfirmOpen, setDeleteProjectData, setDeleteProjectForce]);
 
   return {
     handleAddProject,

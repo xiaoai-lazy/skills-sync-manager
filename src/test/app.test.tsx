@@ -764,7 +764,7 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(uninstallSkill).toHaveBeenCalledWith('target_1', 'local/brainstorming');
+      expect(uninstallSkill).toHaveBeenCalledWith('target_1', 'local/brainstorming', false);
 
     });
 
@@ -798,7 +798,7 @@ describe('App', () => {
 
 
 
-  it('missing state renders disabled controls', async () => {
+  it('missing state allows force-clear toggle', async () => {
 
     setupHubMocks(withMissingSkill(baseAppState));
 
@@ -818,13 +818,15 @@ describe('App', () => {
 
     const checkbox = screen.getByRole('checkbox');
 
-    expect(checkbox).toBeDisabled();
+    expect(checkbox).toBeEnabled();
+
+    expect(checkbox).toBeChecked();
 
   });
 
 
 
-  it('mismatch state renders disabled controls', async () => {
+  it('mismatch state allows force-clear toggle', async () => {
 
     setupHubMocks(withMismatchSkill(baseAppState));
 
@@ -844,7 +846,9 @@ describe('App', () => {
 
     const checkbox = screen.getByRole('checkbox');
 
-    expect(checkbox).toBeDisabled();
+    expect(checkbox).toBeEnabled();
+
+    expect(checkbox).toBeChecked();
 
   });
 

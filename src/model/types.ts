@@ -242,6 +242,8 @@ export interface AppState {
   lastMigrationReport?: MigrationReportDto | null;
   /** When false, client should keep previous skills via mergeAppState. Defaults to true. */
   skillsIncluded?: boolean;
+  /** Soft warnings from the last force-cleanup operation. */
+  cleanupWarnings?: string[];
 }
 
 export const emptyV6DiscoverableFields = {

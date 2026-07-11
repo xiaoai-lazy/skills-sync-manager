@@ -71,6 +71,12 @@ function App() {
     setDeleteTargetData,
     deleteTargetForce,
     setDeleteTargetForce,
+    deleteProjectForce,
+    setDeleteProjectForce,
+    forceClearSkillKey,
+    setForceClearSkillKey,
+    forceClearSkillConfirmOpen,
+    setForceClearSkillConfirmOpen,
     deleteSkillDirName,
     setDeleteSkillDirName,
     deleteSkillStorageKey,
@@ -200,6 +206,8 @@ function App() {
     handleSelectTarget,
     handleOpenSkillHub,
     handleToggleSkill,
+    handleConfirmForceClearSkill,
+    handleCancelForceClearSkill,
     handleDeleteMainSkill,
     handleConfirmDeleteMainSkill,
     handleCancelDeleteMainSkill,
@@ -228,6 +236,9 @@ function App() {
     deleteTargetForce,
     setDeleteTargetForce,
     setDeleteTargetConfirmOpen,
+    forceClearSkillKey,
+    setForceClearSkillKey,
+    setForceClearSkillConfirmOpen,
     deleteSkillStorageKey,
     setDeleteSkillStorageKey,
     setDeleteSkillDirName,
@@ -254,6 +265,8 @@ function App() {
     deleteProjectData,
     setDeleteProjectData,
     setDeleteProjectConfirmOpen,
+    deleteProjectForce,
+    setDeleteProjectForce,
   });
 
   const mainSkillsDir = appState?.config.settings.mainSkillsDir ?? null;
@@ -550,11 +563,19 @@ function App() {
 
           open={deleteProjectConfirmOpen}
 
-          title="删除项目"
+          title={deleteProjectForce ? '强制删除项目' : '删除项目'}
 
-          message={`确定删除项目「${deleteProjectData?.name}」吗？`}
+          message={
 
-          confirmLabel="删除"
+            deleteProjectForce
+
+              ? `项目「${deleteProjectData?.name}」下仍有安装记录。将尽力移除正常链接并清除全部安装记录（异常路径需手动清理），然后删除项目。是否继续？`
+
+              : `确定删除项目「${deleteProjectData?.name}」吗？`
+
+          }
+
+          confirmLabel={deleteProjectForce ? '强制删除' : '删除'}
 
           cancelLabel="取消"
 
@@ -576,7 +597,7 @@ function App() {
 
             deleteTargetForce
 
-              ? `目标「${deleteTargetData?.name}」仍有安装记录。是否移除链接并删除目标？`
+              ? `目标「${deleteTargetData?.name}」仍有安装记录。将尽力移除正常链接并清除全部安装记录（异常路径需手动清理），然后删除目标。是否继续？`
 
               : `确定删除目标「${deleteTargetData?.name}」吗？`
 
@@ -591,6 +612,26 @@ function App() {
           onConfirm={handleConfirmDeleteTarget}
 
           onCancel={handleCancelDeleteTarget}
+
+        />
+
+        <ConfirmDialog
+
+          open={forceClearSkillConfirmOpen}
+
+          title="强制清除安装记录"
+
+          message="将清除该 Skill 的安装记录；若链接正常会一并移除。链接异常或非本程序创建的内容会保留在目标目录，需手动清理。是否继续？"
+
+          confirmLabel="强制清除"
+
+          cancelLabel="取消"
+
+          danger
+
+          onConfirm={handleConfirmForceClearSkill}
+
+          onCancel={handleCancelForceClearSkill}
 
         />
 

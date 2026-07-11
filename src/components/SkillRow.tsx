@@ -22,14 +22,18 @@ const stateExplanationMap: Record<SkillInstallState, string | null> = {
   notInstalled: null,
   installed: null,
   conflict: '目标路径已存在同名内容',
-  mismatch: '链接与记录不符，请到目标目录手动删除该链接后重启应用',
-  missing: '安装记录存在，但链接已不存在（重启应用将自动恢复）',
-  sourceMissing: '源 skill 已不存在（启动时会自动清理安装记录）',
+  mismatch: '链接与记录不符；可强制清除安装记录，异常路径需手动删除',
+  missing: '安装记录存在但链接已缺失；可强制清除安装记录',
+  sourceMissing: '源 skill 已不存在；可强制清除安装记录',
   invalidSkill: null,
 };
 
+export function canForceClearInstallation(state: SkillInstallState): boolean {
+  return state === 'mismatch' || state === 'missing' || state === 'sourceMissing';
+}
+
 export function canToggle(state: SkillInstallState): boolean {
-  return state === 'notInstalled' || state === 'installed';
+  return state === 'notInstalled' || state === 'installed' || canForceClearInstallation(state);
 }
 
 export function stateLabel(state: SkillInstallState): string {
@@ -42,7 +46,7 @@ function SkillRow(props: SkillRowProps) {
 
   const isInvalid = !skill.valid || state === 'invalidSkill';
   const toggleEnabled = canToggle(state) && !pending;
-  const isInstalled = state === 'installed';
+  const isInstalled = state === 'installed' || canForceClearInstallation(state);
 
   const explanation = stateExplanationMap[state];
   const detailMessage =
@@ -72,9 +76,11 @@ function SkillRow(props: SkillRowProps) {
   const skillKey = skill.storageKey;
   const toggleTitle = !toggleEnabled
     ? '无法切换'
-    : isInstalled
+    : state === 'installed'
       ? '卸载'
-      : '安装';
+      : canForceClearInstallation(state)
+        ? '强制清除安装记录'
+        : '安装';
 
   return (
     <div

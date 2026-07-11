@@ -62,6 +62,7 @@ pub fn build_app_state_with_mode(
         selected_target_skills,
         last_migration_report: None,
         skills_included: true,
+        cleanup_warnings: Vec::new(),
     })
 }
 
@@ -363,18 +364,29 @@ pub fn delete_project(
     app: tauri::AppHandle,
     project_id: String,
     selected_target_id: Option<String>,
+    cleanup_recorded_links: Option<bool>,
 ) -> Result<AppState, AppErrorDto> {
-    let project_id_for_closure = project_id.clone();
+    let force = cleanup_recorded_links.unwrap_or(false);
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
 
-    run_with_config(
-        app,
-        move |config| {
-            crate::project_registry::delete_project(config, &project_id_for_closure)?;
-            Ok(())
-        },
+    let warnings = crate::project_registry::delete_project(&mut config, &project_id, force)
+        .map_err(|err| err.to_dto())?;
+
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+
+    let mut state = build_app_state_with_mode(
+        config,
         selected_target_id,
-        false,
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
     )
+    .map_err(|err| err.to_dto())?;
+    state.cleanup_warnings = warnings;
+    Ok(state)
 }
 
 #[tauri::command]
@@ -416,26 +428,13 @@ pub fn delete_target(
         return Err(AppError::TargetHasInstallations {
             target_id: target_id.clone(),
             installation_count,
-        }.to_dto());
+        }
+        .to_dto());
     }
 
+    let mut warnings = Vec::new();
     if cleanup_recorded_links {
-        let to_uninstall: Vec<String> = config
-            .installations
-            .iter()
-            .filter(|i| i.target_id == target_id)
-            .map(|i| {
-                if !i.skill_storage_key.is_empty() {
-                    i.skill_storage_key.clone()
-                } else {
-                    i.skill_dir_name.clone()
-                }
-            })
-            .collect();
-        for skill_identifier in to_uninstall {
-            crate::link_installer::uninstall_skill(&mut config, &target_id, &skill_identifier)
-                .map_err(|err| err.to_dto())?;
-        }
+        warnings = crate::link_installer::force_cleanup_target_installations(&mut config, &target_id);
     }
 
     crate::target_registry::delete_target_config(&mut config, &target_id)
@@ -445,13 +444,15 @@ pub fn delete_target(
     store.save(&config).map_err(|err| err.to_dto())?;
     let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
 
-    build_app_state_with_mode(
+    let mut state = build_app_state_with_mode(
         config,
         None,
         Some(app_data_dir.as_path()),
         AppStateBuildMode::Light { skills },
     )
-    .map_err(|err| err.to_dto())
+    .map_err(|err| err.to_dto())?;
+    state.cleanup_warnings = warnings;
+    Ok(state)
 }
 
 #[tauri::command]
@@ -482,23 +483,35 @@ pub fn uninstall_skill(
     app: tauri::AppHandle,
     target_id: String,
     skill_identifier: String,
+    force: Option<bool>,
 ) -> Result<AppState, AppErrorDto> {
-    let target_id_for_closure = target_id.clone();
-    let skill_identifier_for_closure = skill_identifier.clone();
+    let force = force.unwrap_or(false);
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
 
-    run_with_config(
-        app,
-        |config| {
-            crate::link_installer::uninstall_skill(
-                config,
-                &target_id_for_closure,
-                &skill_identifier_for_closure,
-            )?;
-            Ok(())
-        },
+    let warnings = if force {
+        crate::link_installer::force_uninstall_skill(&mut config, &target_id, &skill_identifier)
+            .map_err(|err| err.to_dto())?
+    } else {
+        crate::link_installer::uninstall_skill(&mut config, &target_id, &skill_identifier)
+            .map_err(|err| err.to_dto())?;
+        Vec::new()
+    };
+
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+
+    let mut state = build_app_state_with_mode(
+        config,
         Some(target_id),
-        false,
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
     )
+    .map_err(|err| err.to_dto())?;
+    state.cleanup_warnings = warnings;
+    Ok(state)
 }
 
 #[tauri::command]

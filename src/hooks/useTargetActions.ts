@@ -14,6 +14,8 @@ import {
   updateTarget,
 } from '../api/commands';
 import { getTargetSkillStates } from '../api/skillHub';
+import { canForceClearInstallation } from '../components/SkillRow';
+import { cleanupWarningsMessage } from '../utils/cleanupWarnings';
 import { errorMessage } from '../utils/errorMessage';
 import type { MainView } from '../components/Sidebar';
 
@@ -51,6 +53,9 @@ export function useTargetActions(args: {
   deleteTargetForce: boolean;
   setDeleteTargetForce: (force: boolean) => void;
   setDeleteTargetConfirmOpen: (open: boolean) => void;
+  forceClearSkillKey: string | null;
+  setForceClearSkillKey: (key: string | null) => void;
+  setForceClearSkillConfirmOpen: (open: boolean) => void;
   deleteSkillStorageKey: string | null;
   setDeleteSkillStorageKey: (key: string | null) => void;
   setDeleteSkillDirName: (name: string | null) => void;
@@ -80,6 +85,9 @@ export function useTargetActions(args: {
     deleteTargetForce,
     setDeleteTargetForce,
     setDeleteTargetConfirmOpen,
+    forceClearSkillKey,
+    setForceClearSkillKey,
+    setForceClearSkillConfirmOpen,
     deleteSkillStorageKey,
     setDeleteSkillStorageKey,
     setDeleteSkillDirName,
@@ -203,7 +211,8 @@ export function useTargetActions(args: {
       setDeleteTargetData(null);
       setDeleteTargetForce(false);
       applyRemoteState(next);
-      setError(null);
+      const warning = cleanupWarningsMessage(next);
+      setError(warning);
     } catch (err) {
       const msg = errorMessage(err);
       if (!force) {
@@ -279,12 +288,19 @@ export function useTargetActions(args: {
   const handleToggleSkill = useCallback(
     async (skillKey: string, state: SkillInstallState) => {
       if (!appState || !selectedTargetId) return;
+
+      if (canForceClearInstallation(state)) {
+        setForceClearSkillKey(skillKey);
+        setForceClearSkillConfirmOpen(true);
+        return;
+      }
+
       setPendingSkillKey(skillKey);
       try {
         const next =
           state === 'notInstalled'
             ? await installSkill(selectedTargetId, skillKey)
-            : await uninstallSkill(selectedTargetId, skillKey);
+            : await uninstallSkill(selectedTargetId, skillKey, false);
         applyRemoteState(next);
         setError(null);
       } catch (err) {
@@ -293,8 +309,44 @@ export function useTargetActions(args: {
         setPendingSkillKey(null);
       }
     },
-    [appState, applyRemoteState, selectedTargetId, setError]
+    [
+      appState,
+      applyRemoteState,
+      selectedTargetId,
+      setError,
+      setForceClearSkillConfirmOpen,
+      setForceClearSkillKey,
+    ]
   );
+
+  const handleConfirmForceClearSkill = useCallback(async () => {
+    if (!selectedTargetId || !forceClearSkillKey) return;
+    const skillKey = forceClearSkillKey;
+    setPendingSkillKey(skillKey);
+    try {
+      const next = await uninstallSkill(selectedTargetId, skillKey, true);
+      setForceClearSkillConfirmOpen(false);
+      setForceClearSkillKey(null);
+      applyRemoteState(next);
+      setError(cleanupWarningsMessage(next));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPendingSkillKey(null);
+    }
+  }, [
+    applyRemoteState,
+    forceClearSkillKey,
+    selectedTargetId,
+    setError,
+    setForceClearSkillConfirmOpen,
+    setForceClearSkillKey,
+  ]);
+
+  const handleCancelForceClearSkill = useCallback(() => {
+    setForceClearSkillConfirmOpen(false);
+    setForceClearSkillKey(null);
+  }, [setForceClearSkillConfirmOpen, setForceClearSkillKey]);
 
   const handleDeleteMainSkill = useCallback(
     (storageKey: string, displayName: string) => {
@@ -356,6 +408,8 @@ export function useTargetActions(args: {
     handleSelectTarget,
     handleOpenSkillHub,
     handleToggleSkill,
+    handleConfirmForceClearSkill,
+    handleCancelForceClearSkill,
     handleDeleteMainSkill,
     handleConfirmDeleteMainSkill,
     handleCancelDeleteMainSkill,

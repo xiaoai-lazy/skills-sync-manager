@@ -64,7 +64,11 @@ pub fn update_project(
     Ok(project.clone())
 }
 
-pub fn delete_project(config: &mut AppConfig, project_id: &str) -> Result<(), AppError> {
+pub fn delete_project(
+    config: &mut AppConfig,
+    project_id: &str,
+    force: bool,
+) -> Result<Vec<String>, AppError> {
     if !config.projects.iter().any(|project| project.id == project_id) {
         return Err(AppError::ProjectNotFound {
             project_id: project_id.to_string(),
@@ -84,11 +88,20 @@ pub fn delete_project(config: &mut AppConfig, project_id: &str) -> Result<(), Ap
         .filter(|installation| child_target_ids.contains(&installation.target_id))
         .count();
 
-    if installation_count > 0 {
+    if installation_count > 0 && !force {
         return Err(AppError::ProjectHasTargetsWithInstallations {
             project_id: project_id.to_string(),
             installation_count,
         });
+    }
+
+    let mut warnings = Vec::new();
+    if force {
+        for target_id in &child_target_ids {
+            warnings.extend(crate::link_installer::force_cleanup_target_installations(
+                config, target_id,
+            ));
+        }
     }
 
     config
@@ -96,7 +109,7 @@ pub fn delete_project(config: &mut AppConfig, project_id: &str) -> Result<(), Ap
         .retain(|target| target.project_id.as_deref() != Some(project_id));
     config.projects.retain(|project| project.id != project_id);
 
-    Ok(())
+    Ok(warnings)
 }
 
 pub(crate) fn find_project<'a>(
@@ -281,7 +294,8 @@ mod tests {
             ..Default::default()
         });
 
-        let error = delete_project(&mut config, &project.id).expect_err("should refuse delete");
+        let error =
+            delete_project(&mut config, &project.id, false).expect_err("should refuse delete");
 
         assert!(matches!(
             error,
@@ -292,6 +306,64 @@ mod tests {
         ));
         assert_eq!(config.projects.len(), 1);
         assert_eq!(config.targets.len(), 1);
+    }
+
+    #[test]
+    fn delete_project_force_clears_installations_and_keeps_skills_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = AppConfig::default();
+        let project = add_project(
+            &mut config,
+            "My App".to_string(),
+            temp.path().to_path_buf(),
+        )
+        .expect("add project");
+        let skills_dir = temp.path().join(".cursor").join("skills");
+        fs::create_dir_all(&skills_dir).expect("create skills dir");
+        let source = temp.path().join("main").join("example-skill");
+        fs::create_dir_all(&source).expect("source");
+        let link_path = skills_dir.join("example-skill");
+        crate::fs_adapter::create_dir_link(
+            &source,
+            &link_path,
+            crate::fs_adapter::default_link_type(),
+        )
+        .expect("link");
+
+        config.targets.push(Target {
+            id: "target-1".to_string(),
+            name: "Cursor".to_string(),
+            scope: TargetScope::Project,
+            kind: TargetKind::Agent,
+            agent_id: Some("cursor".to_string()),
+            project_id: Some(project.id.clone()),
+            custom_path: None,
+            skills_dir: skills_dir.clone(),
+            created_at: "1".to_string(),
+            updated_at: "1".to_string(),
+        });
+        config.installations.push(Installation {
+            id: "install-1".to_string(),
+            skill_dir_name: "example-skill".to_string(),
+            skill_name: "Example Skill".to_string(),
+            source_path: source.clone(),
+            target_id: "target-1".to_string(),
+            link_path: link_path.clone(),
+            link_type: crate::fs_adapter::default_link_type(),
+            created_at: "1".to_string(),
+            skill_storage_key: "example-skill".to_string(),
+            ..Default::default()
+        });
+
+        let warnings =
+            delete_project(&mut config, &project.id, true).expect("force delete project");
+        assert!(warnings.is_empty());
+        assert!(config.projects.is_empty());
+        assert!(config.targets.is_empty());
+        assert!(config.installations.is_empty());
+        assert!(skills_dir.is_dir());
+        assert!(!crate::fs_adapter::path_exists(&link_path));
+        assert!(source.is_dir());
     }
 
     #[test]
@@ -317,7 +389,7 @@ mod tests {
             updated_at: "1".to_string(),
         });
 
-        delete_project(&mut config, &project.id).expect("delete project");
+        delete_project(&mut config, &project.id, false).expect("delete project");
 
         assert!(config.projects.is_empty());
         assert!(config.targets.is_empty());

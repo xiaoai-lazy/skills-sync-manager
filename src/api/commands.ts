@@ -21,8 +21,16 @@ export async function installSkill(targetId: string, skillIdentifier: string): P
   return invoke<AppState>('install_skill', { targetId, skillIdentifier });
 }
 
-export async function uninstallSkill(targetId: string, skillIdentifier: string): Promise<AppState> {
-  return invoke<AppState>('uninstall_skill', { targetId, skillIdentifier });
+export async function uninstallSkill(
+  targetId: string,
+  skillIdentifier: string,
+  force = false,
+): Promise<AppState> {
+  return invoke<AppState>('uninstall_skill', {
+    targetId,
+    skillIdentifier,
+    force,
+  });
 }
 
 export async function deleteMainSkill(
@@ -102,9 +110,11 @@ export async function updateProject(
 export async function deleteProject(
   projectId: string,
   selectedTargetId?: string | null,
+  cleanupRecordedLinks = false,
 ): Promise<AppState> {
   return invoke<AppState>('delete_project', {
     projectId,
     selectedTargetId: selectedTargetId ?? null,
+    cleanupRecordedLinks,
   });
 }
