@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../utils/errorMessage';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 export interface GitLabPatDialogProps {
   open: boolean;
@@ -19,25 +20,22 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useModalFocus({
+    open,
+    containerRef: modalRef,
+    initialFocusRef: inputRef,
+    onEscape: onClose,
+    escapeEnabled: !submitting,
+  });
 
   useEffect(() => {
     if (!open) return;
     setPat('');
     setError(null);
     setSubmitting(false);
-    inputRef.current?.focus();
   }, [open, description]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose();
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose, submitting]);
 
   const handleSubmit = async () => {
     const value = pat.trim();
@@ -86,7 +84,7 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
         if (!submitting) onClose();
       }}
     >
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={modalRef} className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 id="patModalTitle">配置 GitLab 访问密钥</h3>
         <p>{descText}</p>
         <label htmlFor="patInput">访问密钥（PAT）</label>

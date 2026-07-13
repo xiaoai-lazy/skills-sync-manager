@@ -64,6 +64,38 @@
   background: rgba(220, 38, 38, 0.08);
 }
 
+.app-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(480px, calc(100vw - 48px));
+  padding: 12px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.app-toast--success {
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.app-toast--error {
+  border-color: rgba(220, 38, 38, 0.15);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.app-toast .close-button {
+  flex-shrink: 0;
+  color: inherit;
+}
+
 /* Loading overlay */
 .loading-overlay {
   position: absolute;

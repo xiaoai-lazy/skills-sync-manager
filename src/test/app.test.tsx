@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, within } from '@testing-library/react';
 
 import userEvent from '@testing-library/user-event';
 
@@ -61,6 +61,10 @@ vi.mock('../api/skillHub', () => ({
 
   listSkillHubEndpoints: vi.fn().mockResolvedValue([]),
 
+  addSkillHubEndpoint: vi.fn(),
+
+  listGitlabCredentials: vi.fn().mockResolvedValue([]),
+
 }));
 
 
@@ -116,6 +120,10 @@ import {
   refreshStartupSkillSources,
 
   getTargetSkillStates,
+
+  addSkillHubEndpoint,
+
+  listSkillHubEndpoints,
 
 } from '../api/skillHub';
 
@@ -588,6 +596,36 @@ describe('App', () => {
 
     expect(screen.getByRole('button', { name: /skill 中心/i })).toHaveClass('active');
 
+  });
+
+  it('shows a global Toast for source management success', async () => {
+    const user = userEvent.setup();
+    vi.mocked(addSkillHubEndpoint).mockResolvedValue({ endpoints: [], discoverSkills: [] });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Skill 中心' });
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    await user.click(screen.getByRole('button', { name: '添加来源' }));
+    const dialog = screen.getByRole('dialog', { name: '添加来源' });
+    await user.type(within(dialog).getByLabelText('名称'), 'Company Hub');
+    await user.type(within(dialog).getByLabelText('Base URL'), 'https://hub.example.com');
+    await user.click(within(dialog).getByRole('button', { name: '添加' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('来源已添加');
+  });
+
+  it('shows Skill Hub background failures in a fixed error Toast', async () => {
+    const user = userEvent.setup();
+    vi.mocked(listSkillHubEndpoints).mockRejectedValueOnce(new Error('来源加载失败'));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Skill 中心' });
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveClass('app-toast', 'app-toast--error');
+    expect(toast).toHaveTextContent('来源加载失败');
+    expect(document.querySelector('.error-banner')).not.toBeInTheDocument();
   });
 
 

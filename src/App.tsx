@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { selectDirectory } from './api/dialog';
 
@@ -34,6 +34,8 @@ import { useTargetActions } from './hooks/useTargetActions';
 import { useProjectActions } from './hooks/useProjectActions';
 
 function App() {
+
+  const [appToast, setAppToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   const {
     appState,
@@ -130,6 +132,12 @@ function App() {
   });
 
   setErrorRef.current = setError;
+
+  useEffect(() => {
+    if (!appToast) return;
+    const timer = window.setTimeout(() => setAppToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [appToast]);
 
   useEffect(() => {
 
@@ -417,7 +425,9 @@ function App() {
 
               onRefreshHub={refreshHub}
 
-              onError={(err) => setError(errorMessage(err))}
+              onError={(err) => setAppToast({ message: errorMessage(err), kind: 'error' })}
+
+              onToast={(message) => setAppToast({ message, kind: 'success' })}
 
             />
 
@@ -685,6 +695,22 @@ function App() {
 
       </div>
 
+    )}
+
+    {appToast && (
+      <div
+        className={`app-toast app-toast--${appToast.kind}`}
+        role={appToast.kind === 'error' ? 'alert' : 'status'}
+      >
+        <span>{appToast.message}</span>
+        <button
+          className="close-button"
+          onClick={() => setAppToast(null)}
+          aria-label="关闭提示"
+        >
+          ×
+        </button>
+      </div>
     )}
 
     </div>

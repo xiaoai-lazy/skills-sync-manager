@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import Dialog from '../components/Dialog';
@@ -88,5 +88,73 @@ describe('Dialog', () => {
     await user.keyboard('{Escape}');
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('focuses the first control even when Escape closing is disabled', async () => {
+    render(
+      <Dialog
+        open={true}
+        title="Test"
+        closeOnEscape={false}
+        actions={<button>Last</button>}
+      >
+        <button>First</button>
+      </Dialog>
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'First' })).toHaveFocus());
+  });
+
+  it('traps Tab and Shift+Tab within the dialog', async () => {
+    render(
+      <Dialog open={true} title="Test" actions={<button>Last</button>}>
+        <button>First</button>
+      </Dialog>
+    );
+
+    const user = userEvent.setup();
+    const first = screen.getByRole('button', { name: 'First' });
+    const last = screen.getByRole('button', { name: 'Last' });
+    await waitFor(() => expect(first).toHaveFocus());
+
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+  });
+
+  it('restores focus to the opener after closing', async () => {
+    const { rerender } = render(
+      <>
+        <button>Open dialog</button>
+        <Dialog open={false} title="Test" actions={<button>Action</button>}>
+          Body
+        </Dialog>
+      </>
+    );
+    const opener = screen.getByRole('button', { name: 'Open dialog' });
+    opener.focus();
+
+    rerender(
+      <>
+        <button>Open dialog</button>
+        <Dialog open={true} title="Test" actions={<button>Action</button>}>
+          Body
+        </Dialog>
+      </>
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Action' })).toHaveFocus());
+
+    rerender(
+      <>
+        <button>Open dialog</button>
+        <Dialog open={false} title="Test" actions={<button>Action</button>}>
+          Body
+        </Dialog>
+      </>
+    );
+    expect(screen.getByRole('button', { name: 'Open dialog' })).toHaveFocus();
   });
 });

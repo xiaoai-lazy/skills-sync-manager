@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SkillRepo } from '../../model/types';
 import { errorMessage } from '../../utils/errorMessage';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 export interface KeysManageDialogProps {
   open: boolean;
@@ -59,10 +60,15 @@ function KeysManageDialog(props: KeysManageDialogProps) {
   const [deleteGroup, setDeleteGroup] = useState<GitLabHostGroup | null>(null);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const deleteModalRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(
     () => groupGitLabRepos(repos, configuredHosts),
     [repos, configuredHosts],
   );
+
+  useModalFocus({ open, containerRef: modalRef, escapeEnabled: false });
+  useModalFocus({ open: deleteGroup !== null, containerRef: deleteModalRef, escapeEnabled: false });
 
   useEffect(() => {
     if (!open) return;
@@ -99,13 +105,13 @@ function KeysManageDialog(props: KeysManageDialogProps) {
   return (
     <>
       <div
-        className="modal-overlay open"
+        className="modal-overlay open keys-manage-overlay"
         role="dialog"
         aria-modal="true"
         aria-labelledby="keysModalTitle"
         onClick={onClose}
       >
-        <div className="modal modal-wide" onClick={(event) => event.stopPropagation()}>
+        <div ref={modalRef} className="modal modal-wide" onClick={(event) => event.stopPropagation()}>
         <h3 id="keysModalTitle">密钥管理</h3>
         <p className="keys-hint">
           GitLab 访问密钥按站点域名保存，同一站点下的来源仓库共用密钥。
@@ -184,7 +190,7 @@ function KeysManageDialog(props: KeysManageDialogProps) {
             if (!removing) setDeleteGroup(null);
           }}
         >
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+          <div ref={deleteModalRef} className="modal" onClick={(event) => event.stopPropagation()}>
             <h3 id="credentialDeleteTitle">删除 GitLab 访问密钥</h3>
             <p>
               删除 <strong>{deleteGroup.host}</strong> 的访问密钥后，以下{' '}

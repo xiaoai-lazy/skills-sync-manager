@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   addSkillHubEndpoint,
   addSkillRepo,
@@ -29,6 +29,7 @@ import type {
 } from '../../model/types';
 import GitLabPatDialog from './GitLabPatDialog';
 import KeysManageDialog from './KeysManageDialog';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 export interface SourceManageDrawerProps {
   open: boolean;
@@ -50,6 +51,10 @@ interface PatDialogState {
   projectPath: string;
   mode: 'add' | 'authenticate' | 'update';
 }
+
+type DeleteTarget =
+  | { kind: 'hub'; endpoint: SkillHubEndpoint }
+  | { kind: 'repo'; repo: SkillRepo };
 
 function repoShortPath(repo: SkillRepo): string {
   if (repo.provider === 'gitlab') {
@@ -83,17 +88,28 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
   const [configuredHosts, setConfiguredHosts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addTab, setAddTab] = useState<AddSourceTab>('hub');
   const [patDialog, setPatDialog] = useState<PatDialogState | null>(null);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [localStartupRefresh, setLocalStartupRefresh] = useState(startupRefreshSettings);
   const [savingStartupRefresh, setSavingStartupRefresh] = useState(false);
 
   const [hubName, setHubName] = useState('');
   const [hubBaseUrl, setHubBaseUrl] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const addModalRef = useRef<HTMLDivElement>(null);
+  const deleteModalRef = useRef<HTMLDivElement>(null);
+
+  useModalFocus({ open, containerRef: drawerRef, escapeEnabled: false });
+  useModalFocus({ open: addModalOpen, containerRef: addModalRef, escapeEnabled: false });
+  useModalFocus({ open: deleteTarget !== null, containerRef: deleteModalRef, escapeEnabled: false });
 
   useEffect(() => {
     setLocalStartupRefresh(startupRefreshSettings);
@@ -161,12 +177,28 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     if (!open) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !patDialog && !keysDialogOpen && !addModalOpen) onClose();
+      if (e.key !== 'Escape' || patDialog || keysDialogOpen) return;
+      if (deleteTarget) {
+        if (!deleting) {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }
+        return;
+      }
+      if (addModalOpen) {
+        if (!adding) {
+          setAddModalOpen(false);
+          setAddError(null);
+          resetAddForm();
+        }
+        return;
+      }
+      onClose();
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose, patDialog, keysDialogOpen, addModalOpen]);
+  }, [open, onClose, patDialog, keysDialogOpen, addModalOpen, adding, deleteTarget, deleting]);
 
   const resetAddForm = () => {
     setHubName('');
@@ -175,23 +207,21 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     setAddTab('hub');
   };
 
+  const completeAdd = () => {
+    setPatDialog(null);
+    setAddModalOpen(false);
+    setAddError(null);
+    resetAddForm();
+    onToast?.('来源已添加');
+    onClose();
+  };
+
   const finishAddRepo = async (addUrl: string, pat?: string) => {
-    setAdding(true);
-    try {
-      const result = await addSkillRepo(addUrl, undefined, pat);
-      setRepos(result.repos);
-      onDiscoverSkillsChange?.(result.discoverSkills);
-      onReposChange?.(result.repos);
-      setRepoUrl('');
-      setAddModalOpen(false);
-      resetAddForm();
-      await loadConfiguredHosts();
-    } catch (err) {
-      onError?.(errorMessage(err));
-      throw err;
-    } finally {
-      setAdding(false);
-    }
+    const result = await addSkillRepo(addUrl, undefined, pat);
+    setRepos(result.repos);
+    onDiscoverSkillsChange?.(result.discoverSkills);
+    onReposChange?.(result.repos);
+    await loadConfiguredHosts();
   };
 
   const handleAddHub = async () => {
@@ -200,15 +230,15 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     if (!name || !baseUrl || adding) return;
 
     setAdding(true);
+    setAddError(null);
     try {
       const result = await addSkillHubEndpoint(name, baseUrl);
       setEndpoints(result.endpoints);
       onEndpointsChange?.(result.endpoints);
       onDiscoverSkillsChange?.(result.discoverSkills);
-      setAddModalOpen(false);
-      resetAddForm();
+      completeAdd();
     } catch (err) {
-      onError?.(errorMessage(err));
+      setAddError(errorMessage(err));
     } finally {
       setAdding(false);
     }
@@ -219,10 +249,11 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     if (!value || adding) return;
 
     setAdding(true);
+    setAddError(null);
     try {
       const preview = await previewAddSkillRepo(value);
       if (preview.error) {
-        onError?.(preview.error.message);
+        setAddError(preview.error.message);
         return;
       }
       if (preview.needsPat && preview.host) {
@@ -235,8 +266,9 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
         return;
       }
       await finishAddRepo(value);
+      completeAdd();
     } catch (err) {
-      onError?.(errorMessage(err));
+      setAddError(errorMessage(err));
     } finally {
       setAdding(false);
     }
@@ -254,19 +286,40 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
       return;
     }
 
-    await updateGitlabCredential(host, pat);
-    await loadConfiguredHosts();
-    void finishAddRepo(addUrl, pat);
+    setAdding(true);
+    try {
+      await updateGitlabCredential(host, pat);
+      await loadConfiguredHosts();
+      await finishAddRepo(addUrl, pat);
+      completeAdd();
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const handleRemoveHub = async (endpoint: SkillHubEndpoint) => {
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleteError(null);
+    setDeleting(true);
     try {
-      const result = await removeSkillHubEndpoint(endpoint.id);
-      setEndpoints(result.endpoints);
-      onEndpointsChange?.(result.endpoints);
-      onDiscoverSkillsChange?.(result.discoverSkills);
+      if (deleteTarget.kind === 'hub') {
+        const result = await removeSkillHubEndpoint(deleteTarget.endpoint.id);
+        setEndpoints(result.endpoints);
+        onEndpointsChange?.(result.endpoints);
+        onDiscoverSkillsChange?.(result.discoverSkills);
+      } else {
+        const { repo } = deleteTarget;
+        const result = await removeSkillRepo(repo.host, repo.projectPath);
+        setRepos(result.repos);
+        onDiscoverSkillsChange?.(result.discoverSkills);
+        onReposChange?.(result.repos);
+      }
+      setDeleteTarget(null);
+      onToast?.('来源已删除');
     } catch (err) {
-      onError?.(errorMessage(err));
+      setDeleteError(errorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -283,17 +336,6 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
       onError?.(errorMessage(err));
     } finally {
       setTogglingKey(null);
-    }
-  };
-
-  const handleRemoveRepo = async (repo: SkillRepo) => {
-    try {
-      const result = await removeSkillRepo(repo.host, repo.projectPath);
-      setRepos(result.repos);
-      onDiscoverSkillsChange?.(result.discoverSkills);
-      onReposChange?.(result.repos);
-    } catch (err) {
-      onError?.(errorMessage(err));
     }
   };
 
@@ -352,9 +394,15 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
         role="dialog"
         aria-modal="true"
         aria-label="来源管理"
-        onClick={onClose}
+        onClick={() => {
+          if (!adding && !patDialog && !keysDialogOpen && !addModalOpen && !deleteTarget) onClose();
+        }}
       >
-        <div className="drawer source-manage-drawer" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={drawerRef}
+          className="drawer source-manage-drawer"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="drawer-header-row">
             <div>
               <h2>来源管理</h2>
@@ -364,7 +412,14 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
               <button type="button" className="btn-keys-link" onClick={() => setKeysDialogOpen(true)}>
                 密钥管理
               </button>
-              <button type="button" className="btn-primary" onClick={() => setAddModalOpen(true)}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setAddError(null);
+                  setAddModalOpen(true);
+                }}
+              >
                 添加来源
               </button>
             </div>
@@ -450,7 +505,10 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                           <button
                             type="button"
                             className="btn-repo-remove"
-                            onClick={() => void handleRemoveHub(endpoint)}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget({ kind: 'hub', endpoint });
+                            }}
                             aria-label={`删除 ${endpoint.name}`}
                           >
                             删除
@@ -511,7 +569,10 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                           <button
                             type="button"
                             className="btn-repo-remove"
-                            onClick={() => void handleRemoveRepo(repo)}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget({ kind: 'repo', repo });
+                            }}
                             aria-label={`删除 ${path}`}
                           >
                             删除
@@ -542,11 +603,16 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
           onClick={() => {
             if (!adding) {
               setAddModalOpen(false);
+              setAddError(null);
               resetAddForm();
             }
           }}
         >
-          <div className="modal add-source-modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={addModalRef}
+            className="modal add-source-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3>添加来源</h3>
             <div className="text-tabs add-source-tabs" role="tablist">
               {(['hub', 'github', 'gitlab'] as const).map((tab) => (
@@ -556,7 +622,11 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                   role="tab"
                   className={`text-tab${addTab === tab ? ' active' : ''}`}
                   aria-selected={addTab === tab}
-                  onClick={() => setAddTab(tab)}
+                  disabled={adding}
+                  onClick={() => {
+                    setAddError(null);
+                    setAddTab(tab);
+                  }}
                 >
                   {tab === 'hub' ? 'Skill Hub' : tab === 'github' ? 'GitHub' : 'GitLab'}
                 </button>
@@ -570,7 +640,10 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                   <input
                     type="text"
                     value={hubName}
-                    onChange={(e) => setHubName(e.target.value)}
+                    onChange={(e) => {
+                      setHubName(e.target.value);
+                      if (addError) setAddError(null);
+                    }}
                     placeholder="公司 Skill Hub"
                     disabled={adding}
                   />
@@ -580,7 +653,10 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                   <input
                     type="text"
                     value={hubBaseUrl}
-                    onChange={(e) => setHubBaseUrl(e.target.value)}
+                    onChange={(e) => {
+                      setHubBaseUrl(e.target.value);
+                      if (addError) setAddError(null);
+                    }}
                     placeholder="https://hub.example.com"
                     disabled={adding}
                   />
@@ -593,7 +669,10 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                   <input
                     type="text"
                     value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      if (addError) setAddError(null);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void handleAddRepo();
                     }}
@@ -608,12 +687,21 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
               </div>
             )}
 
+            <div className="add-source-error-slot">
+              {addError && (
+                <p className="modal-error show" role="alert">
+                  {addError}
+                </p>
+              )}
+            </div>
+
             <div className="modal-actions">
               <button
                 type="button"
                 className="secondary-button"
                 onClick={() => {
                   setAddModalOpen(false);
+                  setAddError(null);
                   resetAddForm();
                 }}
                 disabled={adding}
@@ -657,6 +745,62 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
         onSubmit={handlePatSubmit}
         submitLabel={patDialog?.mode === 'add' ? '验证并添加' : '验证并保存'}
       />
+
+      {deleteTarget && (
+        <div
+          className="modal-overlay open source-delete-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sourceDeleteTitle"
+          onClick={() => {
+            if (!deleting) {
+              setDeleteTarget(null);
+              setDeleteError(null);
+            }
+          }}
+        >
+          <div ref={deleteModalRef} className="modal" onClick={(event) => event.stopPropagation()}>
+            <h3 id="sourceDeleteTitle">删除来源</h3>
+            <p>
+              确认删除{' '}
+              <strong>
+                {deleteTarget.kind === 'hub'
+                  ? deleteTarget.endpoint.name
+                  : repoShortPath(deleteTarget.repo)}
+              </strong>
+              ？删除后可以重新添加。
+            </p>
+            <div className="source-delete-error-slot">
+              {deleteError && (
+                <p className="modal-error show" role="alert">
+                  {deleteError}
+                </p>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="cancel"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={deleting}
+                onClick={() => void handleConfirmDelete()}
+              >
+                {deleting ? '删除中…' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

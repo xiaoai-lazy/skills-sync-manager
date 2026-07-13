@@ -62,8 +62,9 @@ describe('KeysManageDialog', () => {
   });
 
   it('shows an empty state when no GitLab repositories are configured', () => {
-    renderDialog([githubRepo]);
+    const { container } = renderDialog([githubRepo]);
     expect(screen.getByText('暂无已添加的 GitLab 来源仓库')).toBeInTheDocument();
+    expect(container.querySelector('.keys-manage-overlay')).toBeInTheDocument();
   });
 
   it('offers update and delete for authenticated hosts and authentication for unconfigured hosts', async () => {

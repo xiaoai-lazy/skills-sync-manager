@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import { useModalFocus } from '../hooks/useModalFocus';
 
 export interface DialogProps {
   open: boolean;
@@ -25,27 +26,12 @@ function Dialog(props: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = 'dialog-title';
 
-  useEffect(() => {
-    if (!open || !onClose || !closeOnEscape) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-
-    const focusable = dialogRef.current?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    focusable?.focus();
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open, onClose, closeOnEscape]);
+  useModalFocus({
+    open,
+    containerRef: dialogRef,
+    onEscape: onClose,
+    escapeEnabled: closeOnEscape,
+  });
 
   if (!open) return null;
 

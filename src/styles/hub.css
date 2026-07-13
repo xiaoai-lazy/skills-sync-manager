@@ -504,6 +504,14 @@
   max-width: 480px;
 }
 
+.add-source-error-slot {
+  min-height: 44px;
+}
+
+.add-source-error-slot .modal-error {
+  margin-bottom: 0;
+}
+
 .add-source-tabs {
   margin-bottom: 16px;
 }

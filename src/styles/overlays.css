@@ -161,6 +161,10 @@
   display: flex;
 }
 
+.keys-manage-overlay {
+  z-index: 120;
+}
+
 .modal {
   background: var(--surface);
   border-radius: var(--radius-xl);
@@ -284,8 +288,17 @@
 }
 
 .credential-confirm-overlay,
-.credential-pat-overlay {
+.credential-pat-overlay,
+.source-delete-overlay {
   z-index: 130;
+}
+
+.source-delete-error-slot {
+  min-height: 44px;
+}
+
+.source-delete-error-slot .modal-error {
+  margin-bottom: 0;
 }
 
 .credential-delete-repos {
