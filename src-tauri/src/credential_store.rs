@@ -83,9 +83,10 @@ pub fn list_configured_gitlab_hosts(config: &AppConfig) -> Vec<String> {
     config.gitlab_credential_hosts.clone()
 }
 
-/// Re-register GitLab hosts that still have a token in the OS keyring but are missing
-/// from config (e.g. after config reset/migration).
-pub fn reconcile_gitlab_credential_hosts(config: &mut AppConfig) -> bool {
+fn reconcile_gitlab_credential_hosts_with<F>(config: &mut AppConfig, get_token: F) -> bool
+where
+    F: Fn(&str) -> Result<Option<String>, AppError>,
+{
     let mut changed = false;
     let mut gitlab_hosts = config
         .skill_repos
@@ -98,17 +99,29 @@ pub fn reconcile_gitlab_credential_hosts(config: &mut AppConfig) -> bool {
     gitlab_hosts.dedup();
 
     for host in gitlab_hosts {
-        if get_gitlab_token(&host).ok().flatten().is_none() {
-            continue;
-        }
-        let before = config.gitlab_credential_hosts.len();
-        register_gitlab_host(config, &host);
-        if config.gitlab_credential_hosts.len() > before {
-            changed = true;
+        match get_token(&host) {
+            Ok(Some(_)) => {
+                let before = config.gitlab_credential_hosts.len();
+                register_gitlab_host(config, &host);
+                changed |= config.gitlab_credential_hosts.len() > before;
+            }
+            Ok(None) => {
+                let before = config.gitlab_credential_hosts.len();
+                config
+                    .gitlab_credential_hosts
+                    .retain(|existing| existing != &host);
+                changed |= config.gitlab_credential_hosts.len() < before;
+            }
+            Err(_) => {}
         }
     }
 
     changed
+}
+
+/// Keep configured GitLab credential hosts aligned with the OS credential store.
+pub fn reconcile_gitlab_credential_hosts(config: &mut AppConfig) -> bool {
+    reconcile_gitlab_credential_hosts_with(config, get_gitlab_token)
 }
 
 #[cfg(test)]
@@ -186,6 +199,48 @@ mod tests {
 
         assert!(!reconcile_gitlab_credential_hosts(&mut config));
         assert!(config.gitlab_credential_hosts.is_empty());
+    }
+
+    #[test]
+    fn reconcile_gitlab_credential_hosts_removes_stale_config_without_token() {
+        let host = "stale-token.example.test";
+        let mut config = AppConfig::default();
+        config.skill_repos.push(crate::models::SkillRepo {
+            host: host.to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "group/project".to_string(),
+            owner: "group".to_string(),
+            name: "project".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        });
+        register_gitlab_host(&mut config, host);
+
+        assert!(reconcile_gitlab_credential_hosts_with(&mut config, |_| Ok(None)));
+        assert!(config.gitlab_credential_hosts.is_empty());
+    }
+
+    #[test]
+    fn reconcile_gitlab_credential_hosts_keeps_state_when_keyring_read_fails() {
+        let host = "keyring-error.example.test";
+        let mut config = AppConfig::default();
+        config.skill_repos.push(crate::models::SkillRepo {
+            host: host.to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "group/project".to_string(),
+            owner: "group".to_string(),
+            name: "project".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        });
+        register_gitlab_host(&mut config, host);
+
+        assert!(!reconcile_gitlab_credential_hosts_with(&mut config, |_| {
+            Err(AppError::CredentialStore {
+                message: "read failed".to_string(),
+            })
+        }));
+        assert_eq!(config.gitlab_credential_hosts, vec![host.to_string()]);
     }
 
     #[test]
