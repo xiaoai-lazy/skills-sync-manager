@@ -20,6 +20,9 @@ Maintaining Skills across multiple Agent directories can easily create problems.
 - **In-app updates (v0.5)**: check GitHub Releases on startup; install in-app or defer until the next launch.
 - **Agent / Project targets (v0.5)**: sidebar **Agent** (global) and **Projects** tree; quick-add for Cursor, Claude Code, Codex, plus custom paths.
 - **Private Skill Hub (v0.6)**: connect self-hosted Skill Hub endpoints; browse by source tree (Skill Hub and target detail pages); upload installed Skills to Hub groups (including creating new groups).
+- **Source-aware startup refresh (v0.7)**: per-source toggles for GitHub / GitLab / Skill Hub in source management; silently refresh discovery cache for enabled sources on launch.
+- **GitLab credential management (v0.7)**: group PATs by host; confirm deletion with failure feedback; restore authentication from **密钥管理**.
+- **Source management UX (v0.7)**: nested-dialog focus trap and Escape handling; local error feedback, async submit, and safe delete; success/error Toast.
 - **Skill 中心 (v0.4+)**: browse, install, and update Skills from GitHub or self-hosted GitLab repos in the **Skill 中心** view.
 - **Self-hosted GitLab**: add private GitLab project URLs as Skill sources; authenticate per site with a Personal Access Token (PAT).
 - **Smart Paste**: paste a **GitHub** URL to preview and install a Skill into the main library in one step.
