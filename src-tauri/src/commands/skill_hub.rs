@@ -5,8 +5,8 @@ use crate::models::{
     AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
     PreviewAddRepoResult, SkillDiscoverCache,
     SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState, SkillRepo,
-    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState, StartupSkillRefreshResult,
-    SmartPastePreview, UpdateAllSkillsResult,
+    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState, StartupRefreshSettings,
+    StartupSkillRefreshResult, SmartPastePreview, UpdateAllSkillsResult,
 };
 use crate::skill_hub_endpoints;
 use crate::skill_repos;
@@ -195,6 +195,22 @@ pub async fn refresh_startup_skill_sources(
     store.save(&latest).map_err(|err| err.to_dto())?;
 
     Ok(result)
+}
+
+#[tauri::command]
+pub fn set_startup_refresh_settings(
+    app: AppHandle,
+    settings: StartupRefreshSettings,
+) -> Result<StartupRefreshSettings, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    apply_startup_refresh_settings(&mut config, settings.clone());
+    store.save(&config).map_err(|err| err.to_dto())?;
+    Ok(settings)
+}
+
+fn apply_startup_refresh_settings(config: &mut AppConfig, settings: StartupRefreshSettings) {
+    config.settings.startup_refresh = settings;
 }
 
 fn require_main_skills_dir(config: &AppConfig) -> Result<&Path, AppError> {
@@ -996,3 +1012,33 @@ mod tests {
         assert_eq!(states[0].state, SkillInstallState::Installed);
     }
 }
+    #[test]
+    fn apply_startup_refresh_settings_changes_only_settings() {
+        let mut config = AppConfig::default();
+        config.skill_repos.push(SkillRepo {
+            host: "github.com".to_string(),
+            provider: "github".to_string(),
+            project_path: "owner/repo".to_string(),
+            owner: "owner".to_string(),
+            name: "repo".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        });
+        config.skill_records.insert(
+            "record".to_string(),
+            crate::models::SkillRecord::default(),
+        );
+        let repos = config.skill_repos.clone();
+        let records = config.skill_records.clone();
+        let settings = StartupRefreshSettings {
+            github: true,
+            gitlab: false,
+            skill_hub: false,
+        };
+
+        apply_startup_refresh_settings(&mut config, settings.clone());
+
+        assert_eq!(config.settings.startup_refresh, settings);
+        assert_eq!(config.skill_repos, repos);
+        assert_eq!(config.skill_records, records);
+    }

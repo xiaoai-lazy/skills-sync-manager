@@ -29,6 +29,8 @@ import {
   listHubGroups,
   createHubGroup,
   uploadSkillToHub,
+  refreshStartupSkillSources,
+  setStartupRefreshSettings,
 } from '../api/skillHub';
 
 const sampleDiscoverable: DiscoverableSkill = {
@@ -51,6 +53,23 @@ beforeEach(() => {
 });
 
 describe('skillHub API', () => {
+  it('refreshStartupSkillSources invokes the startup-only command', async () => {
+    invokeMock.mockResolvedValue({ discoverSkills: [], pendingUpdates: [], warnings: [] });
+
+    await refreshStartupSkillSources();
+
+    expect(invokeMock).toHaveBeenCalledWith('refresh_startup_skill_sources');
+  });
+
+  it('setStartupRefreshSettings sends all source switches', async () => {
+    const settings = { github: true, gitlab: false, skillHub: true };
+    invokeMock.mockResolvedValue(settings);
+
+    await setStartupRefreshSettings(settings);
+
+    expect(invokeMock).toHaveBeenCalledWith('set_startup_refresh_settings', { settings });
+  });
+
   it('scanMainLibrary calls invoke with scan_main_library', async () => {
     invokeMock.mockResolvedValue({
       skills: [],

@@ -11,6 +11,8 @@ import type {
   SkillUpdateInfo,
   SkillWithTargetState,
   SmartPastePreview,
+  StartupRefreshSettings,
+  StartupSkillRefreshResult,
   UpdateAllSkillsResult,
 } from '../model/types';
 
@@ -20,6 +22,16 @@ export async function scanMainLibrary(): Promise<SkillHubLocalState> {
 
 export async function discoverSkills(force = false): Promise<DiscoverSkillsResult> {
   return invoke<DiscoverSkillsResult>('discover_skills', { force });
+}
+
+export async function refreshStartupSkillSources(): Promise<StartupSkillRefreshResult> {
+  return invoke<StartupSkillRefreshResult>('refresh_startup_skill_sources');
+}
+
+export async function setStartupRefreshSettings(
+  settings: StartupRefreshSettings,
+): Promise<StartupRefreshSettings> {
+  return invoke<StartupRefreshSettings>('set_startup_refresh_settings', { settings });
 }
 
 export async function checkSkillUpdates(): Promise<SkillUpdateInfo[]> {
