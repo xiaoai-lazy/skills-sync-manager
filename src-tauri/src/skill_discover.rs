@@ -67,6 +67,43 @@ pub fn discover_repo_skills(
     ))
 }
 
+pub fn discover_repos_strict(
+    config: &AppConfig,
+    main_dir: Option<&Path>,
+    app_data_dir: &Path,
+    provider: &str,
+) -> Result<Vec<DiscoverableSkill>, AppError> {
+    discover_repos_strict_with_hook(config, main_dir, provider, |repo| {
+        discover_repo_skills(repo, main_dir, app_data_dir, false)
+    })
+}
+
+fn discover_repos_strict_with_hook<F>(
+    config: &AppConfig,
+    main_dir: Option<&Path>,
+    provider: &str,
+    mut discover_repo: F,
+) -> Result<Vec<DiscoverableSkill>, AppError>
+where
+    F: FnMut(&SkillRepo) -> Result<Vec<DiscoverableSkill>, AppError>,
+{
+    let mut skills = Vec::new();
+    for repo in config
+        .skill_repos
+        .iter()
+        .filter(|repo| repo.enabled && repo.provider == provider)
+    {
+        skills.extend(discover_repo(repo)?);
+    }
+
+    let filtered = filter_uninstalled_discoverable_skills(
+        skills,
+        main_dir,
+        Some(&config.skill_records),
+    );
+    Ok(deduplicate_discoverable_skills(filtered))
+}
+
 /// 将单个仓库的 discover 结果合并进缓存，不影响其他来源仓库的缓存条目。
 pub fn merge_repo_into_discover_cache(
     config: &mut AppConfig,
@@ -963,3 +1000,65 @@ mod tests {
         Ok(deduplicate_discoverable_skills(filtered))
     }
 }
+    #[test]
+    fn strict_repo_discovery_calls_only_selected_provider() {
+        let mut config = AppConfig::default();
+        config.skill_repos = vec![
+            SkillRepo {
+                host: "github.com".to_string(),
+                provider: "github".to_string(),
+                project_path: "owner/github".to_string(),
+                owner: "owner".to_string(),
+                name: "github".to_string(),
+                branch: "main".to_string(),
+                enabled: true,
+            },
+            SkillRepo {
+                host: "gitlab.internal".to_string(),
+                provider: "gitlab".to_string(),
+                project_path: "team/gitlab".to_string(),
+                owner: "team".to_string(),
+                name: "gitlab".to_string(),
+                branch: "main".to_string(),
+                enabled: true,
+            },
+        ];
+        let mut calls = Vec::new();
+
+        let skills = discover_repos_strict_with_hook(&config, None, "gitlab", |repo| {
+            calls.push(repo.provider.clone());
+            Ok(vec![DiscoverableSkill {
+                key: repo.name.clone(),
+                source: repo.provider.clone(),
+                repo_host: repo.host.clone(),
+                ..DiscoverableSkill::default()
+            }])
+        })
+        .expect("strict discovery");
+
+        assert_eq!(calls, vec!["gitlab"]);
+        assert_eq!(skills.len(), 1);
+    }
+
+    #[test]
+    fn strict_repo_discovery_fails_when_selected_repo_fails() {
+        let mut config = AppConfig::default();
+        config.skill_repos = vec![SkillRepo {
+            host: "gitlab.internal".to_string(),
+            provider: "gitlab".to_string(),
+            project_path: "team/broken".to_string(),
+            owner: "team".to_string(),
+            name: "broken".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        }];
+
+        let result = discover_repos_strict_with_hook(&config, None, "gitlab", |_| {
+            Err(AppError::Io {
+                path: None,
+                message: "unavailable".to_string(),
+            })
+        });
+
+        assert!(result.is_err());
+    }

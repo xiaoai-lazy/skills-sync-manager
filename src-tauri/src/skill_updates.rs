@@ -1,5 +1,5 @@
 use crate::models::{
-    AppConfig, AppError, RepoRef, SkillRecord, SkillUpdateInfo, UpdateAllSkillsFailure,
+    AppConfig, AppError, RepoRef, SkillRecord, SkillRepo, SkillUpdateInfo, UpdateAllSkillsFailure,
     UpdateAllSkillsResult,
 };
 use crate::skill_discover::iso8601_timestamp_now;
@@ -181,6 +181,97 @@ where
                 mark_record_source_missing(config, &record_key);
             }
             Err(_) => {}
+        }
+    }
+
+    updates.sort_by(|left, right| left.dir_name.cmp(&right.dir_name));
+    Ok(updates)
+}
+
+pub fn check_repo_updates_strict(
+    config: &AppConfig,
+    main_dir: &Path,
+    provider: &str,
+) -> Result<Vec<SkillUpdateInfo>, AppError> {
+    check_repo_updates_strict_with_hook(config, main_dir, provider, |repo| {
+        skill_downloader::download_repo_ref(&repo.to_repo_ref())
+    })
+}
+
+fn check_repo_updates_strict_with_hook<F>(
+    config: &AppConfig,
+    main_dir: &Path,
+    provider: &str,
+    mut download_repo: F,
+) -> Result<Vec<SkillUpdateInfo>, AppError>
+where
+    F: FnMut(&SkillRepo) -> Result<PathBuf, AppError>,
+{
+    let mut updates = Vec::new();
+    for repo in config
+        .skill_repos
+        .iter()
+        .filter(|repo| repo.enabled && repo.provider == provider)
+    {
+        let repo_root = download_repo(repo)?;
+        for (record_key, record) in &config.skill_records {
+            if !skill_repos::record_belongs_to_skill_repo(record, repo) {
+                continue;
+            }
+            if let Some(info) =
+                compare_record_to_repo_root(record_key, record, main_dir, &repo_root)?
+            {
+                updates.push(info);
+            }
+        }
+    }
+    updates.sort_by(|left, right| left.dir_name.cmp(&right.dir_name));
+    Ok(updates)
+}
+
+pub fn check_hub_updates_strict(
+    config: &mut AppConfig,
+    main_dir: &Path,
+) -> Result<Vec<SkillUpdateInfo>, AppError> {
+    check_hub_updates_strict_with_hook(config, main_dir, |base_url, group, skill_id| {
+        skill_hub_client::download_archive(base_url, group, skill_id)
+    })
+}
+
+fn check_hub_updates_strict_with_hook<G>(
+    config: &mut AppConfig,
+    main_dir: &Path,
+    download_hub_archive: G,
+) -> Result<Vec<SkillUpdateInfo>, AppError>
+where
+    G: Fn(&str, &str, &str) -> Result<PathBuf, AppError>,
+{
+    let hub_keys = config
+        .skill_records
+        .iter()
+        .filter(|(_, record)| {
+            record.source == "skillhub"
+                && !record.source_missing
+                && is_hub_endpoint_enabled(config, &record.hub_endpoint_id)
+        })
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let mut updates = Vec::new();
+
+    for record_key in hub_keys {
+        let record = config
+            .skill_records
+            .get(&record_key)
+            .cloned()
+            .expect("collected record key must exist");
+        if let Some(info) = check_hub_record(
+            &record_key,
+            &record,
+            main_dir,
+            config,
+            &download_hub_archive,
+        )? {
+            updates.push(info);
         }
     }
 
@@ -1255,3 +1346,83 @@ mod tests {
         assert!(config.skill_update_cache.updates.is_empty());
     }
 }
+    #[test]
+    fn strict_repo_update_check_calls_only_selected_provider() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("main dir");
+        let mut config = AppConfig::default();
+        config.skill_repos = vec![
+            SkillRepo {
+                host: "github.com".to_string(),
+                provider: "github".to_string(),
+                project_path: "owner/github".to_string(),
+                owner: "owner".to_string(),
+                name: "github".to_string(),
+                branch: "main".to_string(),
+                enabled: true,
+            },
+            SkillRepo {
+                host: "gitlab.internal".to_string(),
+                provider: "gitlab".to_string(),
+                project_path: "team/gitlab".to_string(),
+                owner: "team".to_string(),
+                name: "gitlab".to_string(),
+                branch: "main".to_string(),
+                enabled: true,
+            },
+        ];
+        let mut calls = Vec::new();
+
+        let updates = check_repo_updates_strict_with_hook(
+            &config,
+            &main_dir,
+            "gitlab",
+            |repo| {
+                calls.push(repo.provider.clone());
+                Ok(temp.path().to_path_buf())
+            },
+        )
+        .expect("strict repo updates");
+
+        assert!(updates.is_empty());
+        assert_eq!(calls, vec!["gitlab"]);
+    }
+
+    #[test]
+    fn strict_hub_update_check_propagates_enabled_endpoint_failure() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("main dir");
+        let mut config = AppConfig::default();
+        config.skill_hub_endpoints.push(crate::models::SkillHubEndpoint {
+            id: "company-hub".to_string(),
+            name: "Company Hub".to_string(),
+            base_url: "https://hub.internal".to_string(),
+            enabled: true,
+        });
+        config.skill_records.insert(
+            "hub-key".to_string(),
+            SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: "hub-key".to_string(),
+                hub_endpoint_id: "company-hub".to_string(),
+                hub_skill_group: "tools".to_string(),
+                hub_skill_id: "tdd".to_string(),
+                ..SkillRecord::default()
+            },
+        );
+
+        let result = check_hub_updates_strict_with_hook(
+            &mut config,
+            &main_dir,
+            |_, _, _| {
+                Err(AppError::Io {
+                    path: None,
+                    message: "hub unavailable".to_string(),
+                })
+            },
+        );
+
+        assert!(result.is_err());
+    }

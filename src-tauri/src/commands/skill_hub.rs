@@ -5,7 +5,7 @@ use crate::models::{
     AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
     PreviewAddRepoResult, SkillDiscoverCache,
     SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState, SkillRepo,
-    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState,
+    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState, StartupSkillRefreshResult,
     SmartPastePreview, UpdateAllSkillsResult,
 };
 use crate::skill_hub_endpoints;
@@ -148,6 +148,51 @@ pub async fn discover_skills(
         .map_err(|err| err.to_dto())?;
     crate::runtime_cache::persist_from_config(&app_data_dir, &config).map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())?;
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn refresh_startup_skill_sources(
+    app: AppHandle,
+) -> Result<StartupSkillRefreshResult, AppErrorDto> {
+    let _discover_guard = try_begin_discover().map_err(|err| err.to_dto())?;
+    let _updates_guard = try_begin_updates_check().map_err(|err| err.to_dto())?;
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    let main_dir = config.settings.main_skills_dir.clone();
+    let task_app_data_dir = app_data_dir.clone();
+
+    let (refreshed, result) = tauri::async_runtime::spawn_blocking(move || {
+        let result = crate::startup_refresh::refresh_enabled_sources(
+            &mut config,
+            main_dir.as_deref(),
+            &task_app_data_dir,
+        );
+        (config, result)
+    })
+    .await
+    .map_err(|err| AppErrorDto {
+        code: "startupRefreshTaskFailed".to_string(),
+        message: format!("启动刷新任务异常: {}", err),
+    })?;
+
+    let mut latest = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut latest);
+    latest.skill_discover_cache = refreshed.skill_discover_cache;
+    latest.skill_update_cache = refreshed.skill_update_cache;
+    crate::runtime_cache::persist_from_config(&app_data_dir, &latest)
+        .map_err(|err| err.to_dto())?;
+    store.save(&latest).map_err(|err| err.to_dto())?;
 
     Ok(result)
 }

@@ -60,6 +60,7 @@ pub fn run() {
             commands::skill_hub::scan_main_library,
             commands::skill_hub::get_target_skill_states,
             commands::skill_hub::discover_skills,
+            commands::skill_hub::refresh_startup_skill_sources,
             commands::skill_hub::install_hub_skill,
             commands::skill_hub::check_skill_updates,
             commands::skill_hub::update_skill,

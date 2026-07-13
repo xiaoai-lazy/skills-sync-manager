@@ -67,6 +67,24 @@ pub fn discover_all(config: &AppConfig) -> (Vec<DiscoverableSkill>, Vec<String>)
     (skills, warnings)
 }
 
+pub fn discover_all_strict(config: &AppConfig) -> Result<Vec<DiscoverableSkill>, AppError> {
+    let mut skills = Vec::new();
+    for endpoint in config
+        .skill_hub_endpoints
+        .iter()
+        .filter(|endpoint| endpoint.enabled)
+    {
+        skills.extend(discover_hub_endpoint(endpoint)?);
+    }
+
+    let filtered = filter_uninstalled_discoverable_skills(
+        skills,
+        config.settings.main_skills_dir.as_deref(),
+        Some(&config.skill_records),
+    );
+    Ok(deduplicate_discoverable_skills(filtered))
+}
+
 fn hub_endpoint_display_label(endpoint: &SkillHubEndpoint) -> String {
     if endpoint.name.is_empty() {
         endpoint.base_url.clone()
