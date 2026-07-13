@@ -5,7 +5,7 @@ export interface GitLabPatDialogProps {
   open: boolean;
   host: string;
   description: string;
-  mode?: 'add' | 'update';
+  mode?: 'add' | 'authenticate' | 'update';
   onClose: () => void;
   onSubmit: (pat: string) => Promise<void>;
   submitLabel: string;
@@ -63,6 +63,11 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
       <>
         更新 <strong>{description}</strong> 的访问密钥。请输入新的个人访问令牌（PAT）。
       </>
+    ) : mode === 'authenticate' ? (
+      <>
+        为 GitLab 站点 <strong>{description}</strong>{' '}
+        配置个人访问令牌（PAT）。同一站点下的来源仓库共用此密钥。
+      </>
     ) : (
       <>
         仓库 <strong>{description}</strong> 需要登录后访问。请输入对该站点有读权限的个人访问令牌（PAT）。
@@ -73,7 +78,7 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
 
   return (
     <div
-      className="modal-overlay open"
+      className="modal-overlay open credential-pat-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="patModalTitle"

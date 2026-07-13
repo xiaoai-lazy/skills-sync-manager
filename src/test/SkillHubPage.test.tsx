@@ -261,6 +261,70 @@ describe('SkillHubPage', () => {
     expect(github).not.toBeChecked();
   });
 
+  it('authenticates an unconfigured GitLab host from key management', async () => {
+    const user = userEvent.setup();
+    setupInvokeMocks([mockGitLabRepo]);
+    renderHub();
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    await user.click(screen.getByRole('button', { name: '密钥管理' }));
+    await user.click(await screen.findByRole('button', { name: '去认证' }));
+
+    expect(screen.getByRole('dialog', { name: '配置 GitLab 访问密钥' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('访问密钥（PAT）'), 'glpat-test');
+    await user.click(screen.getByRole('button', { name: '验证并保存' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('update_gitlab_credential', {
+        host: 'gitlab.example.com',
+        pat: 'glpat-test',
+      });
+    });
+    expect(screen.getByRole('dialog', { name: '密钥管理' })).toBeInTheDocument();
+  });
+
+  it('refreshes the host to unconfigured after confirmed credential deletion', async () => {
+    const user = userEvent.setup();
+    let credentialHosts = ['gitlab.example.com'];
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_skill_repos') return Promise.resolve([mockGitLabRepo]);
+      if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_gitlab_credentials') return Promise.resolve(credentialHosts);
+      if (cmd === 'remove_gitlab_credential') {
+        credentialHosts = [];
+        return Promise.resolve();
+      }
+      return Promise.resolve(null);
+    });
+    renderHub();
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    await user.click(screen.getByRole('button', { name: '密钥管理' }));
+    const keysDialog = screen.getByRole('dialog', { name: '密钥管理' });
+    await user.click(await within(keysDialog).findByRole('button', { name: '删除' }));
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+
+    expect(await screen.findByRole('button', { name: '去认证' })).toBeInTheDocument();
+    expect(screen.getByText(/未配置认证/)).toBeInTheDocument();
+  });
+
+  it('Escape closes only the PAT dialog and leaves key management open', async () => {
+    const user = userEvent.setup();
+    setupInvokeMocks([mockGitLabRepo]);
+    renderHub();
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    await user.click(screen.getByRole('button', { name: '密钥管理' }));
+    await user.click(await screen.findByRole('button', { name: '去认证' }));
+    await user.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('dialog', { name: '配置 GitLab 访问密钥' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '密钥管理' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '来源管理' })).toBeInTheDocument();
+  });
+
   it('renders hero title, stat pills, and tabs', async () => {
     renderHub();
 

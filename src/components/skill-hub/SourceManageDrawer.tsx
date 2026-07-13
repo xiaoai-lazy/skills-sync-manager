@@ -48,7 +48,7 @@ interface PatDialogState {
   host: string;
   url: string;
   projectPath: string;
-  mode: 'add' | 'update';
+  mode: 'add' | 'authenticate' | 'update';
 }
 
 function repoShortPath(repo: SkillRepo): string {
@@ -248,7 +248,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     const { host, url: addUrl, mode } = patDialog;
     await validateGitlabPat(host, pat);
 
-    if (mode === 'update') {
+    if (mode === 'authenticate' || mode === 'update') {
       await updateGitlabCredential(host, pat);
       await loadConfiguredHosts();
       return;
@@ -314,16 +314,15 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
   };
 
   const handleRemoveCredential = async (host: string) => {
-    try {
-      await removeGitlabCredential(host);
-      await loadConfiguredHosts();
-    } catch (err) {
-      onError?.(errorMessage(err));
-    }
+    await removeGitlabCredential(host);
+    await loadConfiguredHosts();
+  };
+
+  const handleAuthenticateCredential = (host: string) => {
+    setPatDialog({ host, url: '', projectPath: host, mode: 'authenticate' });
   };
 
   const handleUpdateCredential = (host: string) => {
-    setKeysDialogOpen(false);
     setPatDialog({ host, url: '', projectPath: host, mode: 'update' });
   };
 
@@ -636,8 +635,11 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
 
       <KeysManageDialog
         open={keysDialogOpen}
-        hosts={configuredHosts}
+        repos={repos}
+        configuredHosts={configuredHosts}
+        nestedDialogOpen={patDialog !== null}
         onClose={() => setKeysDialogOpen(false)}
+        onAuthenticate={handleAuthenticateCredential}
         onUpdate={handleUpdateCredential}
         onRemove={handleRemoveCredential}
       />
@@ -646,14 +648,14 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
         open={patDialog !== null}
         host={patDialog?.host ?? ''}
         description={
-          patDialog?.mode === 'update'
+          patDialog?.mode === 'update' || patDialog?.mode === 'authenticate'
             ? (patDialog?.host ?? '')
             : (patDialog?.projectPath ?? '')
         }
         mode={patDialog?.mode ?? 'add'}
         onClose={() => setPatDialog(null)}
         onSubmit={handlePatSubmit}
-        submitLabel={patDialog?.mode === 'update' ? '验证并保存' : '验证并添加'}
+        submitLabel={patDialog?.mode === 'add' ? '验证并添加' : '验证并保存'}
       />
     </>
   );

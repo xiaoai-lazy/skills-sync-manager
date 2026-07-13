@@ -130,4 +130,22 @@ describe('GitLabPatDialog', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('describes host authentication without claiming the repository is private', () => {
+    render(
+      <GitLabPatDialog
+        open={true}
+        host="gitlab.example.com"
+        description="gitlab.example.com"
+        mode="authenticate"
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        submitLabel="验证并保存"
+      />,
+    );
+
+    expect(screen.getByText(/为 GitLab 站点/)).toHaveTextContent('gitlab.example.com');
+    expect(screen.queryByText(/需要登录后访问/)).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveClass('credential-pat-overlay');
+  });
 });
