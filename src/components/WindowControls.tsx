@@ -1,15 +1,12 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isMacOS } from '../utils/platform';
 
-function WindowControls() {
-  if (!isTauri()) {
-    return null;
-  }
-
+function WindowsControls() {
   const appWindow = getCurrentWindow();
 
   return (
-    <div className="window-controls">
+    <div className="window-controls window-controls--windows">
       <button
         type="button"
         className="window-btn"
@@ -51,6 +48,53 @@ function WindowControls() {
       </button>
     </div>
   );
+}
+
+function MacControls() {
+  const appWindow = getCurrentWindow();
+
+  return (
+    <div className="window-controls window-controls--mac">
+      <button
+        type="button"
+        className="window-btn window-btn-traffic window-btn-close"
+        aria-label="关闭"
+        onClick={() => void appWindow.close()}
+      >
+        <svg className="traffic-icon" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+          <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-btn window-btn-traffic window-btn-minimize"
+        aria-label="最小化"
+        onClick={() => void appWindow.minimize()}
+      >
+        <svg className="traffic-icon" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+          <path d="M1.5 4h5" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-btn window-btn-traffic window-btn-maximize"
+        aria-label="最大化"
+        onClick={() => void appWindow.toggleMaximize()}
+      >
+        <svg className="traffic-icon" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+          <path d="M4 1.5v5M1.5 4h5" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function WindowControls() {
+  if (!isTauri()) {
+    return null;
+  }
+
+  return isMacOS() ? <MacControls /> : <WindowsControls />;
 }
 
 export default WindowControls;

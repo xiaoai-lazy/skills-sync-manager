@@ -21,10 +21,19 @@
   user-select: none;
 }
 
+.app-chrome--mac {
+  justify-content: flex-start;
+  padding-left: 12px;
+}
+
 .window-controls {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.window-controls--mac {
+  gap: 8px;
 }
 
 .window-btn {
@@ -39,7 +48,8 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    filter var(--transition-fast);
 }
 
 .window-btn:hover {
@@ -50,6 +60,57 @@
 .window-btn-close:hover {
   background: var(--danger);
   color: #fff;
+}
+
+/* macOS traffic lights */
+.window-btn-traffic {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  color: transparent;
+}
+
+.window-btn-traffic .traffic-icon {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.window-controls--mac:hover .window-btn-traffic .traffic-icon,
+.window-btn-traffic:focus-visible .traffic-icon {
+  opacity: 1;
+}
+
+.window-btn-traffic.window-btn-close {
+  background: #ff5f57;
+  color: #4d0000;
+}
+
+.window-btn-traffic.window-btn-close:hover {
+  background: #ff5f57;
+  filter: brightness(0.92);
+  color: #4d0000;
+}
+
+.window-btn-traffic.window-btn-minimize {
+  background: #febc2e;
+  color: #5a3b00;
+}
+
+.window-btn-traffic.window-btn-minimize:hover {
+  background: #febc2e;
+  filter: brightness(0.92);
+  color: #5a3b00;
+}
+
+.window-btn-traffic.window-btn-maximize {
+  background: #28c840;
+  color: #0b3d12;
+}
+
+.window-btn-traffic.window-btn-maximize:hover {
+  background: #28c840;
+  filter: brightness(0.92);
+  color: #0b3d12;
 }
 
 /* App shell — gray rounded chassis (Marvis-style) */

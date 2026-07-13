@@ -16,6 +16,7 @@ import TargetFormDialog from './components/TargetFormDialog';
 import AddTargetDialog from './components/AddTargetDialog';
 import ProjectFormDialog from './components/ProjectFormDialog';
 import WindowControls from './components/WindowControls';
+import { isMacOS } from './utils/platform';
 import UpdateDialog from './components/UpdateDialog';
 import { checkAppUpdate, installAppUpdate } from './api/updater';
 import { errorMessage } from './utils/errorMessage';
@@ -299,7 +300,10 @@ function App() {
 
     <div className="app-frame">
 
-      <header className="app-chrome" data-tauri-drag-region>
+      <header
+        className={`app-chrome${isMacOS() ? ' app-chrome--mac' : ''}`}
+        data-tauri-drag-region
+      >
 
         <WindowControls />
 
