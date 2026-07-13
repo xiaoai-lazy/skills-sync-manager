@@ -25,6 +25,7 @@ pub mod skill_smart_paste;
 pub mod skill_storage;
 pub mod storage_keys;
 pub mod skill_updates;
+pub mod startup_refresh;
 pub mod target_registry;
 pub mod time_util;
 
