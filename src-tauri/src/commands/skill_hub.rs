@@ -464,7 +464,8 @@ pub fn list_gitlab_credentials(app: AppHandle) -> Result<Vec<String>, AppErrorDt
 pub fn remove_gitlab_credential(app: AppHandle, host: String) -> Result<(), AppErrorDto> {
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let mut config = store.load().map_err(|err| err.to_dto())?;
-    credential_store::unregister_gitlab_host(&mut config, &host);
+    credential_store::unregister_gitlab_host(&mut config, &host)
+        .map_err(|err| err.to_dto())?;
     store.save(&config).map_err(|err| err.to_dto())
 }
 

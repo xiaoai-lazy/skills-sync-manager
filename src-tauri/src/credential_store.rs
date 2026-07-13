@@ -59,12 +59,24 @@ pub fn register_gitlab_host(config: &mut AppConfig, host: &str) {
     }
 }
 
-pub fn unregister_gitlab_host(config: &mut AppConfig, host: &str) {
+fn unregister_gitlab_host_with<F>(
+    config: &mut AppConfig,
+    host: &str,
+    delete_token: F,
+) -> Result<(), AppError>
+where
+    F: FnOnce(&str) -> Result<(), AppError>,
+{
+    delete_token(host)?;
     let normalized = normalize_host(host);
     config
         .gitlab_credential_hosts
         .retain(|existing| existing != &normalized);
-    let _ = remove_gitlab_token(host);
+    Ok(())
+}
+
+pub fn unregister_gitlab_host(config: &mut AppConfig, host: &str) -> Result<(), AppError> {
+    unregister_gitlab_host_with(config, host, remove_gitlab_token)
 }
 
 pub fn list_configured_gitlab_hosts(config: &AppConfig) -> Vec<String> {
@@ -177,17 +189,36 @@ mod tests {
     }
 
     #[test]
-    fn unregister_gitlab_host_removes_host_and_token() {
+    fn unregister_gitlab_host_removes_config_after_token_delete_succeeds() {
         let host = "unregister.example.test";
-        let _ = remove_gitlab_token(host);
-        set_gitlab_token(host, "glpat-unregister").expect("set");
-
         let mut config = AppConfig::default();
         register_gitlab_host(&mut config, host);
-        assert_eq!(config.gitlab_credential_hosts.len(), 1);
 
-        unregister_gitlab_host(&mut config, host);
+        let mut deleted = false;
+        unregister_gitlab_host_with(&mut config, host, |_| {
+            deleted = true;
+            Ok(())
+        })
+        .expect("unregister");
+
+        assert!(deleted);
         assert!(config.gitlab_credential_hosts.is_empty());
-        assert_eq!(get_gitlab_token(host).unwrap(), None);
+    }
+
+    #[test]
+    fn unregister_gitlab_host_keeps_config_when_token_delete_fails() {
+        let host = "unregister.example.test";
+        let mut config = AppConfig::default();
+        register_gitlab_host(&mut config, host);
+
+        let error = unregister_gitlab_host_with(&mut config, host, |_| {
+            Err(AppError::CredentialStore {
+                message: "delete failed".to_string(),
+            })
+        })
+        .expect_err("delete should fail");
+
+        assert!(matches!(error, AppError::CredentialStore { .. }));
+        assert_eq!(config.gitlab_credential_hosts, vec![host.to_string()]);
     }
 }
