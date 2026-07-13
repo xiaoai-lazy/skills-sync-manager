@@ -30,8 +30,7 @@ export type UseAppBootstrapArgs = {
   selectedTargetId: string | null;
   applyRemoteState: (next: AppState) => void;
   syncFromAppState: (state: AppState) => void;
-  runBackgroundDiscover: () => Promise<void>;
-  runBackgroundCheckUpdates: () => Promise<void>;
+  runStartupRefresh: () => Promise<void>;
 };
 
 export function useAppBootstrap({
@@ -39,8 +38,7 @@ export function useAppBootstrap({
   selectedTargetId,
   applyRemoteState,
   syncFromAppState,
-  runBackgroundDiscover,
-  runBackgroundCheckUpdates,
+  runStartupRefresh,
 }: UseAppBootstrapArgs) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,12 +97,8 @@ export function useAppBootstrap({
   useEffect(() => {
     if (!appState || startupBackgroundDone.current) return;
     startupBackgroundDone.current = true;
-    // Serial: avoid parallel load/save races between discover and checkUpdates.
-    void (async () => {
-      await runBackgroundDiscover();
-      await runBackgroundCheckUpdates();
-    })();
-  }, [appState, runBackgroundDiscover, runBackgroundCheckUpdates]);
+    void runStartupRefresh();
+  }, [appState, runStartupRefresh]);
 
   return {
     loading,

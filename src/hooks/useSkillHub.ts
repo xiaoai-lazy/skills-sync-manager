@@ -1,12 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { AppState, DiscoverableSkill, SkillUpdateInfo } from '../model/types';
-import {
-  checkSkillUpdates,
-  discoverSkills,
-  scanMainLibrary,
-} from '../api/skillHub';
-import { errorMessage } from '../utils/errorMessage';
-import { isInProgressError } from '../utils/ipcError';
+import { refreshStartupSkillSources, scanMainLibrary } from '../api/skillHub';
 import { emptyHubState, hubStateFromAppState } from '../utils/hubStateFromAppState';
 
 type SetAppState = Dispatch<SetStateAction<AppState | null>>;
@@ -16,14 +10,11 @@ export function useSkillHub(args: {
   setAppState: SetAppState;
   setError: (message: string | null) => void;
 }) {
-  const { appState, setAppState, setError } = args;
+  const { appState, setAppState } = args;
 
-  const [discoverSkillsList, setDiscoverSkillsList] = useState<DiscoverableSkill[]>(
-    []
-  );
+  const [discoverSkillsList, setDiscoverSkillsList] = useState<DiscoverableSkill[]>([]);
   const [pendingUpdates, setPendingUpdates] = useState<SkillUpdateInfo[]>([]);
-  const discoverInFlight = useRef(false);
-  const checkInFlight = useRef(false);
+  const startupRefreshInFlight = useRef(false);
 
   const hubState = useMemo(
     () => (appState ? hubStateFromAppState(appState) : emptyHubState),
@@ -50,40 +41,19 @@ export function useSkillHub(args: {
     });
   }, [setAppState]);
 
-  const runBackgroundDiscover = useCallback(async (): Promise<void> => {
-    if (discoverInFlight.current) return;
-    discoverInFlight.current = true;
+  const runStartupRefresh = useCallback(async (): Promise<void> => {
+    if (startupRefreshInFlight.current) return;
+    startupRefreshInFlight.current = true;
     try {
-      const result = await discoverSkills();
-      setDiscoverSkillsList(result.skills);
-      if (result.warnings.length > 0 && result.skills.length === 0) {
-        setError(result.warnings.join('；'));
-      }
-    } catch (err) {
-      // Startup/background: InProgress is expected under overlap — stay silent.
-      if (!isInProgressError(err)) {
-        setError(errorMessage(err));
-      }
+      const result = await refreshStartupSkillSources();
+      setDiscoverSkillsList(result.discoverSkills);
+      setPendingUpdates(result.pendingUpdates);
+    } catch {
+      // Startup refresh is best-effort; keep displaying the loaded cache.
     } finally {
-      discoverInFlight.current = false;
+      startupRefreshInFlight.current = false;
     }
-  }, [setError]);
-
-  const runBackgroundCheckUpdates = useCallback(async (): Promise<void> => {
-    if (checkInFlight.current) return;
-    checkInFlight.current = true;
-    try {
-      const updates = await checkSkillUpdates();
-      setPendingUpdates(updates);
-      await refreshHub();
-    } catch (err) {
-      if (!isInProgressError(err)) {
-        setError(errorMessage(err));
-      }
-    } finally {
-      checkInFlight.current = false;
-    }
-  }, [refreshHub, setError]);
+  }, []);
 
   return {
     hubState,
@@ -93,7 +63,6 @@ export function useSkillHub(args: {
     setPendingUpdates,
     syncFromAppState,
     refreshHub,
-    runBackgroundDiscover,
-    runBackgroundCheckUpdates,
+    runStartupRefresh,
   };
 }

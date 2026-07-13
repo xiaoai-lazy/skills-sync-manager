@@ -104,8 +104,7 @@ function App() {
     setPendingUpdates,
     syncFromAppState: syncHubFromAppState,
     refreshHub,
-    runBackgroundDiscover,
-    runBackgroundCheckUpdates,
+    runStartupRefresh,
   } = useSkillHub({
     appState,
     setAppState,
@@ -127,8 +126,7 @@ function App() {
     selectedTargetId,
     applyRemoteState,
     syncFromAppState: syncHubFromAppState,
-    runBackgroundDiscover,
-    runBackgroundCheckUpdates,
+    runStartupRefresh,
   });
 
   setErrorRef.current = setError;

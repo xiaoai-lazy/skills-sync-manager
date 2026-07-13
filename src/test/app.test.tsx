@@ -53,6 +53,8 @@ vi.mock('../api/skillHub', () => ({
 
   checkSkillUpdates: vi.fn(),
 
+  refreshStartupSkillSources: vi.fn(),
+
   getTargetSkillStates: vi.fn(),
 
   getSkillRepos: vi.fn().mockResolvedValue([]),
@@ -110,6 +112,8 @@ import {
   discoverSkills,
 
   checkSkillUpdates,
+
+  refreshStartupSkillSources,
 
   getTargetSkillStates,
 
@@ -1498,7 +1502,17 @@ describe('App', () => {
 
 
 
-  it('runs background discover and check updates on startup', async () => {
+  it('runs the source-aware startup refresh instead of full refresh APIs', async () => {
+
+    vi.mocked(refreshStartupSkillSources).mockResolvedValue({
+
+      discoverSkills: [],
+
+      pendingUpdates: [],
+
+      warnings: [],
+
+    });
 
     render(<App />);
 
@@ -1508,11 +1522,33 @@ describe('App', () => {
 
     await waitFor(() => {
 
-      expect(discoverSkills).toHaveBeenCalled();
+      expect(refreshStartupSkillSources).toHaveBeenCalledTimes(1);
 
-      expect(checkSkillUpdates).toHaveBeenCalled();
+      expect(discoverSkills).not.toHaveBeenCalled();
+
+      expect(checkSkillUpdates).not.toHaveBeenCalled();
 
     });
+
+  });
+
+
+
+  it('keeps startup refresh failures silent', async () => {
+
+    vi.mocked(refreshStartupSkillSources).mockRejectedValue(new Error('internal hub offline'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Skill 中心' });
+
+    await waitFor(() => {
+
+      expect(refreshStartupSkillSources).toHaveBeenCalledTimes(1);
+
+    });
+
+    expect(screen.queryByText('internal hub offline')).not.toBeInTheDocument();
 
   });
 
