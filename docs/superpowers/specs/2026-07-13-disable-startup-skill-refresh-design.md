@@ -1,51 +1,53 @@
-# Disable Startup Skill Refresh Design
+# 禁止启动时自动刷新 Skill 的设计
 
-> Date: 2026-07-13
-> Status: Approved direction, pending written-spec review
+> 日期：2026-07-13
+> 状态：方向已确认，等待书面规格评审
 
-## Goal
+## 目标
 
-Stop automatic Skill discovery and Skill update checks during application startup. Startup must load and display the existing local state and runtime cache without contacting configured Skill repositories or Skill Hub endpoints.
+应用启动时不再自动执行 Skill 来源发现和 Skill 更新检查。启动过程只加载并展示现有本地状态与运行时缓存，不访问已配置的 Skill 仓库或 Skill Hub 服务。
 
-## Scope
+## 改造范围
 
-- Remove the startup effect that calls `discoverSkills` and `checkSkillUpdates` after `getAppState` succeeds.
-- Continue hydrating discoverable Skills and pending updates from the cached values returned in `AppState`.
-- Preserve user-triggered discovery, update checks, installation, and update actions.
-- Preserve the existing automatic application-version check (`checkAppUpdate`).
-- Add or update frontend tests to prove startup does not call the two Skill remote APIs.
+- 删除 `getAppState` 成功后自动调用 `discoverSkills` 和 `checkSkillUpdates` 的启动逻辑。
+- 继续使用 `AppState` 返回的缓存数据，展示可安装 Skill 和待更新 Skill。
+- 保留用户主动触发的来源刷新、更新检查、安装和更新功能。
+- 保留现有的应用版本自动检查 `checkAppUpdate`。
+- 增加或调整前端测试，确保启动时不会调用两个 Skill 远程接口。
 
-## Non-Goals
+## 不在本次范围内
 
-- No Rust command or update-service refactor.
-- No change to repository cache formats, runtime-cache formats, or config migration.
-- No settings toggle for automatic Skill checks.
-- No delayed, scheduled, or background Skill refresh.
-- No code copied or merged from `codex/update-system-refactor`.
+- 不重构 Rust 命令或更新服务。
+- 不修改仓库缓存、运行时缓存或配置迁移格式。
+- 不增加“启动时自动检查”的设置开关。
+- 不增加延迟执行、定时执行或其他后台 Skill 刷新机制。
+- 不复制或合并 `codex/update-system-refactor` 分支的代码。
 
-## Behavior
+## 启动行为
 
-On startup, the application calls `getAppState`, renders the cached Skill discovery list and pending update list, and remains offline with respect to Skill sources. Empty caches remain empty rather than being interpreted as a completed remote check.
+应用启动时调用 `getAppState`，读取并展示缓存中的可安装 Skill 和待更新 Skill。对于 Skill 来源，整个启动过程保持离线。缓存为空时直接显示空状态，不能把它解释成“远程检查已经完成且没有更新”。
 
-Remote Skill work starts only from an explicit user action already present in the UI, such as refreshing the Skill Hub or checking updates. Existing error handling for those actions remains unchanged.
+只有用户执行现有的明确操作，例如刷新 Skill 中心或检查更新时，才开始访问远程 Skill 来源。现有手动操作的错误处理保持不变。
 
-The application updater remains independent and may still check the configured application update endpoint after startup.
+应用自身的版本更新与 Skill 更新相互独立，启动后仍可自动检查应用新版本。
 
-## Implementation Boundary
+## 实现边界
 
-Remove the background-discovery and background-update dependencies from `useAppBootstrap` and its caller. Keep the corresponding functions in `useSkillHub` because user-triggered UI flows still use them. Avoid renaming APIs or reorganizing hooks beyond what is required to remove the startup behavior.
+从 `useAppBootstrap` 及其调用方移除后台发现和后台更新检查依赖。`useSkillHub` 中对应的函数继续保留，因为用户主动操作仍需要使用它们。
 
-## Testing
+除移除启动行为所必需的修改外，不重命名 API，也不重新组织 Hooks 或其他代码结构。
 
-- Replace the test that expects background discovery and update checks on startup with assertions that neither API is called.
-- Verify cached discoverable Skills and cached pending updates still render after startup.
-- Run the complete frontend test suite and production build.
-- Rust behavior is unchanged; run the Rust suite as a regression check, while treating the known credential-store parallel-test isolation failure separately if it recurs and passes in isolation.
+## 测试方案
 
-## Success Criteria
+- 将原来验证“启动时自动发现和检查更新”的测试，改为验证启动时两个接口均未调用。
+- 验证缓存中的可安装 Skill 和待更新 Skill 在启动后仍能正确展示。
+- 运行完整前端测试和生产构建。
+- Rust 行为没有变化，但仍运行 Rust 测试作为回归检查。如果已知的凭据存储并行测试隔离问题再次出现，并且单独运行能够通过，则单独记录，不与本次功能改造混淆。
 
-- Starting the application never calls `discover_skills` or `check_skill_updates` without user action.
-- Cached Skill Hub state remains visible immediately after startup.
-- Manual refresh and update workflows continue to work.
-- Automatic application update checking continues to work.
-- Frontend tests and build pass, with no new Rust regressions.
+## 完成标准
+
+- 应用启动时，在没有用户操作的情况下，绝不调用 `discover_skills` 或 `check_skill_updates`。
+- 启动后立即展示已有的 Skill 中心缓存状态。
+- 手动刷新和 Skill 更新流程继续正常工作。
+- 应用版本自动检查继续正常工作。
+- 前端测试和构建通过，Rust 测试没有新增回归。
