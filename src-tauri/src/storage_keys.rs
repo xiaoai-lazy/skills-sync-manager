@@ -78,6 +78,7 @@ mod tests {
             settings: crate::models::Settings {
                 main_skills_dir: Some(main_dir.clone()),
                 link_strategy: crate::models::LinkStrategy::Auto,
+                startup_refresh: Default::default(),
             },
             installations: vec![Installation {
                 id: "install-1".into(),
@@ -128,6 +129,7 @@ mod tests {
             settings: crate::models::Settings {
                 main_skills_dir: Some(main_dir.clone()),
                 link_strategy: crate::models::LinkStrategy::Auto,
+                startup_refresh: Default::default(),
             },
             installations: vec![Installation {
                 id: "install-1".into(),

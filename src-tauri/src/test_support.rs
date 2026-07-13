@@ -57,6 +57,7 @@ pub mod fixtures {
             settings: Settings {
                 main_skills_dir: main_dir.map(Path::to_path_buf),
                 link_strategy: crate::models::LinkStrategy::Auto,
+                startup_refresh: Default::default(),
             },
             targets: targets
                 .iter()

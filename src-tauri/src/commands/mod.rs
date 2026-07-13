@@ -543,6 +543,7 @@ mod tests {
             settings: Settings {
                 main_skills_dir: main_dir,
                 link_strategy: crate::models::LinkStrategy::Auto,
+                startup_refresh: Default::default(),
             },
             targets,
             installations: Vec::new(),

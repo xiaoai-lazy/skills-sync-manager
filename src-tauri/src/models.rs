@@ -217,9 +217,36 @@ fn migrate_v4_to_v5(config: &mut AppConfig) {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct StartupRefreshSettings {
+    #[serde(default)]
+    pub github: bool,
+    #[serde(default = "default_startup_refresh_enabled")]
+    pub gitlab: bool,
+    #[serde(default = "default_startup_refresh_enabled")]
+    pub skill_hub: bool,
+}
+
+fn default_startup_refresh_enabled() -> bool {
+    true
+}
+
+impl Default for StartupRefreshSettings {
+    fn default() -> Self {
+        Self {
+            github: false,
+            gitlab: true,
+            skill_hub: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub main_skills_dir: Option<PathBuf>,
     pub link_strategy: LinkStrategy,
+    #[serde(default)]
+    pub startup_refresh: StartupRefreshSettings,
 }
 
 impl Default for Settings {
@@ -227,6 +254,7 @@ impl Default for Settings {
         Self {
             main_skills_dir: None,
             link_strategy: LinkStrategy::Auto,
+            startup_refresh: StartupRefreshSettings::default(),
         }
     }
 }
@@ -651,6 +679,14 @@ pub struct SkillUpdateInfo {
     pub remote_hash: String,
     #[serde(default)]
     pub storage_key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupSkillRefreshResult {
+    pub discover_skills: Vec<DiscoverableSkill>,
+    pub pending_updates: Vec<SkillUpdateInfo>,
+    pub warnings: Vec<String>,
 }
 
 impl Default for SkillUpdateInfo {
@@ -1400,6 +1436,39 @@ mod tests {
         let raw = r#"{"version":5,"settings":{"linkStrategy":"auto"},"targets":[],"installations":[]}"#;
         let config: AppConfig = serde_json::from_str(raw).expect("parse");
         assert!(config.skill_hub_endpoints.is_empty());
+    }
+
+    #[test]
+    fn settings_default_startup_refresh_prefers_internal_sources() {
+        let settings = Settings::default();
+        assert!(!settings.startup_refresh.github);
+        assert!(settings.startup_refresh.gitlab);
+        assert!(settings.startup_refresh.skill_hub);
+    }
+
+    #[test]
+    fn old_settings_json_gets_startup_refresh_defaults() {
+        let raw = r#"{"mainSkillsDir":null,"linkStrategy":"auto"}"#;
+        let settings: Settings = serde_json::from_str(raw).expect("parse old settings");
+        assert_eq!(
+            settings.startup_refresh,
+            StartupRefreshSettings::default()
+        );
+    }
+
+    #[test]
+    fn startup_refresh_settings_round_trip() {
+        let settings = Settings {
+            startup_refresh: StartupRefreshSettings {
+                github: true,
+                gitlab: false,
+                skill_hub: true,
+            },
+            ..Settings::default()
+        };
+        let raw = serde_json::to_string(&settings).expect("serialize settings");
+        let restored: Settings = serde_json::from_str(&raw).expect("deserialize settings");
+        assert_eq!(restored, settings);
     }
 
     #[test]

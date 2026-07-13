@@ -125,7 +125,11 @@ const baseAppState: AppState = {
 
     version: 1,
 
-    settings: { mainSkillsDir: '/tmp/main-skills', linkStrategy: 'auto' },
+    settings: {
+      mainSkillsDir: '/tmp/main-skills',
+      linkStrategy: 'auto',
+      startupRefresh: { github: false, gitlab: true, skillHub: true },
+    },
 
     projects: [],
 

@@ -19,6 +19,13 @@ export interface AppErrorDto {
 export interface Settings {
   mainSkillsDir: string | null;
   linkStrategy: LinkStrategy;
+  startupRefresh: StartupRefreshSettings;
+}
+
+export interface StartupRefreshSettings {
+  github: boolean;
+  gitlab: boolean;
+  skillHub: boolean;
 }
 
 export type TargetScope = 'global' | 'project';
@@ -142,6 +149,12 @@ export interface SkillUpdateInfo {
   currentHash?: string;
   remoteHash: string;
   storageKey: string;
+}
+
+export interface StartupSkillRefreshResult {
+  discoverSkills: DiscoverableSkill[];
+  pendingUpdates: SkillUpdateInfo[];
+  warnings: string[];
 }
 
 export interface SkillDiscoverCache {

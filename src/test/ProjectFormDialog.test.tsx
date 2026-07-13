@@ -29,7 +29,11 @@ const sampleProject: Project = {
 const sampleAppState: AppState = {
   config: {
     version: 5,
-    settings: { mainSkillsDir: null, linkStrategy: 'auto' },
+    settings: {
+      mainSkillsDir: null,
+      linkStrategy: 'auto',
+      startupRefresh: { github: false, gitlab: true, skillHub: true },
+    },
     projects: [sampleProject],
     targets: [],
     installations: [],

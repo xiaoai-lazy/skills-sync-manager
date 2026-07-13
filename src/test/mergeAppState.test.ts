@@ -20,7 +20,11 @@ function baseState(overrides: Partial<AppState> = {}): AppState {
   return {
     config: {
       version: 1,
-      settings: { mainSkillsDir: null, linkStrategy: 'auto' },
+      settings: {
+        mainSkillsDir: null,
+        linkStrategy: 'auto',
+        startupRefresh: { github: false, gitlab: true, skillHub: true },
+      },
       targets: [],
       installations: [],
       projects: [],
