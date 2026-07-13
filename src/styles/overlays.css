@@ -230,28 +230,57 @@
   line-height: 1.5;
 }
 
-.key-item {
+.credential-host-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credential-host {
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.credential-host-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--surface-muted);
-  margin-bottom: 6px;
+  gap: 12px;
+}
+
+.credential-host-header strong {
+  display: block;
   font-size: 13px;
+  color: var(--text);
 }
 
-.key-item-left {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.key-status {
+.credential-status {
+  margin-top: 3px;
   font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.credential-status.authenticated {
   color: var(--success);
   font-weight: 600;
+}
+
+.credential-repo-list {
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border-soft);
+  list-style: none;
+}
+
+.credential-repo-list li {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .key-actions {
