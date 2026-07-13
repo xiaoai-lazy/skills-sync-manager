@@ -32,12 +32,12 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
     if (!open) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !submitting) onClose();
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, submitting]);
 
   const handleSubmit = async () => {
     const value = pat.trim();
@@ -82,7 +82,9 @@ function GitLabPatDialog(props: GitLabPatDialogProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="patModalTitle"
-      onClick={onClose}
+      onClick={() => {
+        if (!submitting) onClose();
+      }}
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 id="patModalTitle">配置 GitLab 访问密钥</h3>

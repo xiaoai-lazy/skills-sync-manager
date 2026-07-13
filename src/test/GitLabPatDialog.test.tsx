@@ -88,6 +88,38 @@ describe('GitLabPatDialog', () => {
     });
   });
 
+  it('cannot close from Escape or overlay while submitting', async () => {
+    let resolveSubmit: () => void;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <GitLabPatDialog
+        open={true}
+        host="gitlab.example.com"
+        description="gitlab.example.com"
+        mode="authenticate"
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitLabel="验证并保存"
+      />,
+    );
+
+    await user.type(screen.getByLabelText('访问密钥（PAT）'), 'glpat-test');
+    await user.click(screen.getByRole('button', { name: '验证并保存' }));
+    await user.keyboard('{Escape}');
+    await user.click(container.querySelector('.credential-pat-overlay')!);
+
+    expect(onClose).not.toHaveBeenCalled();
+    resolveSubmit!();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
   it('shows error after failed validation', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('访问密钥无效或权限不足，请检查后重试'));
 
