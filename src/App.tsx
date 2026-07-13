@@ -391,6 +391,22 @@ function App() {
 
               skillHubEndpoints={appState.config.skillHubEndpoints}
 
+              startupRefreshSettings={appState.config.settings.startupRefresh}
+
+              onStartupRefreshSettingsChange={(settings) =>
+                setAppState((previous) =>
+                  previous
+                    ? {
+                        ...previous,
+                        config: {
+                          ...previous.config,
+                          settings: { ...previous.config.settings, startupRefresh: settings },
+                        },
+                      }
+                    : previous,
+                )
+              }
+
               onDiscoverSkillsChange={setDiscoverSkillsList}
 
               onPendingUpdatesChange={setPendingUpdates}

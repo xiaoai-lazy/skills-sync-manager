@@ -11,6 +11,7 @@ import {
   removeSkillRepo,
   setSkillHubEndpointEnabled,
   setSkillRepoEnabled,
+  setStartupRefreshSettings,
   updateGitlabCredential,
   validateGitlabPat,
 } from '../../api/skillHub';
@@ -20,7 +21,12 @@ import {
   formatHubSourceConfig,
   formatRepoSourceConfig,
 } from '../../utils/sourceConfigClipboard';
-import type { DiscoverableSkill, SkillHubEndpoint, SkillRepo } from '../../model/types';
+import type {
+  DiscoverableSkill,
+  SkillHubEndpoint,
+  SkillRepo,
+  StartupRefreshSettings,
+} from '../../model/types';
 import GitLabPatDialog from './GitLabPatDialog';
 import KeysManageDialog from './KeysManageDialog';
 
@@ -32,6 +38,8 @@ export interface SourceManageDrawerProps {
   onDiscoverSkillsChange?: (skills: DiscoverableSkill[]) => void;
   onEndpointsChange?: (endpoints: SkillHubEndpoint[]) => void;
   onReposChange?: (repos: SkillRepo[]) => void;
+  startupRefreshSettings: StartupRefreshSettings;
+  onStartupRefreshSettingsChange?: (settings: StartupRefreshSettings) => void;
 }
 
 type AddSourceTab = 'hub' | 'github' | 'gitlab';
@@ -59,7 +67,17 @@ function repoItemKey(repo: SkillRepo): string {
 }
 
 function SourceManageDrawer(props: SourceManageDrawerProps) {
-  const { open, onClose, onError, onToast, onDiscoverSkillsChange, onEndpointsChange, onReposChange } = props;
+  const {
+    open,
+    onClose,
+    onError,
+    onToast,
+    onDiscoverSkillsChange,
+    onEndpointsChange,
+    onReposChange,
+    startupRefreshSettings,
+    onStartupRefreshSettingsChange,
+  } = props;
   const [endpoints, setEndpoints] = useState<SkillHubEndpoint[]>([]);
   const [repos, setRepos] = useState<SkillRepo[]>([]);
   const [configuredHosts, setConfiguredHosts] = useState<string[]>([]);
@@ -70,10 +88,36 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
   const [addTab, setAddTab] = useState<AddSourceTab>('hub');
   const [patDialog, setPatDialog] = useState<PatDialogState | null>(null);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [localStartupRefresh, setLocalStartupRefresh] = useState(startupRefreshSettings);
+  const [savingStartupRefresh, setSavingStartupRefresh] = useState(false);
 
   const [hubName, setHubName] = useState('');
   const [hubBaseUrl, setHubBaseUrl] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
+
+  useEffect(() => {
+    setLocalStartupRefresh(startupRefreshSettings);
+  }, [startupRefreshSettings]);
+
+  const handleStartupRefreshToggle = async (
+    key: keyof StartupRefreshSettings,
+    checked: boolean,
+  ) => {
+    const previous = localStartupRefresh;
+    const next = { ...previous, [key]: checked };
+    setLocalStartupRefresh(next);
+    setSavingStartupRefresh(true);
+    try {
+      const saved = await setStartupRefreshSettings(next);
+      setLocalStartupRefresh(saved);
+      onStartupRefreshSettingsChange?.(saved);
+    } catch (err) {
+      setLocalStartupRefresh(previous);
+      onError?.(errorMessage(err));
+    } finally {
+      setSavingStartupRefresh(false);
+    }
+  };
 
   const loadConfiguredHosts = useCallback(async () => {
     try {
@@ -326,6 +370,33 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
               </button>
             </div>
           </div>
+
+          <section className="startup-refresh-settings" aria-labelledby="startup-refresh-title">
+            <div>
+              <h3 id="startup-refresh-title">启动自动刷新</h3>
+              <p>仅影响应用启动时的后台刷新；手动刷新始终检查所有已启用来源。</p>
+            </div>
+            <div className="startup-refresh-options">
+              {([
+                ['github', 'GitHub'],
+                ['gitlab', 'GitLab'],
+                ['skillHub', 'Skill Hub'],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="startup-refresh-option">
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={localStartupRefresh[key]}
+                    disabled={savingStartupRefresh}
+                    aria-label={`${label} 启动自动刷新`}
+                    onChange={(event) =>
+                      void handleStartupRefreshToggle(key, event.target.checked)
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
 
           {loading ? (
             <p className="drawer-loading">加载中…</p>

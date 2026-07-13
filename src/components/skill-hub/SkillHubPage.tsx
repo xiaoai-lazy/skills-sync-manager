@@ -17,6 +17,7 @@ import type {
   SkillRecord,
   SkillUpdateInfo,
   SkillView,
+  StartupRefreshSettings,
 } from '../../model/types';
 import { errorMessage } from '../../utils/errorMessage';
 import { isInProgressError, isHubSkillGoneError } from '../../utils/ipcError';
@@ -62,6 +63,8 @@ export interface SkillHubPageProps {
   pendingUpdates: SkillUpdateInfo[];
   skillRecords?: Record<string, SkillRecord>;
   skillHubEndpoints?: SkillHubEndpoint[];
+  startupRefreshSettings: StartupRefreshSettings;
+  onStartupRefreshSettingsChange?: (settings: StartupRefreshSettings) => void;
   /** Optional fallback when onRefreshHub is absent; receives skills only (no skillRecords write-back). */
   onHubSkillsRefresh?: (skills: SkillView[]) => void;
   onDiscoverSkillsChange: (skills: DiscoverableSkill[]) => void;
@@ -90,6 +93,8 @@ function SkillHubPage(props: SkillHubPageProps) {
     pendingUpdates,
     skillRecords,
     skillHubEndpoints: initialEndpoints,
+    startupRefreshSettings,
+    onStartupRefreshSettingsChange,
     onHubSkillsRefresh,
     onDiscoverSkillsChange,
     onPendingUpdatesChange,
@@ -892,6 +897,8 @@ function SkillHubPage(props: SkillHubPageProps) {
         onDiscoverSkillsChange={onDiscoverSkillsChange}
         onEndpointsChange={setEndpoints}
         onReposChange={setRepos}
+        startupRefreshSettings={startupRefreshSettings}
+        onStartupRefreshSettingsChange={onStartupRefreshSettingsChange}
       />
 
       {selectedHubEndpoint && (

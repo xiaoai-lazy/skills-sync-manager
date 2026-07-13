@@ -390,6 +390,50 @@
   width: 420px;
 }
 
+.startup-refresh-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.startup-refresh-settings h3,
+.startup-refresh-settings p {
+  margin: 0;
+}
+
+.startup-refresh-settings h3 {
+  font-size: 13px;
+}
+
+.startup-refresh-settings p {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.startup-refresh-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.startup-refresh-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .source-item.repo-item {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr) auto;

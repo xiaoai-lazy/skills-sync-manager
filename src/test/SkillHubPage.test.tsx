@@ -169,6 +169,10 @@ function setupInvokeMocks(repos: SkillRepo[] = [mockGitHubRepo, mockGitLabRepo])
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'get_skill_repos') return Promise.resolve(repos);
     if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+    if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
+    if (cmd === 'set_startup_refresh_settings') {
+      return Promise.resolve({ github: true, gitlab: true, skillHub: true });
+    }
     if (cmd === 'scan_main_library') {
       return Promise.resolve({
         ...mockHubState,
@@ -191,6 +195,7 @@ function renderHub(overrides: Partial<ComponentProps<typeof SkillHubPage>> = {})
     hubState: mockHubState,
     discoverSkills: [mockDiscoverable],
     pendingUpdates: mockPendingUpdates,
+    startupRefreshSettings: { github: false, gitlab: true, skillHub: true },
     onHubSkillsRefresh,
     onDiscoverSkillsChange,
     onPendingUpdatesChange,
@@ -214,6 +219,48 @@ afterEach(() => {
 });
 
 describe('SkillHubPage', () => {
+  it('shows startup refresh defaults and persists a changed switch', async () => {
+    const user = userEvent.setup();
+    renderHub();
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+
+    const github = screen.getByRole('checkbox', { name: 'GitHub 启动自动刷新' });
+    expect(github).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'GitLab 启动自动刷新' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Skill Hub 启动自动刷新' })).toBeChecked();
+
+    await user.click(github);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('set_startup_refresh_settings', {
+        settings: { github: true, gitlab: true, skillHub: true },
+      });
+    });
+  });
+
+  it('restores the startup refresh switch when saving fails', async () => {
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_skill_repos') return Promise.resolve([]);
+      if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
+      if (cmd === 'set_startup_refresh_settings') {
+        return Promise.reject(new Error('save failed'));
+      }
+      return Promise.resolve(null);
+    });
+    renderHub({ onError });
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    const github = screen.getByRole('checkbox', { name: 'GitHub 启动自动刷新' });
+    await user.click(github);
+
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(github).not.toBeChecked();
+  });
+
   it('renders hero title, stat pills, and tabs', async () => {
     renderHub();
 
