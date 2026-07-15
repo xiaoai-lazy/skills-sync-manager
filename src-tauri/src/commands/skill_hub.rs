@@ -4,9 +4,10 @@ use crate::gitlab_client;
 use crate::models::{
     AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
     PreviewAddRepoResult, SkillDiscoverCache,
-    SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState, SkillRepo,
-    SkillRepoChangeResult, SkillUpdateInfo, SkillWithTargetState, StartupRefreshSettings,
-    StartupSkillRefreshResult, SmartPastePreview, UpdateAllSkillsResult,
+    SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState,
+    SkillMarkdownPreviewDto, SkillMarkdownRequestDto, SkillRepo, SkillRepoChangeResult,
+    SkillUpdateInfo, SkillWithTargetState, StartupRefreshSettings, StartupSkillRefreshResult,
+    SmartPastePreview, UpdateAllSkillsResult,
 };
 use crate::skill_hub_endpoints;
 use crate::skill_repos;
@@ -278,6 +279,26 @@ pub fn get_target_skill_states(
     let skills = skill_library::list_skills(config.settings.main_skills_dir.as_deref())
         .map_err(|err| err.to_dto())?;
     crate::link_installer::compute_target_skill_states(&config, &target_id, &skills)
+        .map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn read_skill_markdown(
+    app: AppHandle,
+    request: SkillMarkdownRequestDto,
+) -> Result<SkillMarkdownPreviewDto, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    crate::skill_markdown::read_skill_markdown(&config, &app_data_dir, request)
         .map_err(|err| err.to_dto())
 }
 

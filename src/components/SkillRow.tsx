@@ -6,6 +6,7 @@ export interface SkillRowProps {
   skillRecords?: Record<string, SkillRecord>;
   pending: boolean;
   onToggle: (skillKey: string, state: SkillInstallState) => void;
+  onPreview?: (storageKey: string) => void;
 }
 
 const statusLabelMap: Record<SkillInstallState, string> = {
@@ -41,7 +42,7 @@ export function stateLabel(state: SkillInstallState): string {
 }
 
 function SkillRow(props: SkillRowProps) {
-  const { item, skillRecords, pending } = props;
+  const { item, skillRecords, pending, onPreview } = props;
   const { skill, state } = item;
 
   const isInvalid = !skill.valid || state === 'invalidSkill';
@@ -87,7 +88,13 @@ function SkillRow(props: SkillRowProps) {
       className={`target-skill-card ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}
     >
       <div className="skill-info">
-        <div className="skill-name">{displayName}</div>
+        <button
+          type="button"
+          className="skill-name skill-name-link"
+          onClick={() => onPreview?.(skillKey)}
+        >
+          {displayName}
+        </button>
         <div className="skill-desc">{desc}</div>
         <div className="skill-source-meta">{sourceMeta}</div>
         {showMessage && <div className="skill-message">{messageText}</div>}

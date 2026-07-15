@@ -6,6 +6,8 @@ import type {
   SkillHubEndpoint,
   SkillHubEndpointChangeResult,
   SkillHubLocalState,
+  SkillMarkdownPreview,
+  SkillMarkdownRequest,
   SkillRepo,
   SkillRepoChangeResult,
   SkillUpdateInfo,
@@ -155,4 +157,10 @@ export async function uploadSkillToHub(
     group,
     storageKey,
   });
+}
+
+export async function readSkillMarkdown(
+  request: SkillMarkdownRequest,
+): Promise<SkillMarkdownPreview> {
+  return invoke<SkillMarkdownPreview>('read_skill_markdown', { request });
 }

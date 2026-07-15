@@ -129,6 +129,41 @@
   white-space: nowrap;
 }
 
+.target-skill-card button.skill-name.skill-name-link {
+  display: inline;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  box-shadow: none;
+  transition: color var(--transition);
+}
+
+.target-skill-card button.skill-name.skill-name-link:hover:not(:disabled),
+.target-skill-card button.skill-name.skill-name-link:active:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent-hover);
+}
+
+.target-skill-card button.skill-name.skill-name-link:focus,
+.target-skill-card button.skill-name.skill-name-link:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--accent-hover);
+}
+
 .target-skill-card .skill-desc {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);

@@ -431,6 +431,24 @@ pub struct DeleteMainSkillResult {
     pub removed_link_count: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillMarkdownPreviewDto {
+    pub title: String,
+    pub description: String,
+    pub markdown_body: String,
+    pub origin: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SkillMarkdownRequestDto {
+    #[serde(rename_all = "camelCase")]
+    Installed { storage_key: String },
+    #[serde(rename_all = "camelCase")]
+    Discover { discover_key: String },
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillRepo {
@@ -774,6 +792,23 @@ pub struct MigrationReportDto {
     pub failed: Vec<String>,
     pub orphan_locals: Vec<String>,
     pub links_repaired: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncInstallFailure {
+    pub storage_key: String,
+    pub label: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTargetInstallationsResponse {
+    pub installed: u32,
+    pub skipped: u32,
+    pub failed: Vec<SyncInstallFailure>,
+    pub state: AppState,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

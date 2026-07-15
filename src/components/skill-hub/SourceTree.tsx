@@ -27,6 +27,7 @@ export interface SourceTreeProps {
   skillRecords: Record<string, SkillRecord>;
   selectedNodeId: string;
   onSelectNode: (nodeId: string) => void;
+  nodeCountLabel?: (nodeId: string) => string | null | undefined;
 }
 
 function SourceTree(props: SourceTreeProps) {
@@ -39,6 +40,7 @@ function SourceTree(props: SourceTreeProps) {
     skillRecords,
     selectedNodeId,
     onSelectNode,
+    nodeCountLabel,
   } = props;
 
   const visibleEndpoints = useMemo(
@@ -86,6 +88,14 @@ function SourceTree(props: SourceTreeProps) {
           {options.icon}
         </span>
         <span className="tree-label">{label}</span>
+        {nodeCountLabel ? (
+          (() => {
+            const countLabel = nodeCountLabel(nodeId);
+            return countLabel ? (
+              <span className="tree-count">{countLabel}</span>
+            ) : null;
+          })()
+        ) : null}
       </div>
     );
   };

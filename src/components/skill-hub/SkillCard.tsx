@@ -18,6 +18,7 @@ export interface SkillCardProps {
   onInstall?: () => void;
   onUpdate?: () => void;
   onDelete?: () => void;
+  onPreview?: () => void;
 }
 
 function getCardId(skill: SkillCardSkill): string {
@@ -60,6 +61,7 @@ function SkillCard(props: SkillCardProps) {
     onInstall,
     onUpdate,
     onDelete,
+    onPreview,
   } = props;
 
   const id = getCardId(skill);
@@ -129,7 +131,22 @@ function SkillCard(props: SkillCardProps) {
         />
       )}
       <div className="skill-card-header">
-        <h3 className="skill-card-title">{title}</h3>
+        {onPreview ? (
+          <h3 className="skill-card-title">
+            <button
+              type="button"
+              className="skill-card-title-link"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPreview();
+              }}
+            >
+              {title}
+            </button>
+          </h3>
+        ) : (
+          <h3 className="skill-card-title">{title}</h3>
+        )}
         {showBadges ? (
           <div className="skill-card-badges">
             {sourceMissing && (

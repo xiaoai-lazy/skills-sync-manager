@@ -206,6 +206,17 @@ export interface SkillHubEndpointChangeResult {
   discoverSkills: DiscoverableSkill[];
 }
 
+export type SkillMarkdownRequest =
+  | { kind: 'installed'; storageKey: string }
+  | { kind: 'discover'; discoverKey: string };
+
+export interface SkillMarkdownPreview {
+  title: string;
+  description: string;
+  markdownBody: string;
+  origin: 'mainLibrary' | 'repoCache' | 'remoteFile' | 'hubArchive';
+}
+
 export interface AppConfig {
   version: number;
   settings: Settings;
@@ -257,6 +268,19 @@ export interface AppState {
   skillsIncluded?: boolean;
   /** Soft warnings from the last force-cleanup operation. */
   cleanupWarnings?: string[];
+}
+
+export interface SyncInstallFailure {
+  storageKey: string;
+  label: string;
+  error: string;
+}
+
+export interface SyncTargetInstallationsResponse {
+  installed: number;
+  skipped: number;
+  failed: SyncInstallFailure[];
+  state: AppState;
 }
 
 export const emptyV6DiscoverableFields = {

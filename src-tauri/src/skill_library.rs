@@ -10,9 +10,9 @@ const MISSING_FRONTMATTER_NAME: &str = "Missing frontmatter.name";
 const MISSING_FRONTMATTER_DESCRIPTION: &str = "Missing frontmatter.description";
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-struct SkillMetadata {
-    name: Option<String>,
-    description: Option<String>,
+pub(crate) struct SkillMetadata {
+    pub name: Option<String>,
+    pub description: Option<String>,
 }
 
 pub fn list_skills(main_dir: Option<&Path>) -> Result<Vec<SkillView>, AppError> {
@@ -210,24 +210,37 @@ pub fn parse_valid_skill_metadata(raw: &str) -> Option<ParsedSkillMetadata> {
     }
 }
 
-fn parse_skill_frontmatter(raw: &str) -> Result<SkillMetadata, Vec<String>> {
+/// Split SKILL.md into optional YAML metadata and the markdown body (frontmatter stripped).
+/// When frontmatter is missing or malformed, returns `(None, raw)` unchanged.
+pub(crate) fn split_skill_md(raw: &str) -> (Option<SkillMetadata>, String) {
     let Some(after_opening_delimiter) = raw.strip_prefix("---") else {
-        return Err(vec![MISSING_FRONTMATTER.to_string()]);
+        return (None, raw.to_string());
     };
 
-    let after_opening_delimiter = after_opening_delimiter
+    let Some(after_opening_delimiter) = after_opening_delimiter
         .strip_prefix("\r\n")
         .or_else(|| after_opening_delimiter.strip_prefix("\n"))
-        .ok_or_else(|| vec![MISSING_FRONTMATTER.to_string()])?;
+    else {
+        return (None, raw.to_string());
+    };
 
-    let Some((frontmatter, _body)) = split_frontmatter(after_opening_delimiter) else {
-        return Err(vec![MISSING_FRONTMATTER.to_string()]);
+    let Some((frontmatter, body)) = split_frontmatter(after_opening_delimiter) else {
+        return (None, raw.to_string());
     };
 
     let metadata: SkillMetadata = serde_yaml::from_str(frontmatter).unwrap_or(SkillMetadata {
         name: None,
         description: None,
     });
+
+    (Some(metadata), body.to_string())
+}
+
+fn parse_skill_frontmatter(raw: &str) -> Result<SkillMetadata, Vec<String>> {
+    let (metadata, _body) = split_skill_md(raw);
+    let Some(metadata) = metadata else {
+        return Err(vec![MISSING_FRONTMATTER.to_string()]);
+    };
 
     let mut validation_errors = Vec::new();
     if is_blank(metadata.name.as_deref()) {
@@ -244,7 +257,7 @@ fn parse_skill_frontmatter(raw: &str) -> Result<SkillMetadata, Vec<String>> {
     }
 }
 
-fn split_frontmatter(raw_after_opening_delimiter: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_frontmatter(raw_after_opening_delimiter: &str) -> Option<(&str, &str)> {
     let mut body_start = 0;
 
     for segment in raw_after_opening_delimiter.split_inclusive('\n') {

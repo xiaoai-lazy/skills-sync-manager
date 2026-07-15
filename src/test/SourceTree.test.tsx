@@ -80,4 +80,24 @@ describe('SourceTree', () => {
     expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /停用 Hub/ })).toBeInTheDocument();
   });
+
+  it('renders nodeCountLabel after tree labels when provided', () => {
+    render(
+      <SourceTree
+        tab="installed"
+        endpoints={[]}
+        repos={[]}
+        discoverSkills={[]}
+        installedSkills={mockSkills}
+        skillRecords={{}}
+        selectedNodeId={ALL_NODE_ID}
+        onSelectNode={vi.fn()}
+        nodeCountLabel={(nodeId) => (nodeId === ALL_NODE_ID ? '1/2' : null)}
+      />,
+    );
+
+    const allNode = screen.getByRole('treeitem', { name: /全部/ });
+    expect(allNode.querySelector('.tree-count')).toHaveTextContent('1/2');
+    expect(screen.getByRole('treeitem', { name: /本地导入/ }).querySelector('.tree-count')).toBeNull();
+  });
 });

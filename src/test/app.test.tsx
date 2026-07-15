@@ -41,6 +41,8 @@ vi.mock('../api/commands', () => ({
 
   deleteMainSkill: vi.fn(),
 
+  syncTargetInstallations: vi.fn(),
+
 }));
 
 
@@ -64,6 +66,13 @@ vi.mock('../api/skillHub', () => ({
   addSkillHubEndpoint: vi.fn(),
 
   listGitlabCredentials: vi.fn().mockResolvedValue([]),
+
+  readSkillMarkdown: vi.fn().mockResolvedValue({
+    title: '',
+    description: '',
+    markdownBody: '',
+    origin: 'mainLibrary',
+  }),
 
 }));
 
@@ -99,6 +108,8 @@ import {
 
   listAgentPresets,
 
+  addAgentTarget,
+
   addCustomTarget,
 
   installSkill,
@@ -106,6 +117,8 @@ import {
   uninstallSkill,
 
   deleteMainSkill,
+
+  syncTargetInstallations,
 
 } from '../api/commands';
 
@@ -516,6 +529,83 @@ function withInstallations(state: AppState, skillDirName: string): AppState {
 
   };
 
+}
+
+/** Project with one sibling target; optionally give that sibling installations. */
+function withProjectSiblingState(options: {
+  siblingInstallCount: number;
+}): AppState {
+  const siblingId = 'target_project_cursor';
+  const installations =
+    options.siblingInstallCount > 0
+      ? Array.from({ length: options.siblingInstallCount }, (_, i) => ({
+          id: `inst_sib_${i}`,
+          skillDirName: `skill-${i}`,
+          skillName: `skill-${i}`,
+          sourcePath: `/tmp/main-skills/skill-${i}`,
+          targetId: siblingId,
+          linkPath: `/tmp/project/.cursor/skills/skill-${i}`,
+          linkType: 'junction' as const,
+          createdAt: '2026-06-23T00:00:00Z',
+          skillStorageKey: `local/skill-${i}`,
+        }))
+      : [];
+
+  return {
+    ...baseAppState,
+    config: {
+      ...baseAppState.config,
+      projects: [
+        {
+          id: 'project_1',
+          name: 'My App',
+          rootPath: '/tmp/project',
+          createdAt: '2026-06-23T00:00:00Z',
+          updatedAt: '2026-06-23T00:00:00Z',
+        },
+      ],
+      targets: [
+        ...baseAppState.config.targets,
+        {
+          id: siblingId,
+          name: 'Cursor',
+          scope: 'project',
+          kind: 'agent',
+          agentId: 'cursor',
+          projectId: 'project_1',
+          skillsDir: '/tmp/project/.cursor/skills',
+          createdAt: '2026-06-23T00:00:00Z',
+          updatedAt: '2026-06-23T00:00:00Z',
+        },
+      ],
+      installations,
+    },
+    selectedTargetId: siblingId,
+    selectedTargetSkills: [],
+  };
+}
+
+function stateAfterAddingProjectClaude(from: AppState): AppState {
+  const newTarget = {
+    id: 'target_project_claude',
+    name: 'Claude Code',
+    scope: 'project' as const,
+    kind: 'agent' as const,
+    agentId: 'claude',
+    projectId: 'project_1',
+    skillsDir: '/tmp/project/.claude/skills',
+    createdAt: '2026-06-28T00:00:00Z',
+    updatedAt: '2026-06-28T00:00:00Z',
+  };
+  return {
+    ...from,
+    selectedTargetId: newTarget.id,
+    selectedTargetSkills: [],
+    config: {
+      ...from.config,
+      targets: [...from.config.targets, newTarget],
+    },
+  };
 }
 
 
@@ -1588,6 +1678,81 @@ describe('App', () => {
 
     expect(screen.queryByText('internal hub offline')).not.toBeInTheDocument();
 
+  });
+
+  it('offers post-create sync when new project target has siblings with installations', async () => {
+    const initial = withProjectSiblingState({ siblingInstallCount: 2 });
+    const afterAdd = stateAfterAddingProjectClaude(initial);
+    setupHubMocks(initial);
+    vi.mocked(listAgentPresets).mockResolvedValue([
+      {
+        id: 'claude',
+        displayName: 'Claude Code',
+        globalPath: '~/.claude/skills',
+        projectRelativePath: '.claude/skills',
+      },
+    ]);
+    vi.mocked(addAgentTarget).mockResolvedValue(afterAdd);
+    vi.mocked(getTargetSkillStates).mockResolvedValue([]);
+    vi.mocked(syncTargetInstallations).mockResolvedValue({
+      installed: 2,
+      skipped: 0,
+      failed: [],
+      state: afterAdd,
+    });
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Skill 中心' });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add target to My App/i }));
+
+    expect(await screen.findByRole('heading', { name: /添加目标 · My App/ })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /claude code/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /claude code/i }));
+
+    expect(
+      await screen.findByRole('heading', { name: '已添加 Claude Code' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '同步安装' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '暂时跳过' })).toBeInTheDocument();
+  });
+
+  it('does not offer post-create sync when project siblings have zero installations', async () => {
+    const initial = withProjectSiblingState({ siblingInstallCount: 0 });
+    const afterAdd = stateAfterAddingProjectClaude(initial);
+    setupHubMocks(initial);
+    vi.mocked(listAgentPresets).mockResolvedValue([
+      {
+        id: 'claude',
+        displayName: 'Claude Code',
+        globalPath: '~/.claude/skills',
+        projectRelativePath: '.claude/skills',
+      },
+    ]);
+    vi.mocked(addAgentTarget).mockResolvedValue(afterAdd);
+    vi.mocked(getTargetSkillStates).mockResolvedValue([]);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Skill 中心' });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add target to My App/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /claude code/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /claude code/i }));
+
+    await waitFor(() => {
+      expect(addAgentTarget).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByRole('heading', { name: /已添加/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '同步安装' })).not.toBeInTheDocument();
   });
 
 });

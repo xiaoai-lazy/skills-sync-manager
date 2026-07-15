@@ -2,7 +2,7 @@ use crate::agent_presets::{self, AgentPreset};
 use crate::agent_presets::normalize_platform_path;
 use crate::models::{
     AgentPresetDto, AppConfig, AppError, AppErrorDto, AppState, MigrationReportDto, SkillView,
-    TargetScope,
+    SyncTargetInstallationsResponse, TargetScope,
 };
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -476,6 +476,40 @@ pub fn install_skill(
         AppStateBuildMode::Light { skills },
     )
     .map_err(|err| err.to_dto())
+}
+
+#[tauri::command]
+pub fn sync_target_installations(
+    app: tauri::AppHandle,
+    source_target_id: String,
+    dest_target_id: String,
+) -> Result<SyncTargetInstallationsResponse, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+    let skills = crate::skill_library::list_skills(config.settings.main_skills_dir.as_deref())
+        .map_err(|err| err.to_dto())?;
+    let counts = crate::target_sync::sync_target_installations(
+        &mut config,
+        &source_target_id,
+        &dest_target_id,
+        &skills,
+    )
+    .map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+    let app_data_dir = app_data_dir_from_app(&app).map_err(|err| err.to_dto())?;
+    let state = build_app_state_with_mode(
+        config,
+        Some(dest_target_id),
+        Some(app_data_dir.as_path()),
+        AppStateBuildMode::Light { skills },
+    )
+    .map_err(|err| err.to_dto())?;
+    Ok(SyncTargetInstallationsResponse {
+        installed: counts.installed,
+        skipped: counts.skipped,
+        failed: counts.failed,
+        state,
+    })
 }
 
 #[tauri::command]

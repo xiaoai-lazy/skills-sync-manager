@@ -100,7 +100,8 @@
   margin-bottom: 0.375rem;
 }
 
-.dialog-form-field input {
+.dialog-form-field input,
+.dialog-form-field select {
   width: 100%;
   height: 40px;
   padding: 0 14px;
@@ -112,10 +113,30 @@
   transition: box-shadow var(--transition), background var(--transition);
 }
 
-.dialog-form-field input:focus {
+.dialog-form-field input:focus,
+.dialog-form-field select:focus {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-ring);
   background: var(--surface);
+}
+
+.dialog-lead {
+  margin: 0 0 0.75rem;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.dialog-sync-summary {
+  margin-top: 0.75rem;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.dialog-sync-summary ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
 }
 
 .directory-input-row {

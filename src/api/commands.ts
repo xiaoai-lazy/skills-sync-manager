@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AgentPreset, AppState, TargetScope } from '../model/types';
+import type {
+  AgentPreset,
+  AppState,
+  SyncTargetInstallationsResponse,
+  TargetScope,
+} from '../model/types';
 
 export async function getAppState(selectedTargetId?: string | null): Promise<AppState> {
   return invoke<AppState>('get_app_state', { selectedTargetId: selectedTargetId ?? null });
@@ -116,5 +121,15 @@ export async function deleteProject(
     projectId,
     selectedTargetId: selectedTargetId ?? null,
     cleanupRecordedLinks,
+  });
+}
+
+export async function syncTargetInstallations(
+  sourceTargetId: string,
+  destTargetId: string,
+): Promise<SyncTargetInstallationsResponse> {
+  return invoke<SyncTargetInstallationsResponse>('sync_target_installations', {
+    sourceTargetId,
+    destTargetId,
   });
 }

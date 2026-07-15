@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   SkillHubEndpoint,
   SkillRecord,
@@ -15,6 +15,12 @@ import {
 } from './skill-hub/sourceTreeUtils';
 import SkillRow from './SkillRow';
 import SkillListEmptyState from './skill-hub/SkillListEmptyState';
+import {
+  compareSkillDisplayName,
+  countTargetNodeSkills,
+  formatNodeCount,
+  sortTargetSkillRows,
+} from '../utils/targetSkillList';
 
 export interface TargetDetailProps {
   target: Target | null;
@@ -24,6 +30,9 @@ export interface TargetDetailProps {
   repos: SkillRepo[];
   pendingSkillKey: string | null;
   onToggleSkill: (skillKey: string, state: import('../model/types').SkillInstallState) => void;
+  onPreviewSkill?: (storageKey: string) => void;
+  showSyncButton?: boolean;
+  onOpenSync?: () => void;
 }
 
 function filterSkillsByNode(
@@ -42,8 +51,18 @@ function filterSkillsByNode(
 }
 
 function TargetDetail(props: TargetDetailProps) {
-  const { target, skills, skillRecords, endpoints, repos, pendingSkillKey, onToggleSkill } =
-    props;
+  const {
+    target,
+    skills,
+    skillRecords,
+    endpoints,
+    repos,
+    pendingSkillKey,
+    onToggleSkill,
+    onPreviewSkill,
+    showSyncButton,
+    onOpenSync,
+  } = props;
   const [selectedNodeId, setSelectedNodeId] = useState(ALL_NODE_ID);
 
   useEffect(() => {
@@ -60,6 +79,41 @@ function TargetDetail(props: TargetDetailProps) {
     [selectedNodeId, endpoints, repos],
   );
 
+  const validSkills = useMemo(
+    () => filteredSkills.filter((s) => s.skill.valid),
+    [filteredSkills],
+  );
+  const invalidSkills = useMemo(
+    () => filteredSkills.filter((s) => !s.skill.valid),
+    [filteredSkills],
+  );
+  const sortedValid = useMemo(
+    () => sortTargetSkillRows(validSkills),
+    [validSkills],
+  );
+  const sortedInvalid = useMemo(
+    () =>
+      [...invalidSkills].sort((a, b) =>
+        compareSkillDisplayName(a.skill, b.skill),
+      ),
+    [invalidSkills],
+  );
+  const nodeCountLabel = useCallback(
+    (nodeId: string) => {
+      const { installed, total } = countTargetNodeSkills(
+        nodeId,
+        skills,
+        skillRecords,
+      );
+      return formatNodeCount(installed, total);
+    },
+    [skills, skillRecords],
+  );
+  const installedSkills = useMemo(
+    () => skills.map((item) => item.skill),
+    [skills],
+  );
+
   if (!target) {
     return (
       <div className="target-detail empty">
@@ -68,10 +122,6 @@ function TargetDetail(props: TargetDetailProps) {
       </div>
     );
   }
-
-  const validSkills = filteredSkills.filter((s) => s.skill.valid);
-  const invalidSkills = filteredSkills.filter((s) => !s.skill.valid);
-  const installedSkills = skills.map((item) => item.skill);
 
   return (
     <section className="target-detail">
@@ -92,6 +142,7 @@ function TargetDetail(props: TargetDetailProps) {
           skillRecords={skillRecords}
           selectedNodeId={selectedNodeId}
           onSelectNode={setSelectedNodeId}
+          nodeCountLabel={nodeCountLabel}
         />
 
         <div className="skill-list-panel">
@@ -101,33 +152,41 @@ function TargetDetail(props: TargetDetailProps) {
                 <h2 className="skill-list-title">{listHeader.title}</h2>
                 <p className="skill-list-sub">{listHeader.sub}</p>
               </div>
+              {showSyncButton && onOpenSync ? (
+                <div className="skill-list-actions">
+                  <button type="button" className="secondary-button" onClick={onOpenSync}>
+                    从其他目录同步…
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 
           <div className="target-body target-body-in-panel">
-            {validSkills.length === 0 && invalidSkills.length === 0 ? (
+            {sortedValid.length === 0 && sortedInvalid.length === 0 ? (
               <SkillListEmptyState
                 title={skills.length === 0 ? '主库中暂无有效 Skill' : '当前来源下暂无 Skill'}
               />
             ) : (
               <div className="target-list-cards">
-                {validSkills.map((item) => (
+                {sortedValid.map((item) => (
                   <SkillRow
                     key={item.skill.storageKey}
                     item={item}
                     skillRecords={skillRecords}
                     pending={pendingSkillKey === item.skill.storageKey}
                     onToggle={onToggleSkill}
+                    onPreview={onPreviewSkill}
                   />
                 ))}
               </div>
             )}
 
-            {invalidSkills.length > 0 && (
+            {sortedInvalid.length > 0 && (
               <section className="target-invalid-section">
-                <h3 className="target-section-label">无效 Skill（{invalidSkills.length}）</h3>
+                <h3 className="target-section-label">无效 Skill（{sortedInvalid.length}）</h3>
                 <div className="target-list-cards invalid-section">
-                  {invalidSkills.map((item) => (
+                  {sortedInvalid.map((item) => (
                     <SkillRow
                       key={item.skill.storageKey || item.skill.dirName}
                       item={item}
@@ -137,6 +196,7 @@ function TargetDetail(props: TargetDetailProps) {
                         (item.skill.storageKey || item.skill.dirName)
                       }
                       onToggle={onToggleSkill}
+                      onPreview={onPreviewSkill}
                     />
                   ))}
                 </div>

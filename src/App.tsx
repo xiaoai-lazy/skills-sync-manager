@@ -8,18 +8,22 @@ import SkillHubPage from './components/skill-hub/SkillHubPage';
 
 import TargetDetail from './components/TargetDetail';
 
+import SkillPreviewDrawer from './components/SkillPreviewDrawer';
+
 import ConfirmDialog from './components/ConfirmDialog';
 
 import PromptDialog from './components/PromptDialog';
 
 import TargetFormDialog from './components/TargetFormDialog';
 import AddTargetDialog from './components/AddTargetDialog';
+import SyncFromTargetDialog from './components/SyncFromTargetDialog';
 import ProjectFormDialog from './components/ProjectFormDialog';
 import WindowControls from './components/WindowControls';
 import { isMacOS } from './utils/platform';
 import UpdateDialog from './components/UpdateDialog';
 import { checkAppUpdate, installAppUpdate } from './api/updater';
 import { errorMessage } from './utils/errorMessage';
+import { listSyncSourceCandidates } from './utils/targetSyncCandidates';
 
 import { useAppDialogs } from './hooks/useAppDialogs';
 
@@ -33,9 +37,13 @@ import { useTargetActions } from './hooks/useTargetActions';
 
 import { useProjectActions } from './hooks/useProjectActions';
 
+import type { SkillMarkdownRequest } from './model/types';
+
 function App() {
 
   const [appToast, setAppToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
+
+  const [skillPreview, setSkillPreview] = useState<SkillMarkdownRequest | null>(null);
 
   const {
     appState,
@@ -200,6 +208,10 @@ function App() {
   const {
     pendingSkillKey,
     setPendingSkillKey,
+    syncDialog,
+    closeSyncDialog,
+    openManualSyncDialog,
+    handleSyncFromTarget,
     handleSetMainSkillsDir,
     handleConfirmSetMainSkillsDir,
     handleAddGlobalTarget,
@@ -429,6 +441,10 @@ function App() {
 
               onToast={(message) => setAppToast({ message, kind: 'success' })}
 
+              onPreviewSkill={setSkillPreview}
+
+              onCloseSkillPreview={() => setSkillPreview(null)}
+
             />
 
           ) : null
@@ -450,6 +466,18 @@ function App() {
             pendingSkillKey={pendingSkillKey}
 
             onToggleSkill={handleToggleSkill}
+
+            onPreviewSkill={(storageKey) =>
+              setSkillPreview({ kind: 'installed', storageKey })
+            }
+
+            showSyncButton={Boolean(
+              selectedTarget &&
+                appState &&
+                listSyncSourceCandidates(appState.config, selectedTarget).length > 0,
+            )}
+
+            onOpenSync={() => selectedTarget && openManualSyncDialog(selectedTarget)}
 
           />
 
@@ -516,6 +544,21 @@ function App() {
           onSuccess={handleAddTargetSuccess}
 
         />
+
+        {syncDialog.destTarget ? (
+          <SyncFromTargetDialog
+            open={syncDialog.open}
+            mode={syncDialog.mode}
+            destTarget={syncDialog.destTarget}
+            candidates={
+              appState
+                ? listSyncSourceCandidates(appState.config, syncDialog.destTarget)
+                : []
+            }
+            onClose={closeSyncDialog}
+            onConfirm={handleSyncFromTarget}
+          />
+        ) : null}
 
         <ProjectFormDialog
 
@@ -660,6 +703,16 @@ function App() {
           onConfirm={handleConfirmForceClearSkill}
 
           onCancel={handleCancelForceClearSkill}
+
+        />
+
+        <SkillPreviewDrawer
+
+          open={!!skillPreview}
+
+          request={skillPreview}
+
+          onClose={() => setSkillPreview(null)}
 
         />
 

@@ -14,6 +14,7 @@ import type {
   DiscoverableSkill,
   SkillHubEndpoint,
   SkillHubLocalState,
+  SkillMarkdownRequest,
   SkillRecord,
   SkillUpdateInfo,
   SkillView,
@@ -74,6 +75,8 @@ export interface SkillHubPageProps {
   onRefreshHub?: () => Promise<void>;
   onToast?: (message: string) => void;
   onError?: (error: unknown) => void;
+  onPreviewSkill?: (request: SkillMarkdownRequest) => void;
+  onCloseSkillPreview?: () => void;
 }
 
 function matchesSearch(
@@ -103,7 +106,19 @@ function SkillHubPage(props: SkillHubPageProps) {
     onRefreshHub,
     onToast,
     onError,
+    onPreviewSkill,
+    onCloseSkillPreview,
   } = props;
+
+  const openPreview = (request: SkillMarkdownRequest) => {
+    setSourceDrawerOpen(false);
+    onPreviewSkill?.(request);
+  };
+
+  const openSourceDrawer = () => {
+    onCloseSkillPreview?.();
+    setSourceDrawerOpen(true);
+  };
 
   const [tab, setTab] = useState<HubTab>('installed');
   const [installedChip, setInstalledChip] = useState<InstalledChip>('all');
@@ -494,7 +509,6 @@ function SkillHubPage(props: SkillHubPageProps) {
   const listHeader = nodeTitle(selectedNodeId, endpoints, repos);
   const enabledHubs = endpoints.filter((e) => e.enabled);
   const showUploadButton =
-    tab === 'installed' &&
     enabledHubs.length > 0 &&
     isEnabledHubRootNode(selectedNodeId, endpoints);
   const selectedHubEndpoint = endpoints.find(
@@ -651,7 +665,7 @@ function SkillHubPage(props: SkillHubPageProps) {
               >
                 {updatingAll ? '更新中…' : `全部更新 (${pendingCount})`}
               </button>
-              <button type="button" className="btn-sm" onClick={() => setSourceDrawerOpen(true)}>
+              <button type="button" className="btn-sm" onClick={openSourceDrawer}>
                 来源管理
               </button>
             </div>
@@ -842,6 +856,15 @@ function SkillHubPage(props: SkillHubPageProps) {
                       onDelete={() => {
                         onDeleteMainSkill(skill.storageKey, skill.name ?? skill.dirName);
                       }}
+                      onPreview={
+                        onPreviewSkill
+                          ? () =>
+                              openPreview({
+                                kind: 'installed',
+                                storageKey: skill.storageKey,
+                              })
+                          : undefined
+                      }
                     />
                   ))
                 ) : (
@@ -862,6 +885,15 @@ function SkillHubPage(props: SkillHubPageProps) {
                     sourceLabel={skillSourceLabelForDiscoverable(skill)}
                     onSelect={(selected) => toggleSelection(skill.key, selected)}
                     onInstall={() => openInstallDialog([skill])}
+                    onPreview={
+                      onPreviewSkill
+                        ? () =>
+                            openPreview({
+                              kind: 'discover',
+                              discoverKey: skill.key,
+                            })
+                        : undefined
+                    }
                   />
                 ))
               ) : (

@@ -2,6 +2,7 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from 'react
 import type {
   AppState,
   SkillInstallState,
+  SyncTargetInstallationsResponse,
   Target,
   TargetScope,
 } from '../model/types';
@@ -10,6 +11,7 @@ import {
   deleteTarget,
   installSkill,
   setMainSkillsDir,
+  syncTargetInstallations,
   uninstallSkill,
   updateTarget,
 } from '../api/commands';
@@ -17,6 +19,7 @@ import { getTargetSkillStates } from '../api/skillHub';
 import { canForceClearInstallation } from '../components/SkillRow';
 import { cleanupWarningsMessage } from '../utils/cleanupWarnings';
 import { errorMessage } from '../utils/errorMessage';
+import { shouldOfferPostCreateSync } from '../utils/targetSyncCandidates';
 import type { MainView } from '../components/Sidebar';
 
 type SetAppState = Dispatch<SetStateAction<AppState | null>>;
@@ -26,6 +29,12 @@ export type AddTargetDialogState = {
   scope: TargetScope;
   projectId?: string;
   projectName?: string;
+};
+
+export type SyncFromTargetDialogState = {
+  open: boolean;
+  mode: 'post-create' | 'manual';
+  destTarget: Target | null;
 };
 
 export function useTargetActions(args: {
@@ -94,6 +103,35 @@ export function useTargetActions(args: {
   } = args;
 
   const [pendingSkillKey, setPendingSkillKey] = useState<string | null>(null);
+  const [syncDialog, setSyncDialog] = useState<SyncFromTargetDialogState>({
+    open: false,
+    mode: 'post-create',
+    destTarget: null,
+  });
+
+  const closeSyncDialog = useCallback(() => {
+    setSyncDialog((prev) => ({ ...prev, open: false, destTarget: null }));
+  }, []);
+
+  const openManualSyncDialog = useCallback((target: Target) => {
+    setSyncDialog({ open: true, mode: 'manual', destTarget: target });
+  }, []);
+
+  const handleSyncFromTarget = useCallback(
+    async (sourceTargetId: string): Promise<SyncTargetInstallationsResponse> => {
+      const dest = syncDialog.destTarget;
+      if (!dest) {
+        throw new Error('No destination target for sync');
+      }
+      const response = await syncTargetInstallations(sourceTargetId, dest.id);
+      applyRemoteState(response.state);
+      if (response.failed.length === 0) {
+        closeSyncDialog();
+      }
+      return response;
+    },
+    [applyRemoteState, closeSyncDialog, syncDialog.destTarget]
+  );
 
   const handleSetMainSkillsDir = useCallback(() => {
     if (!appState) return;
@@ -154,6 +192,9 @@ export function useTargetActions(args: {
       if (target?.projectId) {
         setExpandedProjectIds((prev) => new Set(prev).add(target.projectId!));
         setSelectedProjectId(target.projectId);
+      }
+      if (target && shouldOfferPostCreateSync(next.config, target)) {
+        setSyncDialog({ open: true, mode: 'post-create', destTarget: target });
       }
     },
     [
@@ -395,6 +436,10 @@ export function useTargetActions(args: {
   return {
     pendingSkillKey,
     setPendingSkillKey,
+    syncDialog,
+    closeSyncDialog,
+    openManualSyncDialog,
+    handleSyncFromTarget,
     handleSetMainSkillsDir,
     handleConfirmSetMainSkillsDir,
     handleAddGlobalTarget,

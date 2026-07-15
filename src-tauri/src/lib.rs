@@ -18,6 +18,7 @@ pub mod skill_discover;
 pub mod skill_downloader;
 pub mod skill_install;
 pub mod skill_library;
+pub mod skill_markdown;
 pub mod skill_migration;
 pub mod skill_remover;
 pub mod skill_repos;
@@ -27,6 +28,7 @@ pub mod storage_keys;
 pub mod skill_updates;
 pub mod startup_refresh;
 pub mod target_registry;
+pub mod target_sync;
 pub mod time_util;
 
 #[cfg(test)]
@@ -55,10 +57,12 @@ pub fn run() {
             commands::update_target,
             commands::delete_target,
             commands::install_skill,
+            commands::sync_target_installations,
             commands::uninstall_skill,
             commands::delete_main_skill,
             commands::skill_hub::scan_main_library,
             commands::skill_hub::get_target_skill_states,
+            commands::skill_hub::read_skill_markdown,
             commands::skill_hub::discover_skills,
             commands::skill_hub::refresh_startup_skill_sources,
             commands::skill_hub::set_startup_refresh_settings,

@@ -7,6 +7,7 @@ import SkillHubPage from '../components/skill-hub/SkillHubPage';
 import { repoNodeId } from '../components/skill-hub/sourceTreeUtils';
 import type {
   DiscoverableSkill,
+  SkillHubEndpoint,
   SkillHubLocalState,
   SkillRepo,
   SkillUpdateInfo,
@@ -170,6 +171,7 @@ function setupInvokeMocks(repos: SkillRepo[] = [mockGitHubRepo, mockGitLabRepo])
     if (cmd === 'get_skill_repos') return Promise.resolve(repos);
     if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
     if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
+    if (cmd === 'list_hub_groups') return Promise.resolve([]);
     if (cmd === 'set_startup_refresh_settings') {
       return Promise.resolve({ github: true, gitlab: true, skillHub: true });
     }
@@ -466,6 +468,41 @@ describe('SkillHubPage', () => {
     expect(screen.queryByText('PDF 解析与合并。')).not.toBeInTheDocument();
   });
 
+  it('shows upload button on discover tab when an enabled Hub root is selected', async () => {
+    const user = userEvent.setup();
+    const hubEndpoint: SkillHubEndpoint = {
+      id: 'company-hub',
+      name: 'Company Hub',
+      baseUrl: 'https://hub.example.com',
+      enabled: true,
+    };
+    renderHub({ skillHubEndpoints: [hubEndpoint] });
+
+    const tree = await screen.findByRole('tree');
+    await user.click(within(tree).getByRole('treeitem', { name: /Company Hub/ }));
+    await user.click(screen.getByRole('tab', { name: /可安装/ }));
+
+    expect(screen.getByRole('button', { name: '上传到 Hub' })).toBeInTheDocument();
+  });
+
+  it('hides upload button when 全部 is selected', async () => {
+    const user = userEvent.setup();
+    const hubEndpoint: SkillHubEndpoint = {
+      id: 'company-hub',
+      name: 'Company Hub',
+      baseUrl: 'https://hub.example.com',
+      enabled: true,
+    };
+    renderHub({ skillHubEndpoints: [hubEndpoint] });
+
+    const tree = await screen.findByRole('tree');
+    await user.click(within(tree).getByRole('treeitem', { name: /Company Hub/ }));
+    expect(screen.getByRole('button', { name: '上传到 Hub' })).toBeInTheDocument();
+
+    await user.click(within(tree).getByRole('treeitem', { name: /全部/ }));
+    expect(screen.queryByRole('button', { name: '上传到 Hub' })).not.toBeInTheDocument();
+  });
+
   it('calls scanMainLibrary on mount when onRefreshHub is not provided', async () => {
     const onHubSkillsRefresh = vi.fn();
     invokeMock.mockImplementation((cmd: string) => {
@@ -500,5 +537,79 @@ describe('SkillHubPage', () => {
     await waitFor(() => {
       expect(onHubSkillsRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('calls onPreviewSkill for installed card title with storageKey', async () => {
+    const user = userEvent.setup();
+    const onPreviewSkill = vi.fn();
+    renderHub({ onPreviewSkill });
+
+    await screen.findByText('Explore ideas before implementation.');
+    await user.click(screen.getByRole('button', { name: 'brainstorming' }));
+
+    expect(onPreviewSkill).toHaveBeenCalledWith({
+      kind: 'installed',
+      storageKey: 'local/brainstorming',
+    });
+  });
+
+  it('calls onPreviewSkill for discover card title with discoverKey', async () => {
+    const user = userEvent.setup();
+    const onPreviewSkill = vi.fn();
+    renderHub({ onPreviewSkill });
+
+    await user.click(screen.getByRole('tab', { name: /可安装 \(1\)/ }));
+    await screen.findByText('PDF 解析与合并。');
+    await user.click(screen.getByRole('button', { name: 'PDF Toolkit' }));
+
+    expect(onPreviewSkill).toHaveBeenCalledWith({
+      kind: 'discover',
+      discoverKey: 'anthropics/skills:skills/pdf-toolkit',
+    });
+  });
+
+  it('keeps discover card body multi-select when title is clicked separately', async () => {
+    const user = userEvent.setup();
+    const onPreviewSkill = vi.fn();
+    renderHub({ onPreviewSkill });
+
+    await user.click(screen.getByRole('tab', { name: /可安装 \(1\)/ }));
+    const desc = await screen.findByText('PDF 解析与合并。');
+    await user.click(desc);
+
+    expect(screen.getByText('已选 1 项')).toBeInTheDocument();
+    expect(onPreviewSkill).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'PDF Toolkit' }));
+    expect(onPreviewSkill).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('已选 1 项')).toBeInTheDocument();
+  });
+
+  it('closes source drawer when opening skill preview', async () => {
+    const user = userEvent.setup();
+    const onPreviewSkill = vi.fn();
+    renderHub({ onPreviewSkill });
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+    expect(screen.getByRole('dialog', { name: '来源管理' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'brainstorming' }));
+
+    expect(onPreviewSkill).toHaveBeenCalledWith({
+      kind: 'installed',
+      storageKey: 'local/brainstorming',
+    });
+    expect(screen.queryByRole('dialog', { name: '来源管理' })).not.toBeInTheDocument();
+  });
+
+  it('calls onCloseSkillPreview when opening source manage drawer', async () => {
+    const user = userEvent.setup();
+    const onCloseSkillPreview = vi.fn();
+    renderHub({ onCloseSkillPreview });
+
+    await user.click(screen.getByRole('button', { name: '来源管理' }));
+
+    expect(onCloseSkillPreview).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog', { name: '来源管理' })).toBeInTheDocument();
   });
 });

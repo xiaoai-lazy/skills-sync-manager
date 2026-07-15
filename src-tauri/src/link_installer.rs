@@ -101,6 +101,26 @@ pub fn install_skill(
     Ok(())
 }
 
+pub fn is_skill_installed(
+    config: &AppConfig,
+    target_id: &str,
+    skill_identifier: &str,
+    skills: &[SkillView],
+) -> bool {
+    let Ok(skill) = find_valid_skill(skills, skill_identifier) else {
+        return false;
+    };
+    let Ok(target) = find_target(config, target_id) else {
+        return false;
+    };
+    let link_name = skill_link_name(skill);
+    let link_path = target.skills_dir.join(link_name);
+    match find_installation(config, target_id, skill_identifier) {
+        Some(installation) => link_matches_record(&link_path, installation),
+        None => false,
+    }
+}
+
 pub fn uninstall_skill(
     config: &mut AppConfig,
     target_id: &str,

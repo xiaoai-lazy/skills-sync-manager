@@ -69,7 +69,13 @@ export function useModalFocus(options: UseModalFocusOptions): void {
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      if (!previouslyFocused?.isConnected) return;
+      // Escape counts as keyboard input; without this, restoring focus paints a
+      // :focus-visible ring on the trigger (e.g. skill name) after the drawer closes.
+      previouslyFocused.focus({
+        preventScroll: true,
+        focusVisible: false,
+      } as FocusOptions);
     };
   }, [open, containerRef, initialFocusRef]);
 }
