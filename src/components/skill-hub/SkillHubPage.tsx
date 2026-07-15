@@ -51,6 +51,7 @@ import {
   resolveSkillRecord,
   findPendingUpdate,
   skillHasPendingUpdate,
+  matchedPendingUpdates,
   pendingUpdateIdentifier,
 } from './sourceTreeUtils';
 
@@ -201,7 +202,12 @@ function SkillHubPage(props: SkillHubPageProps) {
   };
 
   const handleUpdateAll = async () => {
-    if (pendingUpdates.length === 0 || updatingAll) return;
+    if (
+      matchedPendingUpdates(dedupedInstalled, pendingUpdates).length === 0 ||
+      updatingAll
+    ) {
+      return;
+    }
     setUpdatingAll(true);
     try {
       const result = await updateAllSkills();
@@ -484,7 +490,12 @@ function SkillHubPage(props: SkillHubPageProps) {
 
   const clearSelection = () => setSelectedKeys(new Set());
 
-  const pendingCount = pendingUpdates.length;
+  // Count only updates that match an installed skill — orphan/stale cache entries
+  // must not inflate「待更新 / 有更新」or leave the updates chip on an empty list.
+  const pendingCount = useMemo(
+    () => matchedPendingUpdates(dedupedInstalled, pendingUpdates).length,
+    [dedupedInstalled, pendingUpdates],
+  );
   const installedCountForNode = useMemo(
     () => countInstalledForNode(effectiveFilterNodeId, dedupedInstalled, installedRecords),
     [effectiveFilterNodeId, dedupedInstalled, installedRecords],

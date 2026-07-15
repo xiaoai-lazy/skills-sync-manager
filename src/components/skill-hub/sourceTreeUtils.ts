@@ -41,12 +41,39 @@ function skillMatchesHubNode(
   return skill.storageKey.startsWith(hubStoragePrefix(endpointId, group));
 }
 
+function updateMatchesSkill(
+  update: SkillUpdateInfo,
+  skill: Pick<SkillView, 'dirName' | 'storageKey' | 'linkName'>,
+): boolean {
+  if (update.storageKey && skill.storageKey && update.storageKey === skill.storageKey) {
+    return true;
+  }
+
+  const linkName = skill.linkName || skill.dirName;
+
+  // Legacy cache: bare name (no '/') stored instead of full storageKey.
+  if (update.storageKey && !update.storageKey.includes('/')) {
+    return (
+      skill.storageKey === update.storageKey ||
+      skill.storageKey.endsWith(`/${update.storageKey}`) ||
+      linkName === update.storageKey ||
+      skill.dirName === update.storageKey
+    );
+  }
+
+  // Legacy cache: empty storageKey — fall back to dir/link name only.
+  if (!update.storageKey) {
+    return update.dirName === skill.dirName || update.dirName === linkName;
+  }
+
+  return false;
+}
+
 export function findPendingUpdate(
   skill: Pick<SkillView, 'dirName' | 'storageKey' | 'linkName'>,
   pendingUpdates: SkillUpdateInfo[],
 ): SkillUpdateInfo | undefined {
-  if (!skill.storageKey) return undefined;
-  return pendingUpdates.find((update) => update.storageKey === skill.storageKey);
+  return pendingUpdates.find((update) => updateMatchesSkill(update, skill));
 }
 
 export function skillHasPendingUpdate(
@@ -54,6 +81,16 @@ export function skillHasPendingUpdate(
   pendingUpdates: SkillUpdateInfo[],
 ): boolean {
   return findPendingUpdate(skill, pendingUpdates) !== undefined;
+}
+
+/** Updates that correspond to at least one currently installed skill. */
+export function matchedPendingUpdates(
+  skills: Array<Pick<SkillView, 'dirName' | 'storageKey' | 'linkName'>>,
+  pendingUpdates: SkillUpdateInfo[],
+): SkillUpdateInfo[] {
+  return pendingUpdates.filter((update) =>
+    skills.some((skill) => updateMatchesSkill(update, skill)),
+  );
 }
 
 export function pendingUpdateIdentifier(

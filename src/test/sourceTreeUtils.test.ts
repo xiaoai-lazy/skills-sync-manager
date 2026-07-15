@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_HUB_GROUP,
   dedupeInstalledSkills,
+  findPendingUpdate,
   hubEndpointVisible,
+  matchedPendingUpdates,
   matchesInstalledNode,
   resolveEffectiveFilterNodeId,
   resolveSkillRecord,
+  skillHasPendingUpdate,
 } from '../components/skill-hub/sourceTreeUtils';
-import type { SkillHubEndpoint, SkillRecord, SkillView } from '../model/types';
+import type { SkillHubEndpoint, SkillRecord, SkillUpdateInfo, SkillView } from '../model/types';
 import { emptyV6SkillViewFields } from '../model/types';
 
 const hubTalos: SkillView = {
@@ -150,5 +153,51 @@ describe('sourceTreeUtils hub grouping', () => {
     };
     expect(hubEndpointVisible(endpoint, {})).toBe(true);
     expect(hubEndpointVisible({ ...endpoint, enabled: false }, {})).toBe(true);
+  });
+});
+
+describe('pending update matching', () => {
+  const skill = hubTalos;
+  const exact: SkillUpdateInfo = {
+    dirName: skill.linkName,
+    name: skill.name ?? skill.dirName,
+    remoteHash: 'remote',
+    storageKey: skill.storageKey,
+  };
+
+  it('matches by full storageKey', () => {
+    expect(findPendingUpdate(skill, [exact])?.storageKey).toBe(skill.storageKey);
+    expect(skillHasPendingUpdate(skill, [exact])).toBe(true);
+  });
+
+  it('matches legacy bare-name storageKey against nested skill key', () => {
+    const bare: SkillUpdateInfo = {
+      dirName: skill.linkName,
+      name: skill.name ?? skill.dirName,
+      remoteHash: 'remote',
+      storageKey: skill.linkName,
+    };
+    expect(findPendingUpdate(skill, [bare])?.storageKey).toBe(skill.linkName);
+  });
+
+  it('matches empty storageKey via dirName', () => {
+    const emptyKey: SkillUpdateInfo = {
+      dirName: skill.linkName,
+      name: skill.name ?? skill.dirName,
+      remoteHash: 'remote',
+      storageKey: '',
+    };
+    expect(findPendingUpdate(skill, [emptyKey])).toEqual(emptyKey);
+  });
+
+  it('matchedPendingUpdates ignores orphan cache entries', () => {
+    const orphan: SkillUpdateInfo = {
+      dirName: 'gone-skill',
+      name: 'gone',
+      remoteHash: 'x',
+      storageKey: 'repo/gone/gone-skill',
+    };
+    expect(matchedPendingUpdates([skill], [exact, orphan])).toEqual([exact]);
+    expect(matchedPendingUpdates([skill], [orphan])).toEqual([]);
   });
 });

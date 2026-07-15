@@ -332,6 +332,19 @@ fn pending_update_matches(update: &SkillUpdateInfo, identifier: &str) -> bool {
     !update.storage_key.is_empty() && update.storage_key == identifier
 }
 
+/// Canonical install identity for update cache entries.
+/// Prefer the skill_records map key (same as SkillView.storageKey) over a possibly
+/// stale/empty `record.storage_key` field so UI matching stays consistent.
+fn update_storage_key(record_key: &str, record: &SkillRecord) -> String {
+    if !record.storage_key.is_empty() && record.storage_key == record_key {
+        return record.storage_key.clone();
+    }
+    if !record_key.is_empty() {
+        return record_key.to_string();
+    }
+    record.storage_key.clone()
+}
+
 fn is_hub_endpoint_enabled(config: &AppConfig, hub_endpoint_id: &str) -> bool {
     config
         .skill_hub_endpoints
@@ -369,7 +382,7 @@ where
         name: skill_display_name(&local_path, &link_name),
         current_hash,
         remote_hash,
-        storage_key: record.storage_key.clone(),
+        storage_key: update_storage_key(record_key, record),
     }))
 }
 
@@ -469,7 +482,7 @@ fn compare_record_to_repo_root(
         name: skill_display_name(&local_path, &link_name),
         current_hash,
         remote_hash,
-        storage_key: record.storage_key.clone(),
+        storage_key: update_storage_key(record_key, record),
     }))
 }
 
@@ -1031,8 +1044,38 @@ mod tests {
 
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].dir_name, "brainstorming");
+        assert_eq!(updates[0].storage_key, "brainstorming");
         assert_eq!(updates[0].current_hash.as_deref(), Some(local_hash.as_str()));
         assert_eq!(updates[0].remote_hash, remote_hash);
+    }
+
+    #[test]
+    fn check_updates_uses_record_map_key_when_storage_key_field_mismatches() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let storage_key = "repo/github.com--anthropics-skills/brainstorming";
+        let local_installed = main_dir.join("repo/github.com--anthropics-skills/brainstorming");
+        write_valid_skill(&local_installed, "brainstorming", "local-old");
+        write_valid_skill(
+            &repo_root.join("skills").join("brainstorming"),
+            "brainstorming",
+            "remote-new",
+        );
+
+        let mut record = sample_record("skills/brainstorming", "stale-hash");
+        // Stale field: bare link name while map key is the full storage key.
+        record.storage_key = "brainstorming".to_string();
+        let mut config = config_with_record(storage_key, record);
+
+        let updates =
+            check_updates_with_download_hook(&mut config, &main_dir, |_| Ok(repo_root.clone()))
+                .expect("check updates");
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].storage_key, storage_key);
     }
 
     #[test]

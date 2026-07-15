@@ -109,7 +109,7 @@ function SyncFromTargetDialog(props: SyncFromTargetDialogProps) {
         >
           {candidates.map((c) => (
             <option key={c.target.id} value={c.target.id}>
-              {c.target.name} · {c.target.skillsDir} · 已装 {c.installedCount}
+              {c.target.name} · 已装 {c.installedCount}
             </option>
           ))}
         </select>

@@ -401,6 +401,23 @@ describe('SkillHubPage', () => {
     expect(screen.getByText('红-绿-重构循环。')).toBeInTheDocument();
   });
 
+  it('does not count orphan pending updates that match no installed skill', async () => {
+    renderHub({
+      pendingUpdates: [
+        {
+          dirName: 'deleted-skill',
+          name: 'Deleted',
+          remoteHash: 'zzz',
+          storageKey: 'repo/gone/deleted-skill',
+        },
+      ],
+    });
+
+    await screen.findByText('Explore ideas before implementation.');
+    expect(screen.queryByText(/待更新/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /有更新 \(0\)/ })).toBeInTheDocument();
+  });
+
   it('shows GitHub source for skills with hub install records', async () => {
     renderHub({ skillRecords: undefined });
 
