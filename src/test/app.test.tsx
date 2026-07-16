@@ -928,7 +928,7 @@ describe('App', () => {
 
     const checkbox = screen.getByRole('checkbox');
 
-    expect(checkbox).toBeDisabled();
+    expect(checkbox).toHaveAttribute('aria-disabled', 'true');
 
   });
 

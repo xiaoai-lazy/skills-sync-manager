@@ -106,7 +106,7 @@ describe('TargetDetail', () => {
     expect(screen.getByText('主库中暂无有效 Skill')).toBeInTheDocument();
   });
 
-  it('renders invalid skills section with disabled checkbox', () => {
+  it('renders invalid skills section with disabled install row', () => {
     render(
       <TargetDetail
         target={target}
@@ -124,7 +124,7 @@ describe('TargetDetail', () => {
 
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes).toHaveLength(2);
-    expect(checkboxes[1]).toBeDisabled();
+    expect(checkboxes[1]).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('shows sync button when showSyncButton is true and calls onOpenSync', () => {
@@ -183,7 +183,7 @@ describe('TargetDetail', () => {
     expect(screen.queryByRole('button', { name: '从其他目录同步…' })).not.toBeInTheDocument();
   });
 
-  it('calls onPreviewSkill when skill name is clicked but not when checkbox is clicked', () => {
+  it('calls onPreviewSkill from the title and toggles install from the row body', () => {
     const onPreviewSkill = vi.fn();
     const onToggleSkill = vi.fn();
     render(

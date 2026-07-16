@@ -1,3 +1,4 @@
+import type { KeyboardEvent, MouseEvent } from 'react';
 import type { SkillWithTargetState, SkillInstallState, SkillRecord } from '../model/types';
 import { skillSourceLabelForView } from '../utils/skillSourceLabel';
 
@@ -42,7 +43,7 @@ export function stateLabel(state: SkillInstallState): string {
 }
 
 function SkillRow(props: SkillRowProps) {
-  const { item, skillRecords, pending, onPreview } = props;
+  const { item, skillRecords, pending, onPreview, onToggle } = props;
   const { skill, state } = item;
 
   const isInvalid = !skill.valid || state === 'invalidSkill';
@@ -78,20 +79,60 @@ function SkillRow(props: SkillRowProps) {
   const toggleTitle = !toggleEnabled
     ? '无法切换'
     : state === 'installed'
-      ? '卸载'
+      ? '点击卸载'
       : canForceClearInstallation(state)
-        ? '强制清除安装记录'
-        : '安装';
+        ? '点击强制清除安装记录'
+        : '点击安装';
+
+  const handleToggle = () => {
+    if (!toggleEnabled) return;
+    onToggle(skillKey, state);
+  };
+
+  const handleCardClick = () => {
+    handleToggle();
+  };
+
+  const handleCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!toggleEnabled) return;
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      handleToggle();
+    }
+  };
+
+  const handlePreviewClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onPreview?.(skillKey);
+  };
+
+  const className = [
+    'target-skill-card',
+    isInstalled ? 'installed' : '',
+    toggleEnabled ? 'toggleable' : '',
+    isInvalid ? 'invalid' : '',
+    pending ? 'pending' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div
-      className={`target-skill-card ${isInvalid ? 'invalid' : ''} ${pending ? 'pending' : ''}`}
+      className={className}
+      role="checkbox"
+      aria-checked={isInstalled}
+      aria-disabled={!toggleEnabled}
+      aria-label={`${displayName} 安装状态`}
+      title={toggleTitle}
+      tabIndex={toggleEnabled ? 0 : -1}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
     >
       <div className="skill-info">
         <button
           type="button"
           className="skill-name skill-name-link"
-          onClick={() => onPreview?.(skillKey)}
+          onClick={handlePreviewClick}
         >
           {displayName}
         </button>
@@ -100,16 +141,6 @@ function SkillRow(props: SkillRowProps) {
         {showMessage && <div className="skill-message">{messageText}</div>}
       </div>
       <span className={`status-badge status-${state}`}>{stateLabel(state)}</span>
-      <div className="skill-actions">
-        <input
-          type="checkbox"
-          checked={isInstalled}
-          disabled={!toggleEnabled}
-          onChange={() => props.onToggle(skillKey, state)}
-          title={toggleTitle}
-          aria-label={`${displayName} 安装状态`}
-        />
-      </div>
     </div>
   );
 }

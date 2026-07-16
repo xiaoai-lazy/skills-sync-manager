@@ -98,11 +98,36 @@
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-card);
   transition: box-shadow var(--transition), border-color var(--transition);
+  outline: none;
 }
 
-.target-skill-card:hover {
+.target-skill-card.toggleable {
+  cursor: pointer;
+}
+
+.target-skill-card.toggleable:hover {
+  border-color: rgba(15, 118, 110, 0.22);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.target-skill-card:not(.toggleable):hover {
   border-color: rgba(15, 118, 110, 0.12);
   box-shadow: var(--shadow-card-hover);
+}
+
+.target-skill-card.installed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring), var(--shadow-card);
+}
+
+.target-skill-card.installed.toggleable:hover {
+  border-color: var(--accent-hover);
+  box-shadow: 0 0 0 2px var(--accent-ring), var(--shadow-card-hover);
+}
+
+.target-skill-card.toggleable:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring), var(--shadow-card);
 }
 
 .target-skill-card.invalid {
@@ -189,9 +214,4 @@
   line-height: 1.4;
 }
 
-.target-skill-card .skill-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 0.5rem;
-}
 
