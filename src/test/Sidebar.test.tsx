@@ -203,4 +203,45 @@ describe('Sidebar', () => {
 
     expect(screen.getByText('暂无用户级目标')).toBeInTheDocument();
   });
+
+  it('shows version in the footer', () => {
+    renderSidebar({ appVersion: '0.7.1' });
+    expect(screen.getByText('v0.7.1')).toBeInTheDocument();
+  });
+
+  it('shows update tag when updateAvailable and opens on click', async () => {
+    const onOpenUpdate = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({
+      appVersion: '0.7.1',
+      updateAvailable: true,
+      onOpenUpdate,
+    });
+    expect(screen.queryByRole('button', { name: '检查更新' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '有新版本' }));
+    expect(onOpenUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows refresh control when no update and calls onCheckUpdate', async () => {
+    const onCheckUpdate = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({
+      appVersion: '0.7.1',
+      updateAvailable: false,
+      updateChecking: false,
+      onCheckUpdate,
+    });
+    await user.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(onCheckUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables refresh while updateChecking', () => {
+    renderSidebar({
+      appVersion: '0.7.1',
+      updateAvailable: false,
+      updateChecking: true,
+      onCheckUpdate: vi.fn(),
+    });
+    expect(screen.getByRole('button', { name: '检查更新' })).toBeDisabled();
+  });
 });

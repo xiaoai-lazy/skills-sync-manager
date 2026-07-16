@@ -282,6 +282,67 @@
   color: var(--text-tertiary);
 }
 
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-version {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.sidebar-update-tag {
+  border: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent-soft, var(--surface-muted));
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.sidebar-update-refresh {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+}
+
+.sidebar-update-refresh:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--accent);
+}
+
+.sidebar-update-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.sidebar-update-refresh.is-busy svg {
+  animation: sidebar-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes sidebar-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .target-dot {
   flex-shrink: 0;
   width: 8px;

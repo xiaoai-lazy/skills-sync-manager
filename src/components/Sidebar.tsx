@@ -21,6 +21,11 @@ export interface SidebarProps {
   onEditProject: (project: Project) => void;
   onDeleteTarget: (target: Target) => void;
   onDeleteProject: (project: Project) => void;
+  appVersion?: string | null;
+  updateAvailable?: boolean;
+  updateChecking?: boolean;
+  onOpenUpdate?: () => void;
+  onCheckUpdate?: () => void;
 }
 
 function Sidebar(props: SidebarProps) {
@@ -122,6 +127,42 @@ function Sidebar(props: SidebarProps) {
           onEditTarget={props.onEditTarget}
           onDeleteTarget={props.onDeleteTarget}
         />
+      </div>
+
+      <div className="sidebar-footer">
+        {props.appVersion ? (
+          <span className="sidebar-version">v{props.appVersion}</span>
+        ) : null}
+        {props.updateAvailable ? (
+          <button
+            type="button"
+            className="sidebar-update-tag"
+            onClick={props.onOpenUpdate}
+          >
+            有新版本
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`sidebar-update-refresh${props.updateChecking ? ' is-busy' : ''}`}
+            aria-label="检查更新"
+            disabled={props.updateChecking || !props.onCheckUpdate}
+            onClick={props.onCheckUpdate}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+              <path d="M21 3v6h-6" />
+            </svg>
+          </button>
+        )}
       </div>
     </aside>
   );
