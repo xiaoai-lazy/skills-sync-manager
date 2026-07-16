@@ -21,7 +21,6 @@ import ProjectFormDialog from './components/ProjectFormDialog';
 import WindowControls from './components/WindowControls';
 import { isMacOS } from './utils/platform';
 import UpdateDialog from './components/UpdateDialog';
-import { checkAppUpdate, installAppUpdate } from './api/updater';
 import { errorMessage } from './utils/errorMessage';
 import { listSyncSourceCandidates } from './utils/targetSyncCandidates';
 
@@ -36,6 +35,8 @@ import { useSkillHub } from './hooks/useSkillHub';
 import { useTargetActions } from './hooks/useTargetActions';
 
 import { useProjectActions } from './hooks/useProjectActions';
+
+import { useAppUpdater } from './hooks/useAppUpdater';
 
 import type { SkillMarkdownRequest } from './model/types';
 
@@ -92,17 +93,23 @@ function App() {
     setDeleteSkillDirName,
     deleteSkillStorageKey,
     setDeleteSkillStorageKey,
-    updateDismissedRef,
-    updateCheckStartedRef,
-    updateDialogOpen,
-    setUpdateDialogOpen,
-    updateInfo,
-    setUpdateInfo,
-    updateInstalling,
-    setUpdateInstalling,
-    updateError,
-    setUpdateError,
   } = useAppDialogs();
+
+  const {
+    appVersion,
+    updateInfo,
+    updateDialogOpen,
+    updateInstalling,
+    updateError,
+    updateChecking,
+    runUpdateCheck,
+    openUpdateDialog,
+    handleDeferUpdate,
+    handleInstallUpdate,
+  } = useAppUpdater({
+    enabled: Boolean(appState),
+    onToast: (message, kind) => setAppToast({ message, kind }),
+  });
 
   const setErrorRef = useRef<(message: string | null) => void>(() => {});
 
@@ -146,64 +153,6 @@ function App() {
     const timer = window.setTimeout(() => setAppToast(null), 5000);
     return () => window.clearTimeout(timer);
   }, [appToast]);
-
-  useEffect(() => {
-
-    if (!appState || updateDismissedRef.current || updateCheckStartedRef.current) return;
-
-    updateCheckStartedRef.current = true;
-
-    void checkAppUpdate()
-
-      .then((info) => {
-
-        if (info) {
-
-          setUpdateInfo(info);
-
-          setUpdateDialogOpen(true);
-
-        }
-
-      })
-
-      .catch(() => {
-
-        /* ignore update check failures at startup */
-
-      });
-
-  }, [appState]);
-
-  const handleDeferUpdate = () => {
-
-    updateDismissedRef.current = true;
-
-    setUpdateDialogOpen(false);
-
-    setUpdateError(null);
-
-  };
-
-  const handleInstallUpdate = async () => {
-
-    setUpdateInstalling(true);
-
-    setUpdateError(null);
-
-    try {
-
-      await installAppUpdate();
-
-    } catch (err) {
-
-      setUpdateError(errorMessage(err));
-
-      setUpdateInstalling(false);
-
-    }
-
-  };
 
   const {
     pendingSkillKey,
@@ -362,6 +311,14 @@ function App() {
         onDeleteTarget={handleDeleteTarget}
 
         onDeleteProject={handleDeleteProject}
+
+        appVersion={appVersion}
+        updateAvailable={Boolean(updateInfo)}
+        updateChecking={updateChecking}
+        onOpenUpdate={openUpdateDialog}
+        onCheckUpdate={() => {
+          void runUpdateCheck('manual');
+        }}
 
       />
 

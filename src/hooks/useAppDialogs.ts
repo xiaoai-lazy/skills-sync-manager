@@ -1,6 +1,5 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Project, Target, TargetScope } from '../model/types';
-import type { UpdateInfo } from '../api/updater';
 
 export type AddTargetDialogState = {
   open: boolean;
@@ -47,13 +46,6 @@ export function useAppDialogs() {
   const [deleteSkillDirName, setDeleteSkillDirName] = useState<string | null>(null);
   const [deleteSkillStorageKey, setDeleteSkillStorageKey] = useState<string | null>(null);
 
-  const updateDismissedRef = useRef(false);
-  const updateCheckStartedRef = useRef(false);
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateInstalling, setUpdateInstalling] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-
   return {
     promptDialogOpen,
     setPromptDialogOpen,
@@ -87,15 +79,5 @@ export function useAppDialogs() {
     setDeleteSkillDirName,
     deleteSkillStorageKey,
     setDeleteSkillStorageKey,
-    updateDismissedRef,
-    updateCheckStartedRef,
-    updateDialogOpen,
-    setUpdateDialogOpen,
-    updateInfo,
-    setUpdateInfo,
-    updateInstalling,
-    setUpdateInstalling,
-    updateError,
-    setUpdateError,
   };
 }

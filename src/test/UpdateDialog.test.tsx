@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { useEffect, useRef, useState } from 'react';
 import UpdateDialog from '../components/UpdateDialog';
 import type { UpdateInfo } from '../api/updater';
 
@@ -11,7 +10,7 @@ vi.mock('../api/updater', () => ({
   installAppUpdate: vi.fn(),
 }));
 
-import { checkAppUpdate, installAppUpdate } from '../api/updater';
+import { installAppUpdate } from '../api/updater';
 
 const sampleUpdate: UpdateInfo = {
   version: '0.5.0',
@@ -100,79 +99,5 @@ describe('UpdateDialog', () => {
 
     expect(screen.getByRole('button', { name: '稍后' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '正在更新…' })).toBeDisabled();
-  });
-});
-
-function StartupUpdateChecker() {
-  const dismissedRef = useRef(false);
-  const checkStartedRef = useRef(false);
-  const [open, setOpen] = useState(false);
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
-
-  useEffect(() => {
-    if (dismissedRef.current || checkStartedRef.current) return;
-    checkStartedRef.current = true;
-    void checkAppUpdate().then((info) => {
-      if (info) {
-        setUpdate(info);
-        setOpen(true);
-      }
-    });
-  }, []);
-
-  return (
-    <UpdateDialog
-      open={open}
-      update={update}
-      installing={false}
-      error={null}
-      onDefer={() => {
-        dismissedRef.current = true;
-        setOpen(false);
-      }}
-      onInstall={() => {
-        void installAppUpdate();
-      }}
-    />
-  );
-}
-
-describe('Startup update check', () => {
-  afterEach(() => {
-    cleanup();
-    vi.clearAllMocks();
-  });
-
-  it('checks once on mount and opens dialog when update is available', async () => {
-    vi.mocked(checkAppUpdate).mockResolvedValue(sampleUpdate);
-
-    render(<StartupUpdateChecker />);
-
-    await waitFor(() => {
-      expect(checkAppUpdate).toHaveBeenCalledTimes(1);
-    });
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('0.5.0')).toBeInTheDocument();
-  });
-
-  it('does not re-check after defer in the same session', async () => {
-    vi.mocked(checkAppUpdate).mockResolvedValue(sampleUpdate);
-    const user = userEvent.setup();
-
-    const { rerender } = render(<StartupUpdateChecker />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: '稍后' }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
-
-    rerender(<StartupUpdateChecker />);
-
-    expect(checkAppUpdate).toHaveBeenCalledTimes(1);
   });
 });

@@ -94,6 +94,10 @@ vi.mock('../api/updater', () => ({
 
 }));
 
+vi.mock('@tauri-apps/api/app', () => ({
+  getVersion: vi.fn().mockResolvedValue('0.7.1'),
+}));
+
 
 
 import {
@@ -141,6 +145,9 @@ import {
 } from '../api/skillHub';
 
 import { selectDirectory } from '../api/dialog';
+import {
+  checkAppUpdate,
+} from '../api/updater';
 
 
 
@@ -658,6 +665,8 @@ describe('App', () => {
 
     vi.mocked(selectDirectory).mockReset();
 
+    vi.mocked(checkAppUpdate).mockResolvedValue(null);
+
     setupHubMocks();
 
   });
@@ -687,6 +696,22 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /skill 中心/i })).toHaveClass('active');
 
   });
+
+  it('shows sidebar version and does not auto-open update dialog when update exists', async () => {
+    const { checkAppUpdate } = await import('../api/updater');
+    vi.mocked(checkAppUpdate).mockResolvedValue({
+      version: '0.8.0',
+      currentVersion: '0.7.1',
+      notes: 'n',
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('v0.7.1')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '有新版本' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
 
   it('shows a global Toast for source management success', async () => {
     const user = userEvent.setup();
