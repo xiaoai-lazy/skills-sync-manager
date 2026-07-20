@@ -833,4 +833,37 @@ describe('SkillHubPage', () => {
     expect(uploadSkillToHubMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: '重新上传到 Hub？' })).not.toBeInTheDocument();
   });
+
+  it('disables confirm dialog buttons while reupload is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveUpload: () => void = () => {};
+    uploadSkillToHubMock.mockImplementationOnce(
+      () =>
+        new Promise<{ endpoints: []; discoverSkills: [] }>((resolve) => {
+          resolveUpload = () => resolve({ endpoints: [], discoverSkills: [] });
+        }),
+    );
+    const hubState = hubStateWithSkills([hubDirtySkill], {
+      [hubDirtyStorageKey]: hubDirtyRecord,
+    });
+    renderHub({
+      hubState,
+      pendingUpdates: [],
+      onRefreshHub: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await screen.findByText('本地已修改的 Hub Skill。');
+    await user.click(screen.getByRole('button', { name: '重新上传' }));
+    await user.click(screen.getByRole('button', { name: '确认覆盖远程' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '确认覆盖远程' })).toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled();
+
+    resolveUpload();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '重新上传到 Hub？' })).not.toBeInTheDocument();
+    });
+  });
 });

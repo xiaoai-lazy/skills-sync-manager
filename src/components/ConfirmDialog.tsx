@@ -8,13 +8,27 @@ export interface ConfirmDialogProps {
   confirmLabel: string;
   cancelLabel: string;
   danger?: boolean;
+  /** When true, confirm and cancel are disabled and handlers are ignored. */
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 function ConfirmDialog(props: ConfirmDialogProps) {
-  const { open, title, message, confirmLabel, cancelLabel, danger, onConfirm, onCancel } = props;
+  const {
+    open,
+    title,
+    message,
+    confirmLabel,
+    cancelLabel,
+    danger,
+    busy = false,
+    onConfirm,
+    onCancel,
+  } = props;
   const confirmRef = useRef<HTMLButtonElement>(null);
+  /** Sync guard so a double-click before re-render cannot fire twice. */
+  const busyGuardRef = useRef(false);
   const messageId = 'confirm-dialog-message';
 
   useEffect(() => {
@@ -23,21 +37,47 @@ function ConfirmDialog(props: ConfirmDialogProps) {
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !busy) {
+      busyGuardRef.current = false;
+    }
+  }, [open, busy]);
+
+  const handleConfirm = () => {
+    if (busy || busyGuardRef.current) return;
+    busyGuardRef.current = true;
+    onConfirm();
+  };
+
+  const handleCancel = () => {
+    if (busy || busyGuardRef.current) return;
+    onCancel();
+  };
+
   return (
     <Dialog
       open={open}
       title={title}
       descriptionId={messageId}
-      onClose={onCancel}
+      onClose={handleCancel}
+      closeOnEscape={!busy}
+      closeOnOverlayClick={!busy}
       actions={
         <>
-          <button className="secondary-button" onClick={onCancel}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleCancel}
+            disabled={busy}
+          >
             {cancelLabel}
           </button>
           <button
+            type="button"
             ref={confirmRef}
             className={danger ? 'danger-button' : ''}
-            onClick={onConfirm}
+            onClick={handleConfirm}
+            disabled={busy}
           >
             {confirmLabel}
           </button>

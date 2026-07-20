@@ -902,6 +902,7 @@ pub async fn upload_skill_to_hub(
 
     let hub_endpoint_id_for_task = hub_endpoint_id;
     let group_for_task = group;
+    let storage_key_for_merge = storage_key.clone();
     let storage_key_for_task = storage_key;
 
     let config = tauri::async_runtime::spawn_blocking(move || {
@@ -922,7 +923,8 @@ pub async fn upload_skill_to_hub(
     .map_err(|err| err.to_dto())?
     .map_err(|err| err.to_dto())?;
 
-    // Persist discover cache + skill_records only; avoid clobbering concurrent update-cache writes.
+    // Persist discover cache + only the uploaded skill_record(s); avoid clobbering
+    // concurrent skill_records / skill_update_cache writes.
     let mut latest = store.load().map_err(|err| err.to_dto())?;
     let app_data_dir = app
         .path()
@@ -933,12 +935,38 @@ pub async fn upload_skill_to_hub(
         })
         .map_err(|err| err.to_dto())?;
     crate::runtime_cache::attach_to_config(&app_data_dir, &mut latest);
+    merge_uploaded_skill_records(&mut latest, &config, &storage_key_for_merge);
     latest.skill_discover_cache = config.skill_discover_cache;
-    latest.skill_records = config.skill_records;
     crate::runtime_cache::persist_from_config(&app_data_dir, &latest).map_err(|err| err.to_dto())?;
     store.save(&latest).map_err(|err| err.to_dto())?;
 
     Ok(hub_endpoint_change_result(&latest))
+}
+
+/// Merge only the uploaded skill's record(s) whose content_hash was refreshed.
+/// Matches by map key or `SkillRecord.storage_key`; leaves other records and
+/// `skill_update_cache` untouched.
+pub(crate) fn merge_uploaded_skill_records(
+    latest: &mut AppConfig,
+    uploaded: &AppConfig,
+    storage_key: &str,
+) {
+    for (key, uploaded_record) in &uploaded.skill_records {
+        let matches_uploaded =
+            key.as_str() == storage_key || uploaded_record.storage_key == storage_key;
+        if !matches_uploaded {
+            continue;
+        }
+        let should_merge = match latest.skill_records.get(key) {
+            Some(existing) => existing.content_hash != uploaded_record.content_hash,
+            None => true,
+        };
+        if should_merge {
+            latest
+                .skill_records
+                .insert(key.clone(), uploaded_record.clone());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1163,6 +1191,130 @@ mod tests {
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].skill.dir_name, "brainstorming");
         assert_eq!(states[0].state, SkillInstallState::Installed);
+    }
+
+    #[test]
+    fn merge_uploaded_skill_records_updates_only_matching_hash_changed_keys() {
+        let storage_key = "hub/company-hub/common/tdd";
+        let other_key = "hub/company-hub/common/other";
+
+        let mut uploaded = AppConfig::default();
+        uploaded.skill_records.insert(
+            storage_key.to_string(),
+            crate::models::SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: storage_key.to_string(),
+                content_hash: "newhash00001".to_string(),
+                ..Default::default()
+            },
+        );
+        uploaded.skill_records.insert(
+            other_key.to_string(),
+            crate::models::SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: other_key.to_string(),
+                content_hash: "uploaded-other".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let mut latest = AppConfig::default();
+        latest.skill_records.insert(
+            storage_key.to_string(),
+            crate::models::SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: storage_key.to_string(),
+                content_hash: "oldhash00001".to_string(),
+                ..Default::default()
+            },
+        );
+        latest.skill_records.insert(
+            other_key.to_string(),
+            crate::models::SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: other_key.to_string(),
+                content_hash: "latest-other".to_string(),
+                ..Default::default()
+            },
+        );
+        latest.skill_records.insert(
+            "concurrent-new".to_string(),
+            crate::models::SkillRecord {
+                source: "github".to_string(),
+                content_hash: "keep-me".to_string(),
+                ..Default::default()
+            },
+        );
+        latest.skill_update_cache = SkillUpdateCache {
+            checked_at: Some("2026-07-20T00:00:00Z".to_string()),
+            updates: vec![SkillUpdateInfo {
+                dir_name: "tdd".to_string(),
+                name: "tdd".to_string(),
+                current_hash: Some("a".to_string()),
+                remote_hash: "b".to_string(),
+                storage_key: storage_key.to_string(),
+            }],
+        };
+        let update_cache_before = latest.skill_update_cache.clone();
+
+        merge_uploaded_skill_records(&mut latest, &uploaded, storage_key);
+
+        assert_eq!(
+            latest
+                .skill_records
+                .get(storage_key)
+                .unwrap()
+                .content_hash,
+            "newhash00001"
+        );
+        assert_eq!(
+            latest.skill_records.get(other_key).unwrap().content_hash,
+            "latest-other",
+            "unrelated records must not be overwritten from uploaded config"
+        );
+        assert_eq!(
+            latest
+                .skill_records
+                .get("concurrent-new")
+                .unwrap()
+                .content_hash,
+            "keep-me",
+            "concurrent records on latest must be preserved"
+        );
+        assert_eq!(latest.skill_update_cache, update_cache_before);
+    }
+
+    #[test]
+    fn merge_uploaded_skill_records_matches_by_record_storage_key() {
+        let map_key = "legacy-tdd";
+        let storage_key = "hub/company-hub/common/tdd";
+
+        let mut uploaded = AppConfig::default();
+        uploaded.skill_records.insert(
+            map_key.to_string(),
+            crate::models::SkillRecord {
+                storage_key: storage_key.to_string(),
+                content_hash: "refreshed".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let mut latest = AppConfig::default();
+        latest.skill_records.insert(
+            map_key.to_string(),
+            crate::models::SkillRecord {
+                storage_key: storage_key.to_string(),
+                content_hash: "stale".to_string(),
+                ..Default::default()
+            },
+        );
+
+        merge_uploaded_skill_records(&mut latest, &uploaded, storage_key);
+
+        assert_eq!(
+            latest.skill_records.get(map_key).unwrap().content_hash,
+            "refreshed"
+        );
     }
 }
     #[test]

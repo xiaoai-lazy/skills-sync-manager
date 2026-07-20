@@ -150,6 +150,7 @@ function SkillHubPage(props: SkillHubPageProps) {
 
   const discoverInFlight = useRef(false);
   const checkInFlight = useRef(false);
+  const confirmBusyRef = useRef(false);
 
   const refreshHubState = useCallback(async () => {
     if (onRefreshHub) {
@@ -316,8 +317,9 @@ function SkillHubPage(props: SkillHubPageProps) {
   };
 
   const handleConfirmPending = async () => {
-    if (!pendingConfirm || confirmBusy) return;
+    if (!pendingConfirm || confirmBusy || confirmBusyRef.current) return;
     const { kind, skill } = pendingConfirm;
+    confirmBusyRef.current = true;
     setConfirmBusy(true);
     try {
       if (kind === 'reupload') {
@@ -327,6 +329,7 @@ function SkillHubPage(props: SkillHubPageProps) {
       }
       setPendingConfirm(null);
     } finally {
+      confirmBusyRef.current = false;
       setConfirmBusy(false);
     }
   };
@@ -1016,9 +1019,10 @@ function SkillHubPage(props: SkillHubPageProps) {
         }
         cancelLabel="取消"
         danger
+        busy={confirmBusy}
         onConfirm={() => void handleConfirmPending()}
         onCancel={() => {
-          if (!confirmBusy) setPendingConfirm(null);
+          if (!confirmBusy && !confirmBusyRef.current) setPendingConfirm(null);
         }}
       />
 

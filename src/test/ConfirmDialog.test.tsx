@@ -173,4 +173,69 @@ describe('ConfirmDialog', () => {
       expect(screen.getByRole('button', { name: 'Yes' })).toHaveFocus();
     });
   });
+
+  it('disables confirm and cancel when busy', () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Confirm"
+        message="Are you sure?"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        busy
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'No' })).toBeDisabled();
+  });
+
+  it('does not call onConfirm when busy even if clicked', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Confirm"
+        message="Are you sure?"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        busy
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await user.click(screen.getByRole('button', { name: 'No' }));
+
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second confirm click via sync guard before busy re-render', async () => {
+    const onConfirm = vi.fn();
+
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Confirm"
+        message="Are you sure?"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const confirm = screen.getByRole('button', { name: 'Yes' });
+    confirm.click();
+    confirm.click();
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });
