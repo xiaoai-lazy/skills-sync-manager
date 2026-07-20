@@ -387,6 +387,8 @@ pub struct SkillView {
     pub storage_key: String,
     #[serde(default)]
     pub link_name: String,
+    #[serde(default)]
+    pub local_dirty: bool,
 }
 
 impl Default for SkillView {
@@ -400,6 +402,7 @@ impl Default for SkillView {
             validation_errors: Vec::new(),
             storage_key: String::new(),
             link_name: String::new(),
+            local_dirty: false,
         }
     }
 }

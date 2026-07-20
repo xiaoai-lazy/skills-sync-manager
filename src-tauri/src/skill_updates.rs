@@ -57,6 +57,10 @@ fn local_hash_for_hub_compare(local_path: &Path, remote_hash: &str) -> Result<St
     }
 }
 
+pub fn hash_matching_stored_content_hash(path: &Path, content_hash: &str) -> Result<String, AppError> {
+    local_hash_for_hub_compare(path, content_hash)
+}
+
 fn collect_files_sorted(
     root: &Path,
     current: &Path,

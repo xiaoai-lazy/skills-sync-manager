@@ -161,6 +161,7 @@ fn validate_skill_dir(main_dir: &Path, skill_dir: &Path) -> Result<SkillView, Ap
             validation_errors: vec![MISSING_SKILL_MD.to_string()],
             storage_key,
             link_name,
+            ..Default::default()
         });
     }
 
@@ -179,6 +180,7 @@ fn validate_skill_dir(main_dir: &Path, skill_dir: &Path) -> Result<SkillView, Ap
             validation_errors: Vec::new(),
             storage_key,
             link_name,
+            ..Default::default()
         }),
         Err(validation_errors) => Ok(SkillView {
             dir_name,
@@ -189,6 +191,7 @@ fn validate_skill_dir(main_dir: &Path, skill_dir: &Path) -> Result<SkillView, Ap
             validation_errors,
             storage_key,
             link_name,
+            ..Default::default()
         }),
     }
 }

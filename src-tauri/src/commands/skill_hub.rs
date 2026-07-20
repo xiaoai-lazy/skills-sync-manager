@@ -234,11 +234,37 @@ fn require_main_skills_dir(config: &AppConfig) -> Result<&Path, AppError> {
     Ok(main_dir)
 }
 
+fn annotate_local_dirty(skills: &mut [crate::models::SkillView], config: &AppConfig) {
+    for skill in skills.iter_mut() {
+        skill.local_dirty = false;
+        if skill.storage_key.is_empty() || !skill.path.is_dir() {
+            continue;
+        }
+        let Some(record) = config.skill_records.get(&skill.storage_key).or_else(|| {
+            config
+                .skill_records
+                .values()
+                .find(|r| r.storage_key == skill.storage_key)
+        }) else {
+            continue;
+        };
+        if record.source != "skillhub" || record.content_hash.is_empty() {
+            continue;
+        }
+        let Ok(current) = skill_updates::hash_matching_stored_content_hash(&skill.path, &record.content_hash)
+        else {
+            continue;
+        };
+        skill.local_dirty = current != record.content_hash;
+    }
+}
+
 pub fn build_skill_hub_local_state(
     main_dir: &Path,
     config: &AppConfig,
 ) -> Result<SkillHubLocalState, AppError> {
-    let skills = skill_library::list_skills(Some(main_dir))?;
+    let mut skills = skill_library::list_skills(Some(main_dir))?;
+    annotate_local_dirty(&mut skills, config);
     let valid_count = skills.iter().filter(|skill| skill.valid).count() as u32;
     let invalid_count = skills.len() as u32 - valid_count;
 
@@ -939,6 +965,110 @@ mod tests {
     fn create_invalid_skill(main_dir: &Path, dir_name: &str) {
         let skill_dir = main_dir.join(dir_name);
         fs::create_dir_all(&skill_dir).expect("create skill dir");
+    }
+
+    fn create_hub_skill(main_dir: &Path, storage_key: &str, name: &str) {
+        let skill_dir = crate::skill_storage::main_library_path(main_dir, storage_key);
+        fs::create_dir_all(&skill_dir).expect("create hub skill dir");
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            format!(
+                "---\nname: {}\ndescription: Test skill.\n---\n\n# Skill\n",
+                name
+            ),
+        )
+        .expect("write skill md");
+    }
+
+    fn hub_skill_record(storage_key: &str, content_hash: &str) -> crate::models::SkillRecord {
+        crate::models::SkillRecord {
+            source: "skillhub".to_string(),
+            storage_key: storage_key.to_string(),
+            content_hash: content_hash.to_string(),
+            installed_at: "2026-06-30T00:00:00Z".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn build_skill_hub_local_state_marks_local_dirty_when_hash_diverges() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let storage_key = "hub/company-hub/common/tdd";
+        create_hub_skill(&main_dir, storage_key, "tdd");
+
+        let mut config = AppConfig::default();
+        config.settings.main_skills_dir = Some(main_dir.clone());
+        config.skill_records.insert(
+            storage_key.to_string(),
+            hub_skill_record(storage_key, "stalehash0"),
+        );
+
+        let state = build_skill_hub_local_state(&main_dir, &config).expect("build state");
+        let skill = state
+            .skills
+            .iter()
+            .find(|s| s.storage_key == storage_key)
+            .expect("hub skill");
+        assert!(skill.local_dirty);
+    }
+
+    #[test]
+    fn build_skill_hub_local_state_clears_local_dirty_when_hash_matches() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        let storage_key = "hub/company-hub/common/tdd";
+        create_hub_skill(&main_dir, storage_key, "tdd");
+        let skill_dir = crate::skill_storage::main_library_path(&main_dir, storage_key);
+        let matching_hash =
+            skill_updates::compute_skill_md_hash_prefix(&skill_dir).expect("compute hash");
+
+        let mut config = AppConfig::default();
+        config.settings.main_skills_dir = Some(main_dir.clone());
+        config.skill_records.insert(
+            storage_key.to_string(),
+            hub_skill_record(storage_key, &matching_hash),
+        );
+
+        let state = build_skill_hub_local_state(&main_dir, &config).expect("build state");
+        let skill = state
+            .skills
+            .iter()
+            .find(|s| s.storage_key == storage_key)
+            .expect("hub skill");
+        assert!(!skill.local_dirty);
+    }
+
+    #[test]
+    fn build_skill_hub_local_state_non_hub_is_not_local_dirty() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main-skills");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+        create_valid_skill(&main_dir, "github-skill");
+        let storage_key = "github-skill";
+
+        let mut config = AppConfig::default();
+        config.settings.main_skills_dir = Some(main_dir.clone());
+        config.skill_records.insert(
+            storage_key.to_string(),
+            crate::models::SkillRecord {
+                source: "github".to_string(),
+                storage_key: storage_key.to_string(),
+                content_hash: "stalehash0".to_string(),
+                installed_at: "2026-06-30T00:00:00Z".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let state = build_skill_hub_local_state(&main_dir, &config).expect("build state");
+        let skill = state
+            .skills
+            .iter()
+            .find(|s| s.storage_key == storage_key)
+            .expect("github skill");
+        assert!(!skill.local_dirty);
     }
 
     #[test]

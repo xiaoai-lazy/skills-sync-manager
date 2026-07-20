@@ -258,6 +258,7 @@ pub fn compute_target_skill_states(
                     validation_errors: vec!["源 skill 已不存在".to_string()],
                     storage_key: installation.skill_storage_key.clone(),
                     link_name: installation.skill_dir_name.clone(),
+                    ..Default::default()
                 },
                 state: SkillInstallState::SourceMissing,
                 message: Some(
@@ -549,6 +550,7 @@ mod tests {
             validation_errors: Vec::new(),
             storage_key: "repo/github.com--anthropics-skills/tdd".to_string(),
             link_name: "tdd".to_string(),
+            ..Default::default()
         };
 
         let (mut config, target_dir) = create_target_config(temp.path(), "target-1", "Target One");
