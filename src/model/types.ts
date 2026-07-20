@@ -241,6 +241,8 @@ export interface SkillView {
   validationErrors: string[];
   storageKey: string;
   linkName: string;
+  /** Hub skill: main-library hash differs from record.contentHash */
+  localDirty?: boolean;
 }
 
 export interface SkillWithTargetState {
@@ -305,4 +307,5 @@ export const emptyV6SkillRecordFields = {
 export const emptyV6SkillViewFields = {
   storageKey: '',
   linkName: '',
+  localDirty: false,
 } as const;

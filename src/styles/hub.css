@@ -1180,6 +1180,11 @@ button.skill-card-title-link:focus-visible {
   color: var(--danger);
 }
 
+.badge-dirty {
+  background: var(--warning-soft);
+  color: #92400e;
+}
+
 .skill-card.source-missing {
   border-color: rgba(157, 23, 77, 0.18);
 }

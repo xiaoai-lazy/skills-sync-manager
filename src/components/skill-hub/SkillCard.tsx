@@ -17,6 +17,7 @@ export interface SkillCardProps {
   onSelect?: (selected: boolean) => void;
   onInstall?: () => void;
   onUpdate?: () => void;
+  onReupload?: () => void;
   onDelete?: () => void;
   onPreview?: () => void;
 }
@@ -60,6 +61,7 @@ function SkillCard(props: SkillCardProps) {
     onSelect,
     onInstall,
     onUpdate,
+    onReupload,
     onDelete,
     onPreview,
   } = props;
@@ -71,6 +73,8 @@ function SkillCard(props: SkillCardProps) {
   const isDiscover = mode === 'discover';
   const sourceMeta = getSourceMeta(sourceLabel, skill);
   const showUpdate = hasUpdate && !invalid && !sourceMissing;
+  const localDirty = !isDiscoverableSkill(skill) && Boolean(skill.localDirty);
+  const showReupload = !isDiscover && localDirty && !invalid && Boolean(onReupload);
 
   let actions: React.ReactNode = null;
   if (isDiscover) {
@@ -85,22 +89,23 @@ function SkillCard(props: SkillCardProps) {
         删除
       </button>
     );
-  } else if (showUpdate) {
+  } else {
     actions = (
       <>
-        <button type="button" className="btn-sm btn-primary" onClick={onUpdate}>
-          更新
-        </button>
+        {showUpdate && (
+          <button type="button" className="btn-sm btn-primary" onClick={onUpdate}>
+            更新
+          </button>
+        )}
+        {showReupload && (
+          <button type="button" className="btn-sm" onClick={onReupload}>
+            重新上传
+          </button>
+        )}
         <button type="button" className="btn-sm btn-danger" onClick={onDelete}>
           删除
         </button>
       </>
-    );
-  } else {
-    actions = (
-      <button type="button" className="btn-sm btn-danger" onClick={onDelete}>
-        删除
-      </button>
     );
   }
 
@@ -109,7 +114,7 @@ function SkillCard(props: SkillCardProps) {
     onSelect(!selected);
   };
 
-  const showBadges = showUpdate || invalid || sourceMissing;
+  const showBadges = showUpdate || invalid || sourceMissing || localDirty;
 
   return (
     <article
@@ -155,6 +160,7 @@ function SkillCard(props: SkillCardProps) {
               </span>
             )}
             {showUpdate && <span className="badge badge-update">有更新</span>}
+            {localDirty && <span className="badge badge-dirty">已修改</span>}
             {invalid && <span className="badge badge-invalid">无效</span>}
           </div>
         ) : null}
