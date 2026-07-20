@@ -9,6 +9,7 @@ import {
   scanMainLibrary,
   updateAllSkills,
   updateSkill,
+  uploadSkillToHub,
 } from '../../api/skillHub';
 import type {
   DiscoverableSkill,
@@ -22,6 +23,7 @@ import type {
 } from '../../model/types';
 import { errorMessage } from '../../utils/errorMessage';
 import { isInProgressError, isHubSkillGoneError } from '../../utils/ipcError';
+import ConfirmDialog from '../ConfirmDialog';
 import InstallConfirmDialog from './InstallConfirmDialog';
 import SkillListEmptyState from './SkillListEmptyState';
 import SkillCard from './SkillCard';
@@ -57,6 +59,10 @@ import {
 
 type HubTab = 'installed' | 'discover';
 type InstalledChip = 'all' | 'updates';
+type PendingConfirm =
+  | { kind: 'reupload'; skill: SkillView }
+  | { kind: 'update-local'; skill: SkillView }
+  | null;
 
 export interface SkillHubPageProps {
   mainSkillsDir: string | null;
@@ -139,6 +145,8 @@ function SkillHubPage(props: SkillHubPageProps) {
   const [hubInstalling, setHubInstalling] = useState(false);
   const [endpoints, setEndpoints] = useState<SkillHubEndpoint[]>(initialEndpoints ?? []);
   const [repos, setRepos] = useState<import('../../model/types').SkillRepo[]>([]);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const discoverInFlight = useRef(false);
   const checkInFlight = useRef(false);
@@ -277,6 +285,49 @@ function SkillHubPage(props: SkillHubPageProps) {
         return;
       }
       onError?.(errorMessage(err));
+    }
+  };
+
+  const handleReuploadSkill = async (skill: SkillView) => {
+    const records = skillRecords ?? hubState.skillRecords;
+    const record = resolveSkillRecord(skill, records);
+    if (!record?.hubEndpointId || !record.hubSkillGroup) {
+      onError?.('无法重新上传：缺少 Hub 来源信息');
+      return;
+    }
+    try {
+      const result = await uploadSkillToHub(
+        record.hubEndpointId,
+        record.hubSkillGroup,
+        skill.storageKey,
+      );
+      onDiscoverSkillsChange(result.discoverSkills);
+      try {
+        const updates = await checkSkillUpdates();
+        onPendingUpdatesChange(updates);
+      } catch {
+        // refresh hub state even if update check fails
+      }
+      await refreshHubState();
+      onToast?.('已重新上传到 Hub');
+    } catch (err) {
+      onError?.(errorMessage(err));
+    }
+  };
+
+  const handleConfirmPending = async () => {
+    if (!pendingConfirm || confirmBusy) return;
+    const { kind, skill } = pendingConfirm;
+    setConfirmBusy(true);
+    try {
+      if (kind === 'reupload') {
+        await handleReuploadSkill(skill);
+      } else {
+        await handleUpdateSkill(skill);
+      }
+      setPendingConfirm(null);
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
@@ -863,7 +914,11 @@ function SkillHubPage(props: SkillHubPageProps) {
                         resolveSkillRecord(skill, installedRecords)?.sourceMissing === true
                       }
                       sourceLabel={skillSourceLabelForView(skill, installedRecords)}
-                      onUpdate={() => void handleUpdateSkill(skill)}
+                      onUpdate={() => {
+                        if (skill.localDirty) setPendingConfirm({ kind: 'update-local', skill });
+                        else void handleUpdateSkill(skill);
+                      }}
+                      onReupload={() => setPendingConfirm({ kind: 'reupload', skill })}
                       onDelete={() => {
                         onDeleteMainSkill(skill.storageKey, skill.name ?? skill.dirName);
                       }}
@@ -929,6 +984,41 @@ function SkillHubPage(props: SkillHubPageProps) {
         onCancel={() => {
           setInstallDialogOpen(false);
           setPendingInstall([]);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={
+          pendingConfirm?.kind === 'reupload'
+            ? '重新上传到 Hub？'
+            : '从 Hub 更新到本地？'
+        }
+        message={
+          pendingConfirm?.kind === 'reupload'
+            ? (() => {
+                const record = resolveSkillRecord(
+                  pendingConfirm.skill,
+                  skillRecords ?? hubState.skillRecords,
+                );
+                const endpoint = record?.hubEndpointId ?? '未知';
+                const group = record?.hubSkillGroup ?? '未知';
+                const id =
+                  record?.hubSkillId ||
+                  pendingConfirm.skill.linkName ||
+                  pendingConfirm.skill.dirName;
+                return `将把本地「${pendingConfirm.skill.name ?? pendingConfirm.skill.dirName}」重新上传到 ${endpoint} / ${group} / ${id}，会覆盖远程版本。`;
+              })()
+            : `从 Hub 更新会覆盖本地对「${pendingConfirm?.skill.name ?? pendingConfirm?.skill.dirName ?? ''}」的修改。`
+        }
+        confirmLabel={
+          pendingConfirm?.kind === 'reupload' ? '确认覆盖远程' : '确认覆盖本地'
+        }
+        cancelLabel="取消"
+        danger
+        onConfirm={() => void handleConfirmPending()}
+        onCancel={() => {
+          if (!confirmBusy) setPendingConfirm(null);
         }}
       />
 

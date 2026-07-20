@@ -20,10 +20,21 @@ import {
 } from '../model/types';
 
 const invokeMock = vi.fn();
+const uploadSkillToHubMock = vi.fn();
+const updateSkillMock = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
+
+vi.mock('../api/skillHub', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/skillHub')>();
+  return {
+    ...actual,
+    uploadSkillToHub: (...args: unknown[]) => uploadSkillToHubMock(...args),
+    updateSkill: (...args: unknown[]) => updateSkillMock(...args),
+  };
+});
 
 const mockGitHubRepo: SkillRepo = {
   host: 'github.com',
@@ -166,6 +177,75 @@ const mockGitlabDiscoverable: DiscoverableSkill = {
   ...emptyV6DiscoverableFields,
 };
 
+const hubDirtyStorageKey = 'hub/company-hub/tools/dirty-skill';
+const hubDirtySkill: SkillView = {
+  dirName: 'dirty-skill',
+  name: 'Dirty Skill',
+  description: '本地已修改的 Hub Skill。',
+  path: 'C:\\skills\\hub\\company-hub\\tools\\dirty-skill',
+  valid: true,
+  validationErrors: [],
+  ...emptyV6SkillViewFields,
+  storageKey: hubDirtyStorageKey,
+  linkName: 'dirty-skill',
+  localDirty: true,
+};
+
+const hubCleanStorageKey = 'hub/company-hub/tools/clean-skill';
+const hubCleanSkill: SkillView = {
+  dirName: 'clean-skill',
+  name: 'Clean Skill',
+  description: '未修改的 Hub Skill。',
+  path: 'C:\\skills\\hub\\company-hub\\tools\\clean-skill',
+  valid: true,
+  validationErrors: [],
+  ...emptyV6SkillViewFields,
+  storageKey: hubCleanStorageKey,
+  linkName: 'clean-skill',
+  localDirty: false,
+};
+
+const hubDirtyRecord = {
+  repoHost: '',
+  projectPath: '',
+  source: 'skillhub',
+  repoOwner: '',
+  repoName: '',
+  repoBranch: '',
+  directory: 'tools/dirty-skill',
+  contentHash: 'local-hash',
+  installedAt: '2026-06-30T00:00:00Z',
+  ...emptyV6SkillRecordFields,
+  storageKey: hubDirtyStorageKey,
+  linkName: 'dirty-skill',
+  hubEndpointId: 'company-hub',
+  hubSkillGroup: 'tools',
+  hubSkillId: 'dirty-skill',
+};
+
+const hubCleanRecord = {
+  ...hubDirtyRecord,
+  directory: 'tools/clean-skill',
+  storageKey: hubCleanStorageKey,
+  linkName: 'clean-skill',
+  hubSkillId: 'clean-skill',
+};
+
+function hubStateWithSkills(
+  skills: SkillView[],
+  records: Record<string, (typeof hubDirtyRecord)>,
+): SkillHubLocalState {
+  const validCount = skills.filter((s) => s.valid).length;
+  return {
+    skills,
+    validCount,
+    invalidCount: skills.length - validCount,
+    pendingUpdateCount: 0,
+    lastScanAt: '2026-06-30T00:00:00Z',
+    skillRecords: records,
+  };
+}
+
 function setupInvokeMocks(repos: SkillRepo[] = [mockGitHubRepo, mockGitLabRepo]) {
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'get_skill_repos') return Promise.resolve(repos);
@@ -213,6 +293,13 @@ function renderHub(overrides: Partial<ComponentProps<typeof SkillHubPage>> = {})
 
 beforeEach(() => {
   invokeMock.mockReset();
+  uploadSkillToHubMock.mockReset();
+  updateSkillMock.mockReset();
+  uploadSkillToHubMock.mockResolvedValue({
+    endpoints: [],
+    discoverSkills: [],
+  });
+  updateSkillMock.mockResolvedValue(undefined);
   setupInvokeMocks();
 });
 
@@ -628,5 +715,122 @@ describe('SkillHubPage', () => {
 
     expect(onCloseSkillPreview).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('dialog', { name: '来源管理' })).toBeInTheDocument();
+  });
+
+  it('opens remote-overwrite confirm when clicking 重新上传 on dirty hub skill', async () => {
+    const user = userEvent.setup();
+    const onToast = vi.fn();
+    const hubState = hubStateWithSkills([hubDirtySkill], {
+      [hubDirtyStorageKey]: hubDirtyRecord,
+    });
+    renderHub({
+      hubState,
+      pendingUpdates: [],
+      onToast,
+      onRefreshHub: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await screen.findByText('本地已修改的 Hub Skill。');
+    await user.click(screen.getByRole('button', { name: '重新上传' }));
+
+    const dialog = screen.getByRole('dialog', { name: '重新上传到 Hub？' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(/覆盖/);
+    expect(dialog).toHaveTextContent(/远程/);
+    expect(screen.getByRole('button', { name: '确认覆盖远程' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '确认覆盖远程' }));
+
+    await waitFor(() => {
+      expect(uploadSkillToHubMock).toHaveBeenCalledWith(
+        'company-hub',
+        'tools',
+        hubDirtyStorageKey,
+      );
+    });
+    await waitFor(() => {
+      expect(onToast).toHaveBeenCalledWith('已重新上传到 Hub');
+    });
+  });
+
+  it('skips confirm and updates immediately when not localDirty', async () => {
+    const user = userEvent.setup();
+    const hubState = hubStateWithSkills([hubCleanSkill], {
+      [hubCleanStorageKey]: hubCleanRecord,
+    });
+    renderHub({
+      hubState,
+      pendingUpdates: [
+        {
+          dirName: 'clean-skill',
+          name: 'Clean Skill',
+          currentHash: 'abc',
+          remoteHash: 'def',
+          storageKey: hubCleanStorageKey,
+        },
+      ],
+    });
+
+    await screen.findByText('未修改的 Hub Skill。');
+    await user.click(screen.getByRole('button', { name: '更新' }));
+
+    await waitFor(() => {
+      expect(updateSkillMock).toHaveBeenCalledWith(hubCleanStorageKey);
+    });
+    expect(screen.queryByRole('dialog', { name: '从 Hub 更新到本地？' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认覆盖本地' })).not.toBeInTheDocument();
+  });
+
+  it('confirms before update when localDirty', async () => {
+    const user = userEvent.setup();
+    const hubState = hubStateWithSkills([hubDirtySkill], {
+      [hubDirtyStorageKey]: hubDirtyRecord,
+    });
+    renderHub({
+      hubState,
+      pendingUpdates: [
+        {
+          dirName: 'dirty-skill',
+          name: 'Dirty Skill',
+          currentHash: 'abc',
+          remoteHash: 'def',
+          storageKey: hubDirtyStorageKey,
+        },
+      ],
+    });
+
+    await screen.findByText('本地已修改的 Hub Skill。');
+    await user.click(screen.getByRole('button', { name: '更新' }));
+
+    const dialog = screen.getByRole('dialog', { name: '从 Hub 更新到本地？' });
+    expect(dialog).toHaveTextContent(/覆盖本地/);
+    expect(screen.getByRole('button', { name: '确认覆盖本地' })).toBeInTheDocument();
+    expect(updateSkillMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '确认覆盖本地' }));
+
+    await waitFor(() => {
+      expect(updateSkillMock).toHaveBeenCalledWith(hubDirtyStorageKey);
+    });
+  });
+
+  it('does not upload when reupload confirm is cancelled', async () => {
+    const user = userEvent.setup();
+    const hubState = hubStateWithSkills([hubDirtySkill], {
+      [hubDirtyStorageKey]: hubDirtyRecord,
+    });
+    renderHub({
+      hubState,
+      pendingUpdates: [],
+    });
+
+    await screen.findByText('本地已修改的 Hub Skill。');
+    await user.click(screen.getByRole('button', { name: '重新上传' }));
+    expect(screen.getByRole('dialog', { name: '重新上传到 Hub？' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(uploadSkillToHubMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '重新上传到 Hub？' })).not.toBeInTheDocument();
   });
 });
