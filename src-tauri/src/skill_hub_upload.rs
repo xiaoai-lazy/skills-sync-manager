@@ -45,6 +45,8 @@ pub fn upload_skill_to_hub(
     let _ = fs::remove_file(&archive_path);
     upload_result?;
 
+    refresh_record_content_hash_after_upload(config, storage_key, &skill_dir)?;
+
     skill_hub_discover::merge_hub_endpoint_into_discover_cache(config, hub_endpoint_id)?;
 
     Ok(hub_discover_skills_from_cache(config, hub_endpoint_id))
@@ -209,6 +211,49 @@ fn io_error(path: Option<impl AsRef<Path>>, message: String) -> AppError {
     }
 }
 
+pub(crate) fn refresh_record_content_hash_after_upload(
+    config: &mut AppConfig,
+    storage_key: &str,
+    skill_dir: &Path,
+) -> Result<(), AppError> {
+    let record_key = config
+        .skill_records
+        .get(storage_key)
+        .map(|_| storage_key.to_string())
+        .or_else(|| {
+            config
+                .skill_records
+                .iter()
+                .find(|(_, record)| record.storage_key == storage_key)
+                .map(|(key, _)| key.clone())
+        });
+
+    let Some(record_key) = record_key else {
+        return Ok(());
+    };
+
+    let record = config.skill_records.get(&record_key).expect("record key exists");
+    let use_prefix = record.source == "skillhub"
+        || (record.content_hash.len() == 12
+            && record
+                .content_hash
+                .chars()
+                .all(|c| c.is_ascii_hexdigit()));
+
+    let new_hash = if use_prefix {
+        crate::skill_updates::compute_skill_md_hash_prefix(skill_dir)?
+    } else {
+        crate::skill_updates::compute_dir_hash(skill_dir)?
+    };
+
+    config
+        .skill_records
+        .get_mut(&record_key)
+        .expect("record key exists")
+        .content_hash = new_hash;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +333,39 @@ mod tests {
             skill_id_from_hub_storage_key("hub/company-hub/common/tdd").unwrap(),
             "tdd"
         );
+    }
+
+    #[test]
+    fn refresh_content_hash_after_upload_updates_matching_record() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let skill_dir = temp.path().join("skill");
+        write_valid_skill(&skill_dir, "tdd");
+
+        let storage_key = "hub/company-hub/common/tdd";
+        let mut records = HashMap::new();
+        records.insert(
+            storage_key.to_string(),
+            SkillRecord {
+                source: "skillhub".to_string(),
+                storage_key: storage_key.to_string(),
+                content_hash: "stale".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let mut config = AppConfig {
+            skill_records: records,
+            ..Default::default()
+        };
+
+        refresh_record_content_hash_after_upload(&mut config, storage_key, &skill_dir)
+            .expect("refresh hash");
+
+        let expected =
+            crate::skill_updates::compute_skill_md_hash_prefix(&skill_dir).expect("compute hash");
+        let record = config.skill_records.get(storage_key).expect("record");
+        assert_eq!(record.content_hash, expected);
+        assert_ne!(record.content_hash, "stale");
     }
 
     #[test]

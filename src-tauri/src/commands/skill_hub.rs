@@ -896,7 +896,7 @@ pub async fn upload_skill_to_hub(
     .map_err(|err| err.to_dto())?
     .map_err(|err| err.to_dto())?;
 
-    // Persist discover cache only; avoid clobbering concurrent update-cache writes.
+    // Persist discover cache + skill_records only; avoid clobbering concurrent update-cache writes.
     let mut latest = store.load().map_err(|err| err.to_dto())?;
     let app_data_dir = app
         .path()
@@ -908,6 +908,7 @@ pub async fn upload_skill_to_hub(
         .map_err(|err| err.to_dto())?;
     crate::runtime_cache::attach_to_config(&app_data_dir, &mut latest);
     latest.skill_discover_cache = config.skill_discover_cache;
+    latest.skill_records = config.skill_records;
     crate::runtime_cache::persist_from_config(&app_data_dir, &latest).map_err(|err| err.to_dto())?;
     store.save(&latest).map_err(|err| err.to_dto())?;
 
