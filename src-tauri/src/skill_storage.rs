@@ -87,7 +87,7 @@ pub fn storage_key_from_record_source(
             repo_slug.unwrap_or("unknown"),
             skill_id,
         ),
-        "skillhub" => storage_key_for_hub(
+        "skillhub" | "iflytek" => storage_key_for_hub(
             hub_endpoint_id.unwrap_or("unknown"),
             hub_group.unwrap_or("common"),
             skill_id,
@@ -150,5 +150,19 @@ mod tests {
     fn skill_id_from_directory() {
         assert_eq!(super::skill_id_from_directory("skills/tdd"), "tdd");
         assert_eq!(super::skill_id_from_directory("tdd"), "tdd");
+    }
+
+    #[test]
+    fn storage_key_from_record_source_iflytek_uses_hub_helper() {
+        assert_eq!(
+            storage_key_from_record_source(
+                "iflytek",
+                None,
+                Some("xkw"),
+                Some("global"),
+                "tdd",
+            ),
+            "hub/xkw/global/tdd"
+        );
     }
 }
