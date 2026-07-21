@@ -106,12 +106,15 @@ pub fn resolve_skills_dir(
 }
 
 pub fn normalize_path_for_compare(path: &Path) -> String {
-    let mut normalized = path.to_string_lossy().replace('\\', "/");
+    let normalized = path.to_string_lossy().replace('\\', "/");
     #[cfg(windows)]
     {
-        normalized = normalized.to_lowercase();
+        return normalized.to_lowercase();
     }
-    normalized
+    #[cfg(not(windows))]
+    {
+        normalized
+    }
 }
 
 /// Rebuild a path with the current platform's native separators.

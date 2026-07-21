@@ -384,8 +384,14 @@ mod tests {
     #[test]
     fn current_config_does_not_rewrite_on_load() {
         let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("skills");
+        fs::create_dir_all(&main_dir).expect("create main skills dir");
+
         let store = ConfigStore::new(temp.path().join("config.json"));
-        let config = AppConfig::default();
+        let mut config = AppConfig::default();
+        // Already configured — load must not rewrite (including default main-dir ensure).
+        config.settings.main_skills_dir =
+            Some(crate::agent_presets::normalize_platform_path(&main_dir));
         store.save(&config).expect("save config");
 
         let before = fs::read_to_string(store.config_path.clone()).expect("read config");
@@ -394,6 +400,21 @@ mod tests {
 
         assert_eq!(loaded, config);
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn load_sets_default_main_skills_dir_when_unset() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = ConfigStore::new(temp.path().join("config.json"));
+        let config = AppConfig::default();
+        assert!(config.settings.main_skills_dir.is_none());
+        store.save(&config).expect("save config");
+
+        let loaded = store.load().expect("load should set default main dir");
+        assert!(loaded.settings.main_skills_dir.is_some());
+        let path = loaded.settings.main_skills_dir.as_ref().unwrap();
+        assert!(path.ends_with(std::path::Path::new(".skills-sync").join("skills")));
+        assert!(path.is_dir());
     }
 
     #[test]
