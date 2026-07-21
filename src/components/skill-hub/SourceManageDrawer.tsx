@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  addIflytekSkillHubEndpoint,
   addSkillHubEndpoint,
   addSkillRepo,
   getSkillRepos,
   listGitlabCredentials,
+  listIflytekSkillHubEndpoints,
   listSkillHubEndpoints,
   previewAddSkillRepo,
   removeGitlabCredential,
+  removeIflytekSkillHubEndpoint,
   removeSkillHubEndpoint,
   removeSkillRepo,
+  setIflytekSkillHubEndpointEnabled,
   setSkillHubEndpointEnabled,
   setSkillRepoEnabled,
   setStartupRefreshSettings,
@@ -19,10 +23,12 @@ import { errorMessage } from '../../utils/errorMessage';
 import {
   copyTextToClipboard,
   formatHubSourceConfig,
+  formatIflytekHubSourceConfig,
   formatRepoSourceConfig,
 } from '../../utils/sourceConfigClipboard';
 import type {
   DiscoverableSkill,
+  IflytekSkillHubEndpoint,
   SkillHubEndpoint,
   SkillRepo,
   StartupRefreshSettings,
@@ -38,12 +44,14 @@ export interface SourceManageDrawerProps {
   onToast?: (message: string) => void;
   onDiscoverSkillsChange?: (skills: DiscoverableSkill[]) => void;
   onEndpointsChange?: (endpoints: SkillHubEndpoint[]) => void;
+  onIflytekEndpointsChange?: (endpoints: IflytekSkillHubEndpoint[]) => void;
   onReposChange?: (repos: SkillRepo[]) => void;
   startupRefreshSettings: StartupRefreshSettings;
   onStartupRefreshSettingsChange?: (settings: StartupRefreshSettings) => void;
 }
 
-type AddSourceTab = 'hub' | 'github' | 'gitlab';
+type AddSourceTab = 'skillsSync' | 'iflytek' | 'github' | 'gitlab';
+type ListFilterTab = 'all' | 'skillsSync' | 'iflytek' | 'github' | 'gitlab';
 
 interface PatDialogState {
   host: string;
@@ -54,7 +62,30 @@ interface PatDialogState {
 
 type DeleteTarget =
   | { kind: 'hub'; endpoint: SkillHubEndpoint }
+  | { kind: 'iflytek'; endpoint: IflytekSkillHubEndpoint }
   | { kind: 'repo'; repo: SkillRepo };
+
+const STARTUP_REFRESH_OPTIONS = [
+  ['skillHub', 'Skills Sync Hub'],
+  ['iflytekSkillHub', 'iFlytek Skill Hub'],
+  ['github', 'GitHub'],
+  ['gitlab', 'GitLab'],
+] as const;
+
+const ADD_SOURCE_TABS: { id: AddSourceTab; label: string }[] = [
+  { id: 'skillsSync', label: 'Skills Sync Hub' },
+  { id: 'iflytek', label: 'iFlytek Skill Hub' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'gitlab', label: 'GitLab' },
+];
+
+const LIST_FILTER_TABS: { id: ListFilterTab; label: string }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'skillsSync', label: 'Skills Sync Hub' },
+  { id: 'iflytek', label: 'iFlytek Skill Hub' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'gitlab', label: 'GitLab' },
+];
 
 function repoShortPath(repo: SkillRepo): string {
   if (repo.provider === 'gitlab') {
@@ -71,6 +102,11 @@ function repoItemKey(repo: SkillRepo): string {
   return `${repo.host}/${repo.projectPath || `${repo.owner}/${repo.name}`}`;
 }
 
+function deleteTargetLabel(target: DeleteTarget): string {
+  if (target.kind === 'hub' || target.kind === 'iflytek') return target.endpoint.name;
+  return repoShortPath(target.repo);
+}
+
 function SourceManageDrawer(props: SourceManageDrawerProps) {
   const {
     open,
@@ -79,11 +115,13 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     onToast,
     onDiscoverSkillsChange,
     onEndpointsChange,
+    onIflytekEndpointsChange,
     onReposChange,
     startupRefreshSettings,
     onStartupRefreshSettingsChange,
   } = props;
   const [endpoints, setEndpoints] = useState<SkillHubEndpoint[]>([]);
+  const [iflytekEndpoints, setIflytekEndpoints] = useState<IflytekSkillHubEndpoint[]>([]);
   const [repos, setRepos] = useState<SkillRepo[]>([]);
   const [configuredHosts, setConfiguredHosts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,7 +129,8 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
   const [addError, setAddError] = useState<string | null>(null);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addTab, setAddTab] = useState<AddSourceTab>('hub');
+  const [addTab, setAddTab] = useState<AddSourceTab>('skillsSync');
+  const [listFilter, setListFilter] = useState<ListFilterTab>('all');
   const [patDialog, setPatDialog] = useState<PatDialogState | null>(null);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -147,20 +186,26 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
   const loadSources = useCallback(async () => {
     setLoading(true);
     try {
-      const [endpointList, repoList] = await Promise.all([
+      const [endpointList, iflytekList, repoList] = await Promise.all([
         listSkillHubEndpoints(),
+        listIflytekSkillHubEndpoints(),
         getSkillRepos(),
       ]);
-      setEndpoints(endpointList);
-      setRepos(repoList);
-      onEndpointsChange?.(endpointList);
-      onReposChange?.(repoList);
+      const nextEndpoints = endpointList ?? [];
+      const nextIflytek = iflytekList ?? [];
+      const nextRepos = repoList ?? [];
+      setEndpoints(nextEndpoints);
+      setIflytekEndpoints(nextIflytek);
+      setRepos(nextRepos);
+      onEndpointsChange?.(nextEndpoints);
+      onIflytekEndpointsChange?.(nextIflytek);
+      onReposChange?.(nextRepos);
     } catch (err) {
       onError?.(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [onError, onEndpointsChange, onReposChange]);
+  }, [onError, onEndpointsChange, onIflytekEndpointsChange, onReposChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -204,7 +249,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     setHubName('');
     setHubBaseUrl('');
     setRepoUrl('');
-    setAddTab('hub');
+    setAddTab('skillsSync');
   };
 
   const completeAdd = () => {
@@ -235,6 +280,27 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
       const result = await addSkillHubEndpoint(name, baseUrl);
       setEndpoints(result.endpoints);
       onEndpointsChange?.(result.endpoints);
+      onDiscoverSkillsChange?.(result.discoverSkills);
+      completeAdd();
+    } catch (err) {
+      setAddError(errorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleAddIflytek = async () => {
+    const name = hubName.trim();
+    const baseUrl = hubBaseUrl.trim();
+    if (!name || !baseUrl || adding) return;
+
+    setAdding(true);
+    setAddError(null);
+    try {
+      const result = await addIflytekSkillHubEndpoint(name, baseUrl);
+      const next = result.iflytekSkillHubEndpoints ?? [];
+      setIflytekEndpoints(next);
+      onIflytekEndpointsChange?.(next);
       onDiscoverSkillsChange?.(result.discoverSkills);
       completeAdd();
     } catch (err) {
@@ -307,6 +373,12 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
         setEndpoints(result.endpoints);
         onEndpointsChange?.(result.endpoints);
         onDiscoverSkillsChange?.(result.discoverSkills);
+      } else if (deleteTarget.kind === 'iflytek') {
+        const result = await removeIflytekSkillHubEndpoint(deleteTarget.endpoint.id);
+        const next = result.iflytekSkillHubEndpoints ?? [];
+        setIflytekEndpoints(next);
+        onIflytekEndpointsChange?.(next);
+        onDiscoverSkillsChange?.(result.discoverSkills);
       } else {
         const { repo } = deleteTarget;
         const result = await removeSkillRepo(repo.host, repo.projectPath);
@@ -331,6 +403,23 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
       const result = await setSkillHubEndpointEnabled(endpoint.id, enabled);
       setEndpoints(result.endpoints);
       onEndpointsChange?.(result.endpoints);
+      onDiscoverSkillsChange?.(result.discoverSkills);
+    } catch (err) {
+      onError?.(errorMessage(err));
+    } finally {
+      setTogglingKey(null);
+    }
+  };
+
+  const handleToggleIflytek = async (endpoint: IflytekSkillHubEndpoint, enabled: boolean) => {
+    const key = `iflytek:${endpoint.id}`;
+    if (togglingKey) return;
+    setTogglingKey(key);
+    try {
+      const result = await setIflytekSkillHubEndpointEnabled(endpoint.id, enabled);
+      const next = result.iflytekSkillHubEndpoints ?? [];
+      setIflytekEndpoints(next);
+      onIflytekEndpointsChange?.(next);
       onDiscoverSkillsChange?.(result.discoverSkills);
     } catch (err) {
       onError?.(errorMessage(err));
@@ -381,11 +470,41 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     void handleCopyText(formatHubSourceConfig(endpoint), endpoint.name);
   };
 
+  const handleCopyIflytek = (endpoint: IflytekSkillHubEndpoint) => {
+    void handleCopyText(formatIflytekHubSourceConfig(endpoint), endpoint.name);
+  };
+
   const handleCopyRepo = (repo: SkillRepo) => {
     void handleCopyText(formatRepoSourceConfig(repo), repoShortPath(repo));
   };
 
+  const handleAddSubmit = () => {
+    if (addTab === 'skillsSync') void handleAddHub();
+    else if (addTab === 'iflytek') void handleAddIflytek();
+    else void handleAddRepo();
+  };
+
   if (!open) return null;
+
+  const showSkillsSync = listFilter === 'all' || listFilter === 'skillsSync';
+  const showIflytek = listFilter === 'all' || listFilter === 'iflytek';
+  const showGithub = listFilter === 'all' || listFilter === 'github';
+  const showGitlab = listFilter === 'all' || listFilter === 'gitlab';
+
+  const filteredEndpoints = showSkillsSync ? endpoints : [];
+  const filteredIflytek = showIflytek ? iflytekEndpoints : [];
+  const filteredRepos = repos.filter((repo) => {
+    if (repo.provider === 'github') return showGithub;
+    if (repo.provider === 'gitlab') return showGitlab;
+    return listFilter === 'all';
+  });
+
+  const hasAnySource =
+    endpoints.length > 0 || iflytekEndpoints.length > 0 || repos.length > 0;
+  const hasFilteredSource =
+    filteredEndpoints.length > 0 || filteredIflytek.length > 0 || filteredRepos.length > 0;
+
+  const isHubForm = addTab === 'skillsSync' || addTab === 'iflytek';
 
   return (
     <>
@@ -406,7 +525,9 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
           <div className="drawer-header-row">
             <div>
               <h2>来源管理</h2>
-              <p className="drawer-subtitle">管理 Skill Hub、GitHub 与 GitLab 来源</p>
+              <p className="drawer-subtitle">
+                管理 Skills Sync Hub、iFlytek Skill Hub、GitHub 与 GitLab 来源
+              </p>
             </div>
             <div className="drawer-header-actions">
               <button type="button" className="btn-keys-link" onClick={() => setKeysDialogOpen(true)}>
@@ -431,16 +552,12 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
               <p>仅影响应用启动时的后台刷新；手动刷新始终检查所有已启用来源。</p>
             </div>
             <div className="startup-refresh-options">
-              {([
-                ['github', 'GitHub'],
-                ['gitlab', 'GitLab'],
-                ['skillHub', 'Skill Hub'],
-              ] as const).map(([key, label]) => (
+              {STARTUP_REFRESH_OPTIONS.map(([key, label]) => (
                 <label key={key} className="startup-refresh-option">
                   <span>{label}</span>
                   <input
                     type="checkbox"
-                    checked={localStartupRefresh[key]}
+                    checked={Boolean(localStartupRefresh[key])}
                     disabled={savingStartupRefresh}
                     aria-label={`${label} 启动自动刷新`}
                     onChange={(event) =>
@@ -452,15 +569,32 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
             </div>
           </section>
 
+          <div className="text-tabs source-list-filter-tabs" role="tablist" aria-label="来源筛选">
+            {LIST_FILTER_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                className={`text-tab${listFilter === tab.id ? ' active' : ''}`}
+                aria-selected={listFilter === tab.id}
+                onClick={() => setListFilter(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <p className="drawer-loading">加载中…</p>
           ) : (
             <ul className="repo-list source-list">
-              {endpoints.length === 0 && repos.length === 0 ? (
+              {!hasAnySource ? (
                 <li className="repo-empty">暂无来源，请点击「添加来源」。</li>
+              ) : !hasFilteredSource ? (
+                <li className="repo-empty">当前筛选下暂无来源。</li>
               ) : (
                 <>
-                  {endpoints.map((endpoint) => {
+                  {filteredEndpoints.map((endpoint) => {
                     const key = `hub:${endpoint.id}`;
                     const toggling = togglingKey === key;
                     return (
@@ -485,7 +619,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                           <span className="repo-switch-slider" aria-hidden />
                         </label>
                         <span className="repo-provider-tag repo-provider-hub" aria-hidden>
-                          Hub
+                          Skills Sync
                         </span>
                         <div className="source-item-secondary">
                           <span className="source-item-url" title={endpoint.baseUrl}>
@@ -517,7 +651,64 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                       </li>
                     );
                   })}
-                  {repos.map((repo) => {
+                  {filteredIflytek.map((endpoint) => {
+                    const key = `iflytek:${endpoint.id}`;
+                    const toggling = togglingKey === key;
+                    return (
+                      <li
+                        key={key}
+                        className={`repo-item source-item${endpoint.enabled ? '' : ' repo-item-disabled'}`}
+                      >
+                        <div className="repo-item-name source-item-title" title={endpoint.name}>
+                          {endpoint.name}
+                        </div>
+                        <label
+                          className="repo-switch source-item-switch"
+                          title={endpoint.enabled ? '停用此来源' : '启用此来源'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={endpoint.enabled}
+                            disabled={toggling}
+                            onChange={(e) => void handleToggleIflytek(endpoint, e.target.checked)}
+                            aria-label={`${endpoint.enabled ? '停用' : '启用'} ${endpoint.name}`}
+                          />
+                          <span className="repo-switch-slider" aria-hidden />
+                        </label>
+                        <span className="repo-provider-tag repo-provider-iflytek" aria-hidden>
+                          iFlytek
+                        </span>
+                        <div className="source-item-secondary">
+                          <span className="source-item-url" title={endpoint.baseUrl}>
+                            {endpoint.baseUrl}
+                          </span>
+                          {!endpoint.enabled && <span className="badge-disabled">已停用</span>}
+                        </div>
+                        <div className="source-item-actions">
+                          <button
+                            type="button"
+                            className="btn-repo-copy"
+                            onClick={() => handleCopyIflytek(endpoint)}
+                            aria-label={`复制 ${endpoint.name} 配置`}
+                          >
+                            复制
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-repo-remove"
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget({ kind: 'iflytek', endpoint });
+                            }}
+                            aria-label={`删除 ${endpoint.name}`}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                  {filteredRepos.map((repo) => {
                     const path = repoShortPath(repo);
                     const authed =
                       repo.provider === 'gitlab' && configuredHosts.includes(repo.host);
@@ -615,25 +806,25 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
           >
             <h3>添加来源</h3>
             <div className="text-tabs add-source-tabs" role="tablist">
-              {(['hub', 'github', 'gitlab'] as const).map((tab) => (
+              {ADD_SOURCE_TABS.map((tab) => (
                 <button
-                  key={tab}
+                  key={tab.id}
                   type="button"
                   role="tab"
-                  className={`text-tab${addTab === tab ? ' active' : ''}`}
-                  aria-selected={addTab === tab}
+                  className={`text-tab${addTab === tab.id ? ' active' : ''}`}
+                  aria-selected={addTab === tab.id}
                   disabled={adding}
                   onClick={() => {
                     setAddError(null);
-                    setAddTab(tab);
+                    setAddTab(tab.id);
                   }}
                 >
-                  {tab === 'hub' ? 'Skill Hub' : tab === 'github' ? 'GitHub' : 'GitLab'}
+                  {tab.label}
                 </button>
               ))}
             </div>
 
-            {addTab === 'hub' ? (
+            {isHubForm ? (
               <div className="add-source-form">
                 <label>
                   名称
@@ -644,7 +835,9 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                       setHubName(e.target.value);
                       if (addError) setAddError(null);
                     }}
-                    placeholder="公司 Skill Hub"
+                    placeholder={
+                      addTab === 'iflytek' ? '公司 iFlytek Skill Hub' : '公司 Skills Sync Hub'
+                    }
                     disabled={adding}
                   />
                 </label>
@@ -711,7 +904,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
               <button
                 type="button"
                 className="btn-primary"
-                onClick={() => void (addTab === 'hub' ? handleAddHub() : handleAddRepo())}
+                onClick={handleAddSubmit}
                 disabled={adding}
               >
                 {adding ? '添加中…' : '添加'}
@@ -762,13 +955,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
           <div ref={deleteModalRef} className="modal" onClick={(event) => event.stopPropagation()}>
             <h3 id="sourceDeleteTitle">删除来源</h3>
             <p>
-              确认删除{' '}
-              <strong>
-                {deleteTarget.kind === 'hub'
-                  ? deleteTarget.endpoint.name
-                  : repoShortPath(deleteTarget.repo)}
-              </strong>
-              ？删除后可以重新添加。
+              确认删除 <strong>{deleteTargetLabel(deleteTarget)}</strong>？删除后可以重新添加。
             </p>
             <div className="source-delete-error-slot">
               {deleteError && (

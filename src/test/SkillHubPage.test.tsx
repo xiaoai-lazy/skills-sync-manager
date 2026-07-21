@@ -250,10 +250,16 @@ function setupInvokeMocks(repos: SkillRepo[] = [mockGitHubRepo, mockGitLabRepo])
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'get_skill_repos') return Promise.resolve(repos);
     if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+    if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
     if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
     if (cmd === 'list_hub_groups') return Promise.resolve([]);
     if (cmd === 'set_startup_refresh_settings') {
-      return Promise.resolve({ github: true, gitlab: true, skillHub: true });
+      return Promise.resolve({
+        github: true,
+        gitlab: true,
+        skillHub: true,
+        iflytekSkillHub: true,
+      });
     }
     if (cmd === 'scan_main_library') {
       return Promise.resolve({
@@ -277,7 +283,12 @@ function renderHub(overrides: Partial<ComponentProps<typeof SkillHubPage>> = {})
     hubState: mockHubState,
     discoverSkills: [mockDiscoverable],
     pendingUpdates: mockPendingUpdates,
-    startupRefreshSettings: { github: false, gitlab: true, skillHub: true },
+    startupRefreshSettings: {
+      github: false,
+      gitlab: true,
+      skillHub: true,
+      iflytekSkillHub: true,
+    },
     onHubSkillsRefresh,
     onDiscoverSkillsChange,
     onPendingUpdatesChange,
@@ -317,13 +328,21 @@ describe('SkillHubPage', () => {
     const github = screen.getByRole('checkbox', { name: 'GitHub 启动自动刷新' });
     expect(github).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'GitLab 启动自动刷新' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Skill Hub 启动自动刷新' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Skills Sync Hub 启动自动刷新' })).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'iFlytek Skill Hub 启动自动刷新' }),
+    ).toBeChecked();
 
     await user.click(github);
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('set_startup_refresh_settings', {
-        settings: { github: true, gitlab: true, skillHub: true },
+        settings: {
+          github: true,
+          gitlab: true,
+          skillHub: true,
+          iflytekSkillHub: true,
+        },
       });
     });
   });
@@ -334,6 +353,7 @@ describe('SkillHubPage', () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'get_skill_repos') return Promise.resolve([]);
       if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
       if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
       if (cmd === 'set_startup_refresh_settings') {
         return Promise.reject(new Error('save failed'));
@@ -378,6 +398,7 @@ describe('SkillHubPage', () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'get_skill_repos') return Promise.resolve([mockGitLabRepo]);
       if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
       if (cmd === 'list_gitlab_credentials') return Promise.resolve(credentialHosts);
       if (cmd === 'remove_gitlab_credential') {
         credentialHosts = [];

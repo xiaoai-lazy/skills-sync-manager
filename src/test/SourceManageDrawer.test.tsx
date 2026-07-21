@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import SourceManageDrawer from '../components/skill-hub/SourceManageDrawer';
-import type { SkillHubEndpoint, SkillRepo } from '../model/types';
+import type { IflytekSkillHubEndpoint, SkillHubEndpoint, SkillRepo } from '../model/types';
 
 const invokeMock = vi.fn();
 
@@ -28,9 +28,17 @@ const hubEndpoint: SkillHubEndpoint = {
   enabled: true,
 };
 
+const iflytekEndpoint: IflytekSkillHubEndpoint = {
+  id: 'iflytek-1',
+  name: '讯飞 Hub',
+  baseUrl: 'https://iflytek.example.com',
+  enabled: true,
+};
+
 function baseCommand(cmd: string) {
   if (cmd === 'get_skill_repos') return Promise.resolve([]);
   if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+  if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
   if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
   return Promise.resolve(null);
 }
@@ -44,7 +52,12 @@ function renderDrawer(overrides: Partial<React.ComponentProps<typeof SourceManag
     onClose,
     onError,
     onToast,
-    startupRefreshSettings: { github: true, gitlab: true, skillHub: true },
+    startupRefreshSettings: {
+      github: true,
+      gitlab: true,
+      skillHub: true,
+      iflytekSkillHub: true,
+    },
     ...overrides,
   };
   return { ...render(<SourceManageDrawer {...props} />), ...props };
@@ -63,6 +76,66 @@ beforeEach(() => {
 });
 
 afterEach(() => cleanup());
+
+describe('SourceManageDrawer dual-track UI', () => {
+  it('shows dual-track subtitle covering Skills Sync and iFlytek', () => {
+    renderDrawer();
+    expect(
+      screen.getByText('管理 Skills Sync Hub、iFlytek Skill Hub、GitHub 与 GitLab 来源'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows iFlytek Skill Hub tab when opening add source modal', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await user.click(screen.getByRole('button', { name: '添加来源' }));
+    const dialog = screen.getByRole('dialog', { name: '添加来源' });
+    expect(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('tab', { name: 'Skills Sync Hub' })).toBeInTheDocument();
+  });
+
+  it('shows iFlytek Skill Hub startup refresh checkbox', () => {
+    renderDrawer();
+    expect(
+      screen.getByRole('checkbox', { name: 'iFlytek Skill Hub 启动自动刷新' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Skills Sync Hub 启动自动刷新' }),
+    ).toBeInTheDocument();
+  });
+
+  it('adds an iFlytek endpoint via name and base URL', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'add_iflytek_skill_hub_endpoint') {
+        return Promise.resolve({
+          endpoints: [],
+          iflytekSkillHubEndpoints: [iflytekEndpoint],
+          discoverSkills: [],
+        });
+      }
+      return baseCommand(cmd);
+    });
+    const user = userEvent.setup();
+    const onIflytekEndpointsChange = vi.fn();
+    const { onToast, onClose } = renderDrawer({ onIflytekEndpointsChange });
+    await user.click(screen.getByRole('button', { name: '添加来源' }));
+    const dialog = screen.getByRole('dialog', { name: '添加来源' });
+    await user.click(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' }));
+    await user.type(within(dialog).getByLabelText('名称'), '讯飞 Hub');
+    await user.type(within(dialog).getByLabelText('Base URL'), 'https://iflytek.example.com');
+    await user.click(within(dialog).getByRole('button', { name: '添加' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('add_iflytek_skill_hub_endpoint', {
+        name: '讯飞 Hub',
+        baseUrl: 'https://iflytek.example.com',
+      });
+    });
+    expect(onIflytekEndpointsChange).toHaveBeenCalledWith([iflytekEndpoint]);
+    expect(onToast).toHaveBeenCalledWith('来源已添加');
+    expect(onClose).toHaveBeenCalled();
+  });
+});
 
 describe('SourceManageDrawer add flow', () => {
   it('shows preview errors inside the add dialog and preserves the repository URL', async () => {
@@ -109,7 +182,7 @@ describe('SourceManageDrawer add flow', () => {
     renderDrawer();
     await user.click(screen.getByRole('button', { name: '添加来源' }));
     const dialog = screen.getByRole('dialog', { name: '添加来源' });
-    const first = within(dialog).getByRole('tab', { name: 'Skill Hub' });
+    const first = within(dialog).getByRole('tab', { name: 'Skills Sync Hub' });
     const last = within(dialog).getByRole('button', { name: '添加' });
 
     last.focus();
@@ -136,7 +209,8 @@ describe('SourceManageDrawer add flow', () => {
     await user.type(within(dialog).getByLabelText('仓库链接'), 'https://github.com/acme/skills');
     await user.click(within(dialog).getByRole('button', { name: '添加' }));
 
-    expect(within(dialog).getByRole('tab', { name: 'Skill Hub' })).toBeDisabled();
+    expect(within(dialog).getByRole('tab', { name: 'Skills Sync Hub' })).toBeDisabled();
+    expect(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' })).toBeDisabled();
     expect(within(dialog).getByRole('tab', { name: 'GitLab' })).toBeDisabled();
     await user.keyboard('{Escape}');
     expect(screen.getByRole('dialog', { name: '添加来源' })).toBeInTheDocument();
