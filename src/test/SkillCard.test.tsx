@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import SkillCard from '../components/skill-hub/SkillCard';
 import { emptyV6SkillViewFields } from '../model/types';
-import type { SkillView } from '../model/types';
+import type { DiscoverableSkill, SkillView } from '../model/types';
+import { skillSourceLabelForDiscoverable } from '../utils/skillSourceLabel';
 
 afterEach(() => cleanup());
 
@@ -53,6 +54,39 @@ describe('SkillCard reupload', () => {
     );
     expect(screen.queryByText('已修改')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重新上传' })).not.toBeInTheDocument();
+  });
+
+  it('shows Skills Sync Hub label on discover skillhub card meta', () => {
+    const skill: DiscoverableSkill = {
+      key: 'hub:ep:common:tdd',
+      name: 'tdd',
+      description: 'desc',
+      directory: 'common/tdd',
+      installDirName: 'tdd',
+      repoHost: '',
+      projectPath: '',
+      repoOwner: '',
+      repoName: '',
+      repoBranch: '',
+      source: 'skillhub',
+      storageKey: 'hub/ep/common/tdd',
+      linkName: 'tdd',
+      repoSlug: '',
+      hubEndpointId: 'ep',
+      hubSkillGroup: 'common',
+      hubSkillId: 'tdd',
+    };
+    const sourceLabel = skillSourceLabelForDiscoverable(skill);
+    render(
+      <SkillCard
+        skill={skill}
+        mode="discover"
+        sourceLabel={sourceLabel}
+        onInstall={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Skills Sync Hub · common')).toBeInTheDocument();
+    expect(screen.queryByText('Skill Hub · common')).not.toBeInTheDocument();
   });
 
   it('shows 更新 and 重新上传 together when hasUpdate and localDirty', () => {

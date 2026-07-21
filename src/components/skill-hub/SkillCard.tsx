@@ -40,16 +40,6 @@ function getDescription(skill: SkillCardSkill): string {
   return skill.description ?? '';
 }
 
-function getSourceMeta(sourceLabel: string, skill: SkillCardSkill): string {
-  if (isDiscoverableSkill(skill) && skill.source === 'gitlab' && skill.repoHost) {
-    return `GitLab · ${skill.repoHost}`;
-  }
-  if (isDiscoverableSkill(skill) && skill.source === 'skillhub' && skill.hubSkillGroup) {
-    return `Skill Hub · ${skill.hubSkillGroup}`;
-  }
-  return sourceLabel;
-}
-
 function SkillCard(props: SkillCardProps) {
   const {
     skill,
@@ -71,7 +61,6 @@ function SkillCard(props: SkillCardProps) {
   const desc = getDescription(skill);
   const invalid = !isDiscoverableSkill(skill) && !skill.valid;
   const isDiscover = mode === 'discover';
-  const sourceMeta = getSourceMeta(sourceLabel, skill);
   const showUpdate = hasUpdate && !invalid && !sourceMissing;
   const localDirty = !isDiscoverableSkill(skill) && Boolean(skill.localDirty);
   const showReupload = !isDiscover && localDirty && !invalid && Boolean(onReupload);
@@ -167,7 +156,7 @@ function SkillCard(props: SkillCardProps) {
       </div>
       <p className="skill-card-desc">{desc || '—'}</p>
       <div className="skill-card-footer">
-        <div className="skill-card-meta">{sourceMeta}</div>
+        <div className="skill-card-meta">{sourceLabel}</div>
         <div
           className="skill-card-actions"
           onClick={(e) => e.stopPropagation()}
