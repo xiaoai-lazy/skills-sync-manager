@@ -37,6 +37,56 @@ function extractRustAppConfigFields(source: string): string[] {
   return fields;
 }
 
+function extractRustStartupRefreshFields(source: string): string[] {
+  const start = source.indexOf('pub struct StartupRefreshSettings {');
+  if (start < 0) throw new Error('StartupRefreshSettings struct not found in models.rs');
+  const brace = source.indexOf('{', start);
+  let depth = 0;
+  let end = brace;
+  for (let i = brace; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const body = source.slice(brace + 1, end);
+  const fields: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const m = line.match(/^\s*pub\s+([a-z][a-z0-9_]*)\s*:/);
+    if (m) fields.push(m[1]);
+  }
+  return fields;
+}
+
+function extractTsStartupRefreshFields(source: string): string[] {
+  const start = source.indexOf('export interface StartupRefreshSettings {');
+  if (start < 0) throw new Error('StartupRefreshSettings interface not found in types.ts');
+  const brace = source.indexOf('{', start);
+  let depth = 0;
+  let end = brace;
+  for (let i = brace; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const body = source.slice(brace + 1, end);
+  const fields: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const m = line.match(/^\s*([a-zA-Z][a-zA-Z0-9]*)\??\s*:/);
+    if (m) fields.push(m[1]);
+  }
+  return fields;
+}
+
 function extractTsAppConfigFields(source: string): string[] {
   const start = source.indexOf('export interface AppConfig {');
   if (start < 0) throw new Error('AppConfig interface not found in types.ts');
@@ -75,5 +125,20 @@ describe('AppConfig field alignment', () => {
       .sort();
 
     expect(tsFields).toEqual(rustFields);
+    expect(rustFields).toContain('iflytekSkillHubEndpoints');
+    expect(tsFields).toContain('iflytekSkillHubEndpoints');
+  });
+
+  it('keeps Rust and TypeScript StartupRefreshSettings keys in sync (snake ↔ camel)', () => {
+    const rustPath = resolve(__dirname, '../../src-tauri/src/models.rs');
+    const tsPath = resolve(__dirname, '../model/types.ts');
+    const rustFields = extractRustStartupRefreshFields(readFileSync(rustPath, 'utf8'))
+      .map(snakeToCamel)
+      .sort();
+    const tsFields = extractTsStartupRefreshFields(readFileSync(tsPath, 'utf8')).sort();
+
+    expect(tsFields).toEqual(rustFields);
+    expect(rustFields).toContain('iflytekSkillHub');
+    expect(tsFields).toContain('iflytekSkillHub');
   });
 });

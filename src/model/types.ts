@@ -26,6 +26,7 @@ export interface StartupRefreshSettings {
   github: boolean;
   gitlab: boolean;
   skillHub: boolean;
+  iflytekSkillHub: boolean;
 }
 
 export type TargetScope = 'global' | 'project';
@@ -201,6 +202,13 @@ export interface SkillHubEndpoint {
   enabled: boolean;
 }
 
+export interface IflytekSkillHubEndpoint {
+  id: string;
+  name: string;
+  baseUrl: string;
+  enabled: boolean;
+}
+
 export interface SkillHubEndpointChangeResult {
   endpoints: SkillHubEndpoint[];
   discoverSkills: DiscoverableSkill[];
@@ -230,6 +238,7 @@ export interface AppConfig {
   /** Hosts that have a stored GitLab PAT (from credential store; mirrored on config for UI). */
   gitlabCredentialHosts?: string[];
   skillHubEndpoints?: SkillHubEndpoint[];
+  iflytekSkillHubEndpoints?: IflytekSkillHubEndpoint[];
 }
 
 export interface SkillView {

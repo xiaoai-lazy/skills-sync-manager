@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub projects: Vec<Project>,
     #[serde(default)]
     pub skill_hub_endpoints: Vec<SkillHubEndpoint>,
+    #[serde(default)]
+    pub iflytek_skill_hub_endpoints: Vec<IflytekSkillHubEndpoint>,
 }
 
 impl Default for AppConfig {
@@ -50,6 +52,7 @@ impl Default for AppConfig {
             gitlab_credential_hosts: Vec::new(),
             projects: Vec::new(),
             skill_hub_endpoints: Vec::new(),
+            iflytek_skill_hub_endpoints: Vec::new(),
         }
     }
 }
@@ -57,6 +60,15 @@ impl Default for AppConfig {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillHubEndpoint {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IflytekSkillHubEndpoint {
     pub id: String,
     pub name: String,
     pub base_url: String,
@@ -224,6 +236,8 @@ pub struct StartupRefreshSettings {
     pub gitlab: bool,
     #[serde(default = "default_startup_refresh_enabled")]
     pub skill_hub: bool,
+    #[serde(default)]
+    pub iflytek_skill_hub: bool,
 }
 
 fn default_startup_refresh_enabled() -> bool {
@@ -236,6 +250,7 @@ impl Default for StartupRefreshSettings {
             github: false,
             gitlab: true,
             skill_hub: true,
+            iflytek_skill_hub: false,
         }
     }
 }
@@ -1477,6 +1492,14 @@ mod tests {
     }
 
     #[test]
+    fn missing_iflytek_endpoints_deserializes_to_empty() {
+        let json = r#"{"version":6,"settings":{"mainSkillsDir":null,"linkStrategy":"auto"},"targets":[],"installations":[]}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.iflytek_skill_hub_endpoints.is_empty());
+        assert_eq!(config.settings.startup_refresh.iflytek_skill_hub, false);
+    }
+
+    #[test]
     fn settings_default_startup_refresh_prefers_internal_sources() {
         let settings = Settings::default();
         assert!(!settings.startup_refresh.github);
@@ -1501,6 +1524,7 @@ mod tests {
                 github: true,
                 gitlab: false,
                 skill_hub: true,
+                iflytek_skill_hub: false,
             },
             ..Settings::default()
         };

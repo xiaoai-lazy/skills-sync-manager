@@ -1339,6 +1339,7 @@ mod tests {
             github: true,
             gitlab: false,
             skill_hub: false,
+            iflytek_skill_hub: false,
         };
 
         apply_startup_refresh_settings(&mut config, settings.clone());
