@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   DiscoverableSkill,
   DiscoverSkillsResult,
+  IflytekSkillHubEndpoint,
   PreviewAddRepoResult,
   SkillHubEndpoint,
   SkillHubEndpointChangeResult,
@@ -137,6 +138,36 @@ export async function setSkillHubEndpointEnabled(
   enabled: boolean,
 ): Promise<SkillHubEndpointChangeResult> {
   return invoke<SkillHubEndpointChangeResult>('set_skill_hub_endpoint_enabled', { id, enabled });
+}
+
+export async function listIflytekSkillHubEndpoints(): Promise<IflytekSkillHubEndpoint[]> {
+  return invoke<IflytekSkillHubEndpoint[]>('list_iflytek_skill_hub_endpoints');
+}
+
+export async function addIflytekSkillHubEndpoint(
+  name: string,
+  baseUrl: string,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('add_iflytek_skill_hub_endpoint', {
+    name,
+    baseUrl,
+  });
+}
+
+export async function removeIflytekSkillHubEndpoint(
+  id: string,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('remove_iflytek_skill_hub_endpoint', { id });
+}
+
+export async function setIflytekSkillHubEndpointEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<SkillHubEndpointChangeResult> {
+  return invoke<SkillHubEndpointChangeResult>('set_iflytek_skill_hub_endpoint_enabled', {
+    id,
+    enabled,
+  });
 }
 
 export async function listHubGroups(hubEndpointId: string): Promise<string[]> {

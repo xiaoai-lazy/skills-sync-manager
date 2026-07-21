@@ -212,6 +212,8 @@ export interface IflytekSkillHubEndpoint {
 export interface SkillHubEndpointChangeResult {
   endpoints: SkillHubEndpoint[];
   discoverSkills: DiscoverableSkill[];
+  /** Present on iFlytek CRUD results; optional so Skills Sync mutations stay compatible. */
+  iflytekSkillHubEndpoints?: IflytekSkillHubEndpoint[];
 }
 
 export type SkillMarkdownRequest =

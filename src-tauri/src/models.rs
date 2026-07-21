@@ -692,6 +692,9 @@ pub struct SkillRepoChangeResult {
 pub struct SkillHubEndpointChangeResult {
     pub endpoints: Vec<SkillHubEndpoint>,
     pub discover_skills: Vec<DiscoverableSkill>,
+    /// Populated by iFlytek CRUD; Skills Sync mutations may leave this empty (serde default).
+    #[serde(default)]
+    pub iflytek_skill_hub_endpoints: Vec<IflytekSkillHubEndpoint>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

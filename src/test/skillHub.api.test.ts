@@ -26,6 +26,10 @@ import {
   addSkillHubEndpoint,
   removeSkillHubEndpoint,
   setSkillHubEndpointEnabled,
+  listIflytekSkillHubEndpoints,
+  addIflytekSkillHubEndpoint,
+  removeIflytekSkillHubEndpoint,
+  setIflytekSkillHubEndpointEnabled,
   listHubGroups,
   createHubGroup,
   uploadSkillToHub,
@@ -285,6 +289,56 @@ describe('skillHub API', () => {
 
     expect(invokeMock).toHaveBeenCalledWith('set_skill_hub_endpoint_enabled', {
       id: 'hub-1',
+      enabled: false,
+    });
+  });
+
+  it('listIflytekSkillHubEndpoints invokes command', async () => {
+    invokeMock.mockResolvedValueOnce([]);
+    await listIflytekSkillHubEndpoints();
+    expect(invokeMock).toHaveBeenCalledWith('list_iflytek_skill_hub_endpoints');
+  });
+
+  it('addIflytekSkillHubEndpoint passes name and baseUrl', async () => {
+    invokeMock.mockResolvedValue({
+      endpoints: [],
+      iflytekSkillHubEndpoints: [],
+      discoverSkills: [],
+    });
+
+    await addIflytekSkillHubEndpoint('iFlytek Hub', 'https://iflytek.example.com');
+
+    expect(invokeMock).toHaveBeenCalledWith('add_iflytek_skill_hub_endpoint', {
+      name: 'iFlytek Hub',
+      baseUrl: 'https://iflytek.example.com',
+    });
+  });
+
+  it('removeIflytekSkillHubEndpoint passes id', async () => {
+    invokeMock.mockResolvedValue({
+      endpoints: [],
+      iflytekSkillHubEndpoints: [],
+      discoverSkills: [],
+    });
+
+    await removeIflytekSkillHubEndpoint('iflytek-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('remove_iflytek_skill_hub_endpoint', {
+      id: 'iflytek-1',
+    });
+  });
+
+  it('setIflytekSkillHubEndpointEnabled passes id and enabled', async () => {
+    invokeMock.mockResolvedValue({
+      endpoints: [],
+      iflytekSkillHubEndpoints: [],
+      discoverSkills: [],
+    });
+
+    await setIflytekSkillHubEndpointEnabled('iflytek-1', false);
+
+    expect(invokeMock).toHaveBeenCalledWith('set_iflytek_skill_hub_endpoint_enabled', {
+      id: 'iflytek-1',
       enabled: false,
     });
   });

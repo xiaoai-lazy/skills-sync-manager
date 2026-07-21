@@ -3,13 +3,14 @@ use crate::credential_store;
 use crate::gitlab_client;
 use crate::models::{
     AppConfig, AppError, AppErrorDto, DiscoverableSkill, DiscoverSkillsResult,
-    PreviewAddRepoResult, SkillDiscoverCache,
+    IflytekSkillHubEndpoint, PreviewAddRepoResult, SkillDiscoverCache,
     SkillHubEndpoint, SkillHubEndpointChangeResult, SkillHubLocalState,
     SkillMarkdownPreviewDto, SkillMarkdownRequestDto, SkillRepo, SkillRepoChangeResult,
     SkillUpdateInfo, SkillWithTargetState, StartupRefreshSettings, StartupSkillRefreshResult,
     SmartPastePreview, UpdateAllSkillsResult,
 };
 use crate::skill_hub_endpoints;
+use crate::iflytek_skill_hub_endpoints;
 use crate::skill_repos;
 use crate::skill_discover::{
     deduplicate_discoverable_skills, discover_available_with_warnings,
@@ -715,7 +716,14 @@ fn hub_endpoint_change_result(config: &AppConfig) -> SkillHubEndpointChangeResul
     SkillHubEndpointChangeResult {
         endpoints: skill_hub_endpoints::list_skill_hub_endpoints(config),
         discover_skills: config.skill_discover_cache.skills.clone(),
+        iflytek_skill_hub_endpoints: iflytek_skill_hub_endpoints::list_iflytek_skill_hub_endpoints(
+            config,
+        ),
     }
+}
+
+fn iflytek_endpoint_change_result(config: &AppConfig) -> SkillHubEndpointChangeResult {
+    hub_endpoint_change_result(config)
 }
 
 #[tauri::command]
@@ -723,6 +731,17 @@ pub fn list_skill_hub_endpoints(app: AppHandle) -> Result<Vec<SkillHubEndpoint>,
     let store = store_from_app(&app).map_err(|err| err.to_dto())?;
     let config = store.load().map_err(|err| err.to_dto())?;
     Ok(skill_hub_endpoints::list_skill_hub_endpoints(&config))
+}
+
+#[tauri::command]
+pub fn list_iflytek_skill_hub_endpoints(
+    app: AppHandle,
+) -> Result<Vec<IflytekSkillHubEndpoint>, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let config = store.load().map_err(|err| err.to_dto())?;
+    Ok(iflytek_skill_hub_endpoints::list_iflytek_skill_hub_endpoints(
+        &config,
+    ))
 }
 
 #[tauri::command]
@@ -766,6 +785,49 @@ pub async fn add_skill_hub_endpoint(
     let mut config = config;
     crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     Ok(hub_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub async fn add_iflytek_skill_hub_endpoint(
+    app: AppHandle,
+    name: String,
+    base_url: String,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let name_for_task = name;
+    let base_url_for_task = base_url;
+
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        iflytek_skill_hub_endpoints::add_iflytek_skill_hub_endpoint(
+            &mut config,
+            &name_for_task,
+            &base_url_for_task,
+        )?;
+        Ok::<AppConfig, AppError>(config)
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("添加 iFlytek Hub 端点任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = config;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(iflytek_endpoint_change_result(&config))
 }
 
 #[tauri::command]
@@ -827,6 +889,72 @@ pub async fn set_skill_hub_endpoint_enabled(
     let mut config = config;
     crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
     Ok(hub_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub fn remove_iflytek_skill_hub_endpoint(
+    app: AppHandle,
+    id: String,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    iflytek_skill_hub_endpoints::remove_iflytek_skill_hub_endpoint(&mut config, &id)
+        .map_err(|err| err.to_dto())?;
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(iflytek_endpoint_change_result(&config))
+}
+
+#[tauri::command]
+pub async fn set_iflytek_skill_hub_endpoint_enabled(
+    app: AppHandle,
+    id: String,
+    enabled: bool,
+) -> Result<SkillHubEndpointChangeResult, AppErrorDto> {
+    let store = store_from_app(&app).map_err(|err| err.to_dto())?;
+    let mut config = store.load().map_err(|err| err.to_dto())?;
+
+    let id_for_task = id;
+
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        iflytek_skill_hub_endpoints::set_iflytek_skill_hub_endpoint_enabled(
+            &mut config,
+            &id_for_task,
+            enabled,
+        )?;
+        Ok::<AppConfig, AppError>(config)
+    })
+    .await
+    .map_err(|err| AppError::Io {
+        path: None,
+        message: format!("更新 iFlytek Hub 端点状态任务异常: {}", err),
+    })
+    .map_err(|err| err.to_dto())?
+    .map_err(|err| err.to_dto())?;
+
+    store.save(&config).map_err(|err| err.to_dto())?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Io {
+            path: None,
+            message: format!("failed to resolve app data directory: {}", err),
+        })
+        .map_err(|err| err.to_dto())?;
+    let mut config = config;
+    crate::runtime_cache::attach_to_config(&app_data_dir, &mut config);
+    Ok(iflytek_endpoint_change_result(&config))
 }
 
 #[tauri::command]

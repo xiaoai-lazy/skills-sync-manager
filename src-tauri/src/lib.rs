@@ -5,6 +5,7 @@ pub mod credential_store;
 pub mod gitlab_client;
 pub mod iflytek_skill_hub_client;
 pub mod iflytek_skill_hub_discover;
+pub mod iflytek_skill_hub_endpoints;
 pub mod skill_hub_client;
 pub mod skill_hub_discover;
 pub mod skill_hub_endpoints;
@@ -86,6 +87,10 @@ pub fn run() {
             commands::skill_hub::add_skill_hub_endpoint,
             commands::skill_hub::remove_skill_hub_endpoint,
             commands::skill_hub::set_skill_hub_endpoint_enabled,
+            commands::skill_hub::list_iflytek_skill_hub_endpoints,
+            commands::skill_hub::add_iflytek_skill_hub_endpoint,
+            commands::skill_hub::remove_iflytek_skill_hub_endpoint,
+            commands::skill_hub::set_iflytek_skill_hub_endpoint_enabled,
             commands::skill_hub::list_hub_groups,
             commands::skill_hub::create_hub_group,
             commands::skill_hub::upload_skill_to_hub,
