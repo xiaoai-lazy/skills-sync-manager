@@ -8,7 +8,14 @@ export function formatSkillSourceLabel(
   record?: SourceLabelMeta,
 ): string {
   if (source === 'skillhub') {
-    return record?.hubSkillGroup ? `Skill Hub · ${record.hubSkillGroup}` : 'Skill Hub';
+    return record?.hubSkillGroup
+      ? `Skills Sync Hub · ${record.hubSkillGroup}`
+      : 'Skills Sync Hub';
+  }
+  if (source === 'iflytek') {
+    return record?.hubSkillGroup
+      ? `iFlytek Skill Hub · ${record.hubSkillGroup}`
+      : 'iFlytek Skill Hub';
   }
   if (source === 'skillssh') return 'GitHub（旧来源）';
   if (source === 'github') return 'GitHub';

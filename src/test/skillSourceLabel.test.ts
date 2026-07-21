@@ -25,10 +25,21 @@ const gitlabRecord: SkillRecord = {
 };
 
 describe('skillSourceLabel', () => {
-  it('formats hub source with group', () => {
-    expect(formatSkillSourceLabel('skillhub', { hubSkillGroup: 'tools' })).toBe(
-      'Skill Hub · tools',
+  it('formats Skills Sync Hub source with group', () => {
+    expect(formatSkillSourceLabel('skillhub', { hubSkillGroup: 'common' })).toBe(
+      'Skills Sync Hub · common',
     );
+  });
+
+  it('formats iFlytek Skill Hub source with namespace', () => {
+    expect(formatSkillSourceLabel('iflytek', { hubSkillGroup: 'global' })).toBe(
+      'iFlytek Skill Hub · global',
+    );
+  });
+
+  it('formats Skills Sync Hub and iFlytek without group', () => {
+    expect(formatSkillSourceLabel('skillhub')).toBe('Skills Sync Hub');
+    expect(formatSkillSourceLabel('iflytek')).toBe('iFlytek Skill Hub');
   });
 
   it('formats gitlab source with host', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatHubSourceConfig,
+  formatIflytekHubSourceConfig,
   formatRepoSourceConfig,
 } from '../utils/sourceConfigClipboard';
 import type { SkillHubEndpoint, SkillRepo } from '../model/types';
@@ -33,12 +34,25 @@ const gitlabRepo: SkillRepo = {
 };
 
 describe('sourceConfigClipboard', () => {
-  it('formats hub source config with name and base URL', () => {
+  it('formats Skills Sync Hub source config with name and base URL', () => {
     const text = formatHubSourceConfig(hubEndpoint);
-    expect(text).toContain('【Skill Hub 来源配置】');
+    expect(text).toContain('【Skills Sync Hub 来源配置】');
     expect(text).toContain('名称：oxygen 团队 hub');
     expect(text).toContain('Base URL：http://127.0.0.1:3337');
-    expect(text).toContain('Skill Hub');
+    expect(text).toContain('Skills Sync Hub');
+  });
+
+  it('formats iFlytek Skill Hub source config with name and base URL', () => {
+    const text = formatIflytekHubSourceConfig({
+      id: 'xkw',
+      name: '讯飞 Skill Hub',
+      baseUrl: 'https://iflytek.example.com',
+      enabled: true,
+    });
+    expect(text).toContain('【iFlytek Skill Hub 来源配置】');
+    expect(text).toContain('名称：讯飞 Skill Hub');
+    expect(text).toContain('Base URL：https://iflytek.example.com');
+    expect(text).toContain('iFlytek Skill Hub');
   });
 
   it('formats github repo source config', () => {

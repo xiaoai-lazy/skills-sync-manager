@@ -5,12 +5,19 @@ import {
   findPendingUpdate,
   hubEndpointVisible,
   matchedPendingUpdates,
+  matchesDiscoverNode,
   matchesInstalledNode,
   resolveEffectiveFilterNodeId,
   resolveSkillRecord,
   skillHasPendingUpdate,
 } from '../components/skill-hub/sourceTreeUtils';
-import type { SkillHubEndpoint, SkillRecord, SkillUpdateInfo, SkillView } from '../model/types';
+import type {
+  DiscoverableSkill,
+  SkillHubEndpoint,
+  SkillRecord,
+  SkillUpdateInfo,
+  SkillView,
+} from '../model/types';
 import { emptyV6SkillViewFields } from '../model/types';
 
 const hubTalos: SkillView = {
@@ -199,5 +206,98 @@ describe('pending update matching', () => {
     };
     expect(matchedPendingUpdates([skill], [exact, orphan])).toEqual([exact]);
     expect(matchedPendingUpdates([skill], [orphan])).toEqual([]);
+  });
+});
+
+describe('sourceTreeUtils dual-root matchers', () => {
+  const iflytekSkill: DiscoverableSkill = {
+    key: 'xkw:global/demo',
+    name: 'demo',
+    description: '',
+    directory: 'global/demo',
+    installDirName: 'demo',
+    repoHost: '',
+    projectPath: '',
+    repoOwner: '',
+    repoName: '',
+    repoBranch: '',
+    source: 'iflytek',
+    storageKey: 'hub/xkw/global/demo',
+    linkName: 'demo',
+    repoSlug: '',
+    hubEndpointId: 'xkw',
+    hubSkillGroup: 'global',
+    hubSkillId: 'demo',
+  };
+
+  const skillsSyncSkill: DiscoverableSkill = {
+    ...iflytekSkill,
+    key: 'company:common/demo',
+    source: 'skillhub',
+    storageKey: 'hub/company/common/demo',
+    hubEndpointId: 'company',
+    hubSkillGroup: 'common',
+  };
+
+  it('matches iflytek discover skills under iflytek nodes only', () => {
+    expect(matchesDiscoverNode('iflytek:xkw:global', iflytekSkill)).toBe(true);
+    expect(matchesDiscoverNode('iflytek:xkw', iflytekSkill)).toBe(true);
+    expect(matchesDiscoverNode('iflytek', iflytekSkill)).toBe(true);
+    expect(matchesDiscoverNode('hub:company', iflytekSkill)).toBe(false);
+    expect(matchesDiscoverNode('skillsSync', iflytekSkill)).toBe(false);
+  });
+
+  it('matches skills sync discover skills under hub / skillsSync nodes only', () => {
+    expect(matchesDiscoverNode('hub:company', skillsSyncSkill)).toBe(true);
+    expect(matchesDiscoverNode('hub:company:common', skillsSyncSkill)).toBe(true);
+    expect(matchesDiscoverNode('skillsSync', skillsSyncSkill)).toBe(true);
+    expect(matchesDiscoverNode('iflytek:xkw', skillsSyncSkill)).toBe(false);
+    expect(matchesDiscoverNode('iflytek', skillsSyncSkill)).toBe(false);
+  });
+
+  it('all node matches both hub tracks', () => {
+    expect(matchesDiscoverNode('all', iflytekSkill)).toBe(true);
+    expect(matchesDiscoverNode('all', skillsSyncSkill)).toBe(true);
+  });
+
+  it('installed matcher separates skillhub and iflytek by source', () => {
+    const iflytekInstalled: SkillView = {
+      ...emptyV6SkillViewFields,
+      dirName: 'demo',
+      name: 'demo',
+      description: '',
+      path: 'C:\\skills\\hub\\xkw\\global\\demo',
+      valid: true,
+      validationErrors: [],
+      storageKey: 'hub/xkw/global/demo',
+      linkName: 'demo',
+    };
+    const iflytekRecord: SkillRecord = {
+      source: 'iflytek',
+      storageKey: iflytekInstalled.storageKey,
+      linkName: 'demo',
+      hubEndpointId: 'xkw',
+      hubSkillGroup: 'global',
+      hubSkillId: 'demo',
+      repoHost: '',
+      projectPath: '',
+      repoOwner: '',
+      repoName: '',
+      repoBranch: '',
+      directory: 'global/demo',
+      contentHash: '',
+      installedAt: '',
+      repoSlug: '',
+    };
+
+    expect(
+      matchesInstalledNode('iflytek:xkw:global', iflytekInstalled.dirName, iflytekRecord, iflytekInstalled),
+    ).toBe(true);
+    expect(
+      matchesInstalledNode('hub:xkw', iflytekInstalled.dirName, iflytekRecord, iflytekInstalled),
+    ).toBe(false);
+    expect(
+      matchesInstalledNode('skillsSync', iflytekInstalled.dirName, iflytekRecord, iflytekInstalled),
+    ).toBe(false);
   });
 });

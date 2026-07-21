@@ -1,12 +1,28 @@
-import type { SkillHubEndpoint, SkillRepo } from '../model/types';
+import type {
+  IflytekSkillHubEndpoint,
+  SkillHubEndpoint,
+  SkillRepo,
+} from '../model/types';
 
 export function formatHubSourceConfig(endpoint: SkillHubEndpoint): string {
   return [
-    '【Skill Hub 来源配置】',
+    '【Skills Sync Hub 来源配置】',
     `名称：${endpoint.name}`,
     `Base URL：${endpoint.baseUrl}`,
     '',
-    '在「来源管理 → 添加来源 → Skill Hub」中填入以上内容。',
+    '在「来源管理 → 添加来源 → Skills Sync Hub」中填入以上内容。',
+  ].join('\n');
+}
+
+export function formatIflytekHubSourceConfig(
+  endpoint: IflytekSkillHubEndpoint,
+): string {
+  return [
+    '【iFlytek Skill Hub 来源配置】',
+    `名称：${endpoint.name}`,
+    `Base URL：${endpoint.baseUrl}`,
+    '',
+    '在「来源管理 → 添加来源 → iFlytek Skill Hub」中填入以上内容。',
   ].join('\n');
 }
 

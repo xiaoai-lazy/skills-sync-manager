@@ -1,5 +1,6 @@
 import type {
   DiscoverableSkill,
+  IflytekSkillHubEndpoint,
   SkillHubEndpoint,
   SkillRecord,
   SkillRepo,
@@ -10,6 +11,10 @@ import type {
 export const ALL_NODE_ID = 'all';
 export const LOCAL_NODE_ID = 'local';
 export const ALL_HUB_GROUP = 'all';
+export const SKILLS_SYNC_NODE_ID = 'skillsSync';
+export const IFLYTEK_ROOT_NODE_ID = 'iflytek';
+
+const REMOTE_SOURCES = ['github', 'gitlab', 'skillhub', 'skillssh', 'iflytek'] as const;
 
 export function resolveSkillRecord(
   skill: Pick<SkillView, 'storageKey' | 'dirName' | 'linkName'>,
@@ -111,6 +116,14 @@ export function hubGroupNodeId(endpointId: string, group: string): string {
   return `hub:${endpointId}:${group}`;
 }
 
+export function iflytekRootNodeId(endpointId: string): string {
+  return `iflytek:${endpointId}`;
+}
+
+export function iflytekNamespaceNodeId(endpointId: string, namespace: string): string {
+  return `iflytek:${endpointId}:${namespace}`;
+}
+
 export function resolveEffectiveFilterNodeId(
   selectedNodeId: string,
   hubGroup: string,
@@ -136,6 +149,16 @@ export function parseHubNodeId(nodeId: string): { endpointId: string; group?: st
   const colon = rest.indexOf(':');
   if (colon === -1) return { endpointId: rest };
   return { endpointId: rest.slice(0, colon), group: rest.slice(colon + 1) };
+}
+
+export function parseIflytekNodeId(
+  nodeId: string,
+): { endpointId: string; namespace?: string } | null {
+  if (!nodeId.startsWith('iflytek:')) return null;
+  const rest = nodeId.slice('iflytek:'.length);
+  const colon = rest.indexOf(':');
+  if (colon === -1) return { endpointId: rest };
+  return { endpointId: rest.slice(0, colon), namespace: rest.slice(colon + 1) };
 }
 
 export function parseRepoNodeId(nodeId: string): { host: string; projectPath: string } | null {
@@ -219,7 +242,7 @@ export function isLocalInstalledSkill(
     ? resolveSkillRecord(skill, skillRecords)
     : skillRecords?.[dirName];
   if (!record) return true;
-  return !['github', 'gitlab', 'skillhub', 'skillssh'].includes(record.source);
+  return !(REMOTE_SOURCES as readonly string[]).includes(record.source);
 }
 
 export function hubGroupsForEndpoint(
@@ -247,6 +270,33 @@ export function hubGroupsForEndpoint(
     .forEach((record) => groups.add(record.hubSkillGroup));
 
   return [...groups].sort();
+}
+
+export function iflytekNamespacesForEndpoint(
+  endpointId: string,
+  discoverSkills: DiscoverableSkill[],
+  skillRecords: Record<string, SkillRecord>,
+): string[] {
+  const namespaces = new Set<string>();
+  discoverSkills
+    .filter(
+      (skill) =>
+        skill.source === 'iflytek' &&
+        skill.hubEndpointId === endpointId &&
+        skill.hubSkillGroup,
+    )
+    .forEach((skill) => namespaces.add(skill.hubSkillGroup));
+
+  Object.values(skillRecords)
+    .filter(
+      (record) =>
+        record.source === 'iflytek' &&
+        record.hubEndpointId === endpointId &&
+        record.hubSkillGroup,
+    )
+    .forEach((record) => namespaces.add(record.hubSkillGroup));
+
+  return [...namespaces].sort();
 }
 
 export function countInstalledForNode(
@@ -281,18 +331,38 @@ export function matchesInstalledNode(
 
   if (nodeId === LOCAL_NODE_ID) {
     if (!record) return true;
-    return !['github', 'gitlab', 'skillhub', 'skillssh'].includes(record.source);
+    return !(REMOTE_SOURCES as readonly string[]).includes(record.source);
+  }
+
+  if (nodeId === SKILLS_SYNC_NODE_ID) {
+    return record?.source === 'skillhub';
+  }
+
+  if (nodeId === IFLYTEK_ROOT_NODE_ID) {
+    return record?.source === 'iflytek';
   }
 
   const hub = parseHubNodeId(nodeId);
   if (hub) {
+    if (record) {
+      if (record.source !== 'skillhub' || record.hubEndpointId !== hub.endpointId) {
+        return false;
+      }
+      if (hub.group) return record.hubSkillGroup === hub.group;
+      return true;
+    }
     if (skill?.storageKey) {
       return skillMatchesHubNode(skill, hub.endpointId, hub.group);
     }
-    if (!record || record.source !== 'skillhub' || record.hubEndpointId !== hub.endpointId) {
+    return false;
+  }
+
+  const iflytek = parseIflytekNodeId(nodeId);
+  if (iflytek) {
+    if (!record || record.source !== 'iflytek' || record.hubEndpointId !== iflytek.endpointId) {
       return false;
     }
-    if (hub.group) return record.hubSkillGroup === hub.group;
+    if (iflytek.namespace) return record.hubSkillGroup === iflytek.namespace;
     return true;
   }
 
@@ -328,10 +398,25 @@ export function matchesDiscoverNode(nodeId: string, skill: DiscoverableSkill): b
   if (nodeId === ALL_NODE_ID) return true;
   if (nodeId === LOCAL_NODE_ID) return false;
 
+  if (nodeId === SKILLS_SYNC_NODE_ID) {
+    return skill.source === 'skillhub';
+  }
+
+  if (nodeId === IFLYTEK_ROOT_NODE_ID) {
+    return skill.source === 'iflytek';
+  }
+
   const hub = parseHubNodeId(nodeId);
   if (hub) {
     if (skill.source !== 'skillhub' || skill.hubEndpointId !== hub.endpointId) return false;
     if (hub.group) return skill.hubSkillGroup === hub.group;
+    return true;
+  }
+
+  const iflytek = parseIflytekNodeId(nodeId);
+  if (iflytek) {
+    if (skill.source !== 'iflytek' || skill.hubEndpointId !== iflytek.endpointId) return false;
+    if (iflytek.namespace) return skill.hubSkillGroup === iflytek.namespace;
     return true;
   }
 
@@ -351,12 +436,19 @@ export function nodeTitle(
   nodeId: string,
   endpoints: SkillHubEndpoint[],
   repos: SkillRepo[],
+  iflytekEndpoints: IflytekSkillHubEndpoint[] = [],
 ): { title: string; sub: string } {
   if (nodeId === ALL_NODE_ID) {
     return { title: '全部 Skill', sub: '所有来源' };
   }
   if (nodeId === LOCAL_NODE_ID) {
     return { title: '本地导入', sub: '手动导入的 Skill' };
+  }
+  if (nodeId === SKILLS_SYNC_NODE_ID) {
+    return { title: 'Skills Sync Hub', sub: '企业内部 Skills Sync' };
+  }
+  if (nodeId === IFLYTEK_ROOT_NODE_ID) {
+    return { title: 'iFlytek Skill Hub', sub: '讯飞 Skill Hub' };
   }
 
   const hub = parseHubNodeId(nodeId);
@@ -366,7 +458,18 @@ export function nodeTitle(
     if (hub.group) return { title: hub.group, sub: `${name} · 分组` };
     return {
       title: name,
-      sub: `Skill Hub${endpoint?.baseUrl ? ` · ${endpoint.baseUrl}` : ''}`,
+      sub: `Skills Sync Hub${endpoint?.baseUrl ? ` · ${endpoint.baseUrl}` : ''}`,
+    };
+  }
+
+  const iflytek = parseIflytekNodeId(nodeId);
+  if (iflytek) {
+    const endpoint = iflytekEndpoints.find((e) => e.id === iflytek.endpointId);
+    const name = endpoint?.name ?? iflytek.endpointId;
+    if (iflytek.namespace) return { title: iflytek.namespace, sub: `${name} · 命名空间` };
+    return {
+      title: name,
+      sub: `iFlytek Skill Hub${endpoint?.baseUrl ? ` · ${endpoint.baseUrl}` : ''}`,
     };
   }
 

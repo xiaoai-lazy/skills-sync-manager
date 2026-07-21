@@ -77,8 +77,70 @@ describe('SourceTree', () => {
       />,
     );
 
+    expect(screen.getByRole('treeitem', { name: /Skills Sync Hub/ })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /停用 Hub/ })).toBeInTheDocument();
+  });
+
+  it('nests Skills Sync and iFlytek under dual category roots', () => {
+    const endpoints: SkillHubEndpoint[] = [
+      {
+        id: 'company-hub',
+        name: 'oxygen 团队 hub',
+        baseUrl: 'http://127.0.0.1:3337',
+        enabled: true,
+      },
+    ];
+    const iflytekEndpoints = [
+      {
+        id: 'xkw',
+        name: '讯飞 Skill Hub',
+        baseUrl: 'https://iflytek.example.com',
+        enabled: true,
+      },
+    ];
+    const discoverSkills = [
+      {
+        key: 'xkw:global/demo',
+        name: 'demo',
+        description: '',
+        directory: 'global/demo',
+        installDirName: 'demo',
+        repoHost: '',
+        projectPath: '',
+        repoOwner: '',
+        repoName: '',
+        repoBranch: '',
+        source: 'iflytek',
+        storageKey: 'hub/xkw/global/demo',
+        linkName: 'demo',
+        repoSlug: '',
+        hubEndpointId: 'xkw',
+        hubSkillGroup: 'global',
+        hubSkillId: 'demo',
+      },
+    ];
+
+    render(
+      <SourceTree
+        tab="discover"
+        endpoints={endpoints}
+        iflytekEndpoints={iflytekEndpoints}
+        repos={[]}
+        discoverSkills={discoverSkills}
+        installedSkills={[]}
+        skillRecords={{}}
+        selectedNodeId={ALL_NODE_ID}
+        onSelectNode={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('treeitem', { name: /Skills Sync Hub/ })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /iFlytek Skill Hub/ })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /讯飞 Skill Hub/ })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /^global$/ })).toBeInTheDocument();
+    expect(screen.queryByText(/ued/)).not.toBeInTheDocument();
   });
 
   it('renders nodeCountLabel after tree labels when provided', () => {
