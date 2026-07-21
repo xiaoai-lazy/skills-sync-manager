@@ -63,7 +63,11 @@ vi.mock('../api/skillHub', () => ({
 
   listSkillHubEndpoints: vi.fn().mockResolvedValue([]),
 
+  listIflytekSkillHubEndpoints: vi.fn().mockResolvedValue([]),
+
   addSkillHubEndpoint: vi.fn(),
+
+  addIflytekSkillHubEndpoint: vi.fn(),
 
   listGitlabCredentials: vi.fn().mockResolvedValue([]),
 
