@@ -11,6 +11,7 @@ pub enum SourceKind {
     Github,
     Gitlab,
     SkillHub,
+    IflytekSkillHub,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,12 +32,17 @@ fn enabled_source_kinds(config: &AppConfig) -> Vec<SourceKind> {
     if settings.skill_hub {
         kinds.push(SourceKind::SkillHub);
     }
+    if settings.iflytek_skill_hub {
+        kinds.push(SourceKind::IflytekSkillHub);
+    }
     kinds
 }
 
 fn record_source_kind(record: &SkillRecord) -> SourceKind {
     if record.source == "skillhub" {
         SourceKind::SkillHub
+    } else if record.source == "iflytek" {
+        SourceKind::IflytekSkillHub
     } else if record.source == "gitlab" || record.repo_host != default_github_host() {
         SourceKind::Gitlab
     } else {
@@ -47,6 +53,8 @@ fn record_source_kind(record: &SkillRecord) -> SourceKind {
 pub fn discover_source_kind(skill: &DiscoverableSkill) -> SourceKind {
     if skill.source == "skillhub" {
         SourceKind::SkillHub
+    } else if skill.source == "iflytek" {
+        SourceKind::IflytekSkillHub
     } else if skill.source == "gitlab" || skill.repo_host != default_github_host() {
         SourceKind::Gitlab
     } else {
@@ -149,6 +157,9 @@ pub fn refresh_enabled_sources(
                 "gitlab",
             ),
             SourceKind::SkillHub => crate::skill_hub_discover::discover_all_strict(&source_config),
+            SourceKind::IflytekSkillHub => {
+                crate::iflytek_skill_hub_discover::discover_all_strict(&source_config)
+            }
         }
         .map_err(|err| source_warning(kind, &err.to_dto().message))?;
 
@@ -167,6 +178,7 @@ pub fn refresh_enabled_sources(
             (SourceKind::SkillHub, Some(main_dir)) => {
                 crate::skill_updates::check_hub_updates_strict(&mut source_config, main_dir)
             }
+            (SourceKind::IflytekSkillHub, Some(_)) => Ok(Vec::new()),
         }
         .map_err(|err| source_warning(kind, &err.to_dto().message))?;
 
@@ -193,6 +205,7 @@ fn source_warning(kind: SourceKind, message: &str) -> String {
         SourceKind::Github => "GitHub",
         SourceKind::Gitlab => "GitLab",
         SourceKind::SkillHub => "Skill Hub",
+        SourceKind::IflytekSkillHub => "iFlytek Skill Hub",
     };
     format!("{label} 启动刷新失败：{message}")
 }
@@ -250,6 +263,14 @@ mod tests {
                 ..SkillRecord::default()
             },
         );
+        config.skill_records.insert(
+            "iflytek-key".to_string(),
+            SkillRecord {
+                storage_key: "iflytek-key".to_string(),
+                source: "iflytek".to_string(),
+                ..SkillRecord::default()
+            },
+        );
         config
     }
 
@@ -286,6 +307,10 @@ mod tests {
                 discover_skills: vec![discoverable("hub-new", "skillhub", "")],
                 pending_updates: vec![update("hub-key", "hub-new")],
             },
+            SourceKind::IflytekSkillHub => FreshSourceResult {
+                discover_skills: vec![discoverable("iflytek-new", "iflytek", "")],
+                pending_updates: vec![update("iflytek-key", "iflytek-new")],
+            },
         }
     }
 
@@ -302,6 +327,10 @@ mod tests {
         assert_eq!(
             discover_source_kind(&discoverable("hub", "skillhub", "")),
             SourceKind::SkillHub
+        );
+        assert_eq!(
+            discover_source_kind(&discoverable("iflytek", "iflytek", "")),
+            SourceKind::IflytekSkillHub
         );
     }
 
@@ -320,6 +349,10 @@ mod tests {
             update_source_kind(&config, &update("hub-key", "hub")),
             Some(SourceKind::SkillHub)
         );
+        assert_eq!(
+            update_source_kind(&config, &update("iflytek-key", "iflytek")),
+            Some(SourceKind::IflytekSkillHub)
+        );
     }
 
     #[test]
@@ -336,6 +369,21 @@ mod tests {
         );
         let keys = merged.into_iter().map(|skill| skill.key).collect::<Vec<_>>();
         assert_eq!(keys, vec!["github-old", "hub-old", "gitlab-new"]);
+    }
+
+    #[test]
+    fn merge_discover_kind_iflytek_preserves_skillhub_entries() {
+        let old = vec![
+            discoverable("hub-old", "skillhub", ""),
+            discoverable("iflytek-old", "iflytek", ""),
+        ];
+        let merged = merge_discover_kind(
+            old,
+            SourceKind::IflytekSkillHub,
+            vec![discoverable("iflytek-new", "iflytek", "")],
+        );
+        let keys = merged.into_iter().map(|skill| skill.key).collect::<Vec<_>>();
+        assert_eq!(keys, vec!["hub-old", "iflytek-new"]);
     }
 
     #[test]
@@ -420,5 +468,37 @@ mod tests {
             .find(|update| update_source_kind(&config, update) == Some(SourceKind::Gitlab));
         assert_eq!(new_gitlab_update, old_gitlab_update);
         assert_eq!(result.warnings, vec!["gitlab unavailable"]);
+    }
+
+    #[test]
+    fn refresh_enabled_kinds_includes_iflytek_when_enabled() {
+        let mut config = config_with_cached_sources();
+        config.settings.startup_refresh.iflytek_skill_hub = true;
+        config.skill_discover_cache.skills.push(discoverable("iflytek-old", "iflytek", ""));
+        let mut calls = Vec::new();
+
+        let result = refresh_with_hooks(&mut config, |kind| {
+            calls.push(kind);
+            Ok(fresh_source(kind))
+        });
+
+        assert_eq!(
+            calls,
+            vec![
+                SourceKind::Gitlab,
+                SourceKind::SkillHub,
+                SourceKind::IflytekSkillHub,
+            ]
+        );
+        assert!(result.warnings.is_empty());
+        assert_eq!(
+            config
+                .skill_discover_cache
+                .skills
+                .iter()
+                .map(|skill| skill.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["github-old", "gitlab-new", "hub-new", "iflytek-new"]
+        );
     }
 }
