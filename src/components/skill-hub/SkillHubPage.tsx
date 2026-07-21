@@ -5,6 +5,7 @@ import {
   getSkillRepos,
   installHubSkill,
   listHubGroups,
+  listIflytekSkillHubEndpoints,
   listSkillHubEndpoints,
   scanMainLibrary,
   updateAllSkills,
@@ -13,6 +14,7 @@ import {
 } from '../../api/skillHub';
 import type {
   DiscoverableSkill,
+  IflytekSkillHubEndpoint,
   SkillHubEndpoint,
   SkillHubLocalState,
   SkillMarkdownRequest,
@@ -71,6 +73,7 @@ export interface SkillHubPageProps {
   pendingUpdates: SkillUpdateInfo[];
   skillRecords?: Record<string, SkillRecord>;
   skillHubEndpoints?: SkillHubEndpoint[];
+  iflytekSkillHubEndpoints?: IflytekSkillHubEndpoint[];
   startupRefreshSettings: StartupRefreshSettings;
   onStartupRefreshSettingsChange?: (settings: StartupRefreshSettings) => void;
   /** Optional fallback when onRefreshHub is absent; receives skills only (no skillRecords write-back). */
@@ -103,6 +106,7 @@ function SkillHubPage(props: SkillHubPageProps) {
     pendingUpdates,
     skillRecords,
     skillHubEndpoints: initialEndpoints,
+    iflytekSkillHubEndpoints: initialIflytekEndpoints,
     startupRefreshSettings,
     onStartupRefreshSettingsChange,
     onHubSkillsRefresh,
@@ -144,6 +148,9 @@ function SkillHubPage(props: SkillHubPageProps) {
   const [refreshingDiscover, setRefreshingDiscover] = useState(false);
   const [hubInstalling, setHubInstalling] = useState(false);
   const [endpoints, setEndpoints] = useState<SkillHubEndpoint[]>(initialEndpoints ?? []);
+  const [iflytekEndpoints, setIflytekEndpoints] = useState<IflytekSkillHubEndpoint[]>(
+    initialIflytekEndpoints ?? [],
+  );
   const [repos, setRepos] = useState<import('../../model/types').SkillRepo[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -176,9 +183,19 @@ function SkillHubPage(props: SkillHubPageProps) {
     // `[]` / undefined from appState must not skip the IPC load — SourceManageDrawer
     // was the only place that refreshed endpoints, which hid configured hubs until opened.
     void listSkillHubEndpoints()
-      .then(setEndpoints)
+      .then((list) => setEndpoints(list ?? []))
       .catch((err) => onError?.(errorMessage(err)));
   }, [initialEndpoints, onError]);
+
+  useEffect(() => {
+    if (initialIflytekEndpoints && initialIflytekEndpoints.length > 0) {
+      setIflytekEndpoints(initialIflytekEndpoints);
+      return;
+    }
+    void listIflytekSkillHubEndpoints()
+      .then((list) => setIflytekEndpoints(list ?? []))
+      .catch((err) => onError?.(errorMessage(err)));
+  }, [initialIflytekEndpoints, onError]);
 
   useEffect(() => {
     void getSkillRepos()
@@ -571,8 +588,9 @@ function SkillHubPage(props: SkillHubPageProps) {
           ? '正在更新…'
           : '正在刷新列表…';
 
-  const listHeader = nodeTitle(selectedNodeId, endpoints, repos);
+  const listHeader = nodeTitle(selectedNodeId, endpoints, repos, iflytekEndpoints);
   const enabledHubs = endpoints.filter((e) => e.enabled);
+  const enabledIflytekHubs = iflytekEndpoints.filter((e) => e.enabled);
   const showUploadButton =
     enabledHubs.length > 0 &&
     isEnabledHubRootNode(selectedNodeId, endpoints);
@@ -689,6 +707,8 @@ function SkillHubPage(props: SkillHubPageProps) {
               {pendingCount > 0 && (
                 <span className="pill hub-pill update">{pendingCount} 待更新</span>
               )}
+              <span className="pill hub-pill">Skills Sync {enabledHubs.length}</span>
+              <span className="pill hub-pill">iFlytek {enabledIflytekHubs.length}</span>
             </div>
             <div className="hub-path-inline" title={mainSkillsDir ?? undefined}>
               <span className="hub-path-text">{mainSkillsDir ?? '未设置主库目录'}</span>
@@ -743,6 +763,7 @@ function SkillHubPage(props: SkillHubPageProps) {
           <SourceTree
             tab={tab}
             endpoints={endpoints}
+            iflytekEndpoints={iflytekEndpoints}
             repos={repos}
             discoverSkills={discoverList}
             installedSkills={hubState.skills}
@@ -1033,6 +1054,7 @@ function SkillHubPage(props: SkillHubPageProps) {
         onToast={onToast}
         onDiscoverSkillsChange={onDiscoverSkillsChange}
         onEndpointsChange={setEndpoints}
+        onIflytekEndpointsChange={setIflytekEndpoints}
         onReposChange={setRepos}
         startupRefreshSettings={startupRefreshSettings}
         onStartupRefreshSettingsChange={onStartupRefreshSettingsChange}

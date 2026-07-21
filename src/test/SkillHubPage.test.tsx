@@ -7,6 +7,7 @@ import SkillHubPage from '../components/skill-hub/SkillHubPage';
 import { repoNodeId } from '../components/skill-hub/sourceTreeUtils';
 import type {
   DiscoverableSkill,
+  IflytekSkillHubEndpoint,
   SkillHubEndpoint,
   SkillHubLocalState,
   SkillRepo,
@@ -442,9 +443,56 @@ describe('SkillHubPage', () => {
     expect(screen.getByText('3 有效')).toBeInTheDocument();
     expect(screen.getByText('1 无效')).toBeInTheDocument();
     expect(screen.getByText('1 待更新')).toBeInTheDocument();
+    expect(screen.getByText(/Skills Sync/)).toBeInTheDocument();
+    expect(screen.getByText(/iFlytek/)).toBeInTheDocument();
     expect(screen.getByText('C:\\Users\\dev\\.cursor\\skills')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /已安装 \(4\)/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /可安装 \(1\)/ })).toBeInTheDocument();
+  });
+
+  it('shows enabled Skills Sync and iFlytek endpoint counts in hero pills', async () => {
+    const skillHubEndpoints: SkillHubEndpoint[] = [
+      {
+        id: 'sync-1',
+        name: 'Company Sync',
+        baseUrl: 'https://sync.example.com',
+        enabled: true,
+      },
+      {
+        id: 'sync-2',
+        name: 'Disabled Sync',
+        baseUrl: 'https://sync-off.example.com',
+        enabled: false,
+      },
+    ];
+    const iflytekEndpoints: IflytekSkillHubEndpoint[] = [
+      {
+        id: 'iflytek-1',
+        name: 'iFlytek Hub',
+        baseUrl: 'https://iflytek.example.com',
+        enabled: true,
+      },
+      {
+        id: 'iflytek-2',
+        name: 'iFlytek Off',
+        baseUrl: 'https://iflytek-off.example.com',
+        enabled: true,
+      },
+      {
+        id: 'iflytek-3',
+        name: 'iFlytek Disabled',
+        baseUrl: 'https://iflytek-disabled.example.com',
+        enabled: false,
+      },
+    ];
+    renderHub({ skillHubEndpoints, iflytekSkillHubEndpoints: iflytekEndpoints });
+
+    expect(await screen.findByText('Skills Sync 1')).toBeInTheDocument();
+    expect(screen.getByText('iFlytek 2')).toBeInTheDocument();
+
+    const tree = screen.getByRole('tree');
+    expect(within(tree).getByRole('treeitem', { name: /Company Sync/ })).toBeInTheDocument();
+    expect(within(tree).getByRole('treeitem', { name: /iFlytek Hub/ })).toBeInTheDocument();
   });
 
   it('shows installed skills on the installed tab', async () => {
@@ -633,6 +681,7 @@ describe('SkillHubPage', () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'get_skill_repos') return Promise.resolve([]);
       if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
       if (cmd === 'scan_main_library') {
         return Promise.resolve({
           ...mockHubState,

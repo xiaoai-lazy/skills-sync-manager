@@ -368,6 +368,8 @@ function App() {
 
               skillHubEndpoints={appState.config.skillHubEndpoints}
 
+              iflytekSkillHubEndpoints={appState.config.iflytekSkillHubEndpoints}
+
               startupRefreshSettings={appState.config.settings.startupRefresh}
 
               onStartupRefreshSettingsChange={(settings) =>
