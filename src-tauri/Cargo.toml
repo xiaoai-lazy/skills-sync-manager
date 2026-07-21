@@ -1,6 +1,6 @@
 [package]
 name = "skills-sync-manager"
-version = "0.8.0"
+version = "0.8.1"
 description = "Skills Sync Manager desktop application"
 authors = ["Skills Sync Manager Contributors"]
 edition = "2021"
