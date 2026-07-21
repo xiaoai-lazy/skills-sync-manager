@@ -260,6 +260,51 @@ mod tests {
     }
 
     #[test]
+    fn merge_iflytek_into_discover_cache_replaces_same_endpoint_iflytek_entries() {
+        let other_endpoint = iflytek_skill_to_discoverable(
+            "other",
+            &IflytekSkillDto {
+                slug: "keep-me".to_string(),
+                name: "Keep".to_string(),
+                description: "Other endpoint.".to_string(),
+                namespace: "global".to_string(),
+                latest_version: None,
+            },
+        );
+        let stale_same_endpoint = iflytek_skill_to_discoverable(
+            "xkw",
+            &IflytekSkillDto {
+                slug: "old-skill".to_string(),
+                name: "Old".to_string(),
+                description: "Stale.".to_string(),
+                namespace: "global".to_string(),
+                latest_version: None,
+            },
+        );
+        let fresh_same_endpoint = iflytek_skill_to_discoverable("xkw", &sample_dto());
+
+        let mut config = AppConfig {
+            skill_discover_cache: SkillDiscoverCache {
+                fetched_at: None,
+                skills: vec![other_endpoint.clone(), stale_same_endpoint.clone()],
+            },
+            ..Default::default()
+        };
+
+        let merged =
+            merge_iflytek_into_discover_cache(&mut config, vec![fresh_same_endpoint.clone()]);
+
+        assert!(merged.iter().any(|skill| skill.key == other_endpoint.key));
+        assert!(merged
+            .iter()
+            .any(|skill| skill.key == fresh_same_endpoint.key));
+        assert!(!merged
+            .iter()
+            .any(|skill| skill.key == stale_same_endpoint.key));
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
     fn remove_iflytek_from_discover_cache_keeps_other_sources() {
         let skills_sync_skill = hub_skill_to_discoverable(
             "company-hub",

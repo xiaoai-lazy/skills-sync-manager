@@ -91,36 +91,50 @@ pub fn read_skill_markdown(
     app_data_dir: &Path,
     request: SkillMarkdownRequestDto,
 ) -> Result<SkillMarkdownPreviewDto, AppError> {
-    let download_archive = default_hub_archive_downloader(config, &request);
-    read_skill_markdown_with_hooks(
-        config,
-        app_data_dir,
-        request,
-        |skill, relative_path| fetch_remote_skill_md(skill, relative_path),
-        download_archive,
-    )
-}
+    match request {
+        SkillMarkdownRequestDto::Installed { storage_key } => {
+            read_installed_skill_markdown(config.settings.main_skills_dir.as_deref(), &storage_key)
+        }
+        SkillMarkdownRequestDto::Discover { discover_key } => {
+            let skill = config
+                .skill_discover_cache
+                .skills
+                .iter()
+                .find(|skill| skill.key == discover_key)
+                .cloned()
+                .ok_or_else(|| AppError::Io {
+                    path: None,
+                    message: format!("未找到可发现 skill：{discover_key}"),
+                })?;
 
-fn default_hub_archive_downloader(
-    config: &AppConfig,
-    request: &SkillMarkdownRequestDto,
-) -> impl FnOnce(&str, &str, &str) -> Result<PathBuf, AppError> {
-    let use_iflytek = matches!(request, SkillMarkdownRequestDto::Discover { discover_key }
-        if config
-            .skill_discover_cache
-            .skills
-            .iter()
-            .any(|skill| skill.key == *discover_key && skill.source == "iflytek"));
+            // Branch on skill.source directly (like install), not via cache rediscovery.
+            if skill.source == "iflytek" {
+                return read_hub_discover_skill_markdown(
+                    config,
+                    &skill,
+                    |base_url, group, skill_id| {
+                        iflytek_skill_hub_client::download_skill_zip(base_url, group, skill_id)
+                    },
+                );
+            }
+            if skill.source == "skillhub" {
+                return read_hub_discover_skill_markdown(
+                    config,
+                    &skill,
+                    |base_url, group, skill_id| {
+                        skill_hub_client::download_archive(base_url, group, skill_id)
+                    },
+                );
+            }
 
-    move |base_url, group, skill_id| {
-        if use_iflytek {
-            iflytek_skill_hub_client::download_skill_zip(base_url, group, skill_id)
-        } else {
-            skill_hub_client::download_archive(base_url, group, skill_id)
+            read_git_discover_skill_markdown(app_data_dir, &skill, |skill, relative_path| {
+                fetch_remote_skill_md(skill, relative_path)
+            })
         }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn read_skill_markdown_with_hooks<F, G>(
     config: &AppConfig,
     app_data_dir: &Path,
@@ -158,6 +172,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn read_discover_skill_markdown<F, G>(
     config: &AppConfig,
     app_data_dir: &Path,

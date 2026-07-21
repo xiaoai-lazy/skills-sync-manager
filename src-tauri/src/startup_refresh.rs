@@ -387,6 +387,21 @@ mod tests {
     }
 
     #[test]
+    fn merge_discover_kind_skillhub_preserves_iflytek_entries() {
+        let old = vec![
+            discoverable("hub-old", "skillhub", ""),
+            discoverable("iflytek-old", "iflytek", ""),
+        ];
+        let merged = merge_discover_kind(
+            old,
+            SourceKind::SkillHub,
+            vec![discoverable("hub-new", "skillhub", "")],
+        );
+        let keys = merged.into_iter().map(|skill| skill.key).collect::<Vec<_>>();
+        assert_eq!(keys, vec!["iflytek-old", "hub-new"]);
+    }
+
+    #[test]
     fn merge_update_kind_replaces_only_selected_kind_and_keeps_unknown() {
         let config = config_with_source_records();
         let old = vec![

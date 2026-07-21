@@ -106,6 +106,34 @@ fn map_raw_skill(raw: RawIflytekSkill) -> IflytekSkillDto {
     }
 }
 
+/// Join well-known `apiBase` against the endpoint base URL.
+/// - Absolute `apiBase` (has scheme): normalize and return as-is
+/// - Relative (starts with `/` or no scheme): join with endpoint origin/base
+pub fn join_api_base(endpoint_base: &str, api_base: &str) -> String {
+    let api_base = api_base.trim();
+    if api_base.is_empty() {
+        return format!("{}/api/v1", normalize_base_url(endpoint_base));
+    }
+
+    if api_base.contains("://") {
+        return normalize_base_url(api_base);
+    }
+
+    let endpoint = normalize_base_url(endpoint_base);
+    if api_base.starts_with('/') {
+        let origin = endpoint_origin(&endpoint).unwrap_or(endpoint);
+        return normalize_base_url(&format!("{}{}", origin, api_base));
+    }
+
+    normalize_base_url(&format!("{}/{}", endpoint, api_base))
+}
+
+fn endpoint_origin(endpoint: &str) -> Option<String> {
+    let (scheme, rest) = endpoint.split_once("://")?;
+    let host_port = rest.split('/').next().filter(|value| !value.is_empty())?;
+    Some(format!("{}://{}", scheme, host_port))
+}
+
 pub fn resolve_api_base(base_url: &str) -> Result<String, AppError> {
     let base = normalize_base_url(base_url);
     let well_known_url = format!("{}/.well-known/clawhub.json", base);
@@ -118,7 +146,7 @@ pub fn resolve_api_base(base_url: &str) -> Result<String, AppError> {
                     .api_base
                     .filter(|value| !value.trim().is_empty())
                 {
-                    return Ok(normalize_base_url(&api_base));
+                    return Ok(join_api_base(&base, &api_base));
                 }
             }
         }
@@ -223,6 +251,11 @@ fn iflytek_error_message(body: &str, fallback: &str) -> String {
 }
 
 fn map_iflytek_http_error(url: &str, status: u16, body: &str) -> AppError {
+    if status == 404 {
+        if let Some((group, skill_id)) = parse_download_path_ids(url) {
+            return AppError::HubSkillGone { skill_id, group };
+        }
+    }
     AppError::DownloadFailed {
         url: url.to_string(),
         status: Some(status),
@@ -231,6 +264,30 @@ fn map_iflytek_http_error(url: &str, status: u16, body: &str) -> AppError {
             &format!("iFlytek Hub 请求失败，HTTP 状态码 {}", status),
         ),
     }
+}
+
+/// `/skills/{namespace}/{slug}/download`
+fn parse_download_path_ids(url: &str) -> Option<(String, String)> {
+    let path = url.split('?').next().unwrap_or(url);
+    let without_download = path
+        .strip_suffix("/download")
+        .or_else(|| path.strip_suffix("/download/"))?;
+    let marker = "/skills/";
+    let start = without_download.rfind(marker)? + marker.len();
+    let rest = &without_download[start..];
+    let (namespace_enc, slug_enc) = rest.split_once('/')?;
+    if namespace_enc.is_empty() || slug_enc.is_empty() || slug_enc.contains('/') {
+        return None;
+    }
+    let group = urlencoding::decode(namespace_enc)
+        .ok()
+        .map(|c| c.into_owned())
+        .unwrap_or_else(|| namespace_enc.to_string());
+    let skill_id = urlencoding::decode(slug_enc)
+        .ok()
+        .map(|c| c.into_owned())
+        .unwrap_or_else(|| slug_enc.to_string());
+    Some((group, skill_id))
 }
 
 fn create_temp_zip_path() -> Result<PathBuf, AppError> {
@@ -267,5 +324,65 @@ mod tests {
         let list = parse_skills_list(json).unwrap();
         assert_eq!(list[0].namespace, "ued");
         assert_eq!(list[0].slug, "bar");
+    }
+
+    #[test]
+    fn join_api_base_joins_absolute_path_against_endpoint() {
+        assert_eq!(
+            join_api_base("https://skillhub.xkw.cn", "/api/v1"),
+            "https://skillhub.xkw.cn/api/v1"
+        );
+        assert_eq!(
+            join_api_base("https://skillhub.xkw.cn/", "/api/v1/"),
+            "https://skillhub.xkw.cn/api/v1"
+        );
+    }
+
+    #[test]
+    fn join_api_base_joins_scheme_less_relative_path() {
+        assert_eq!(
+            join_api_base("https://skillhub.xkw.cn", "api/v1"),
+            "https://skillhub.xkw.cn/api/v1"
+        );
+    }
+
+    #[test]
+    fn join_api_base_keeps_absolute_url_with_scheme() {
+        assert_eq!(
+            join_api_base(
+                "https://skillhub.xkw.cn",
+                "https://cdn.example.com/hub-api/v1"
+            ),
+            "https://cdn.example.com/hub-api/v1"
+        );
+    }
+
+    #[test]
+    fn map_iflytek_http_error_maps_download_404_to_hub_skill_gone() {
+        let err = map_iflytek_http_error(
+            "https://skillhub.xkw.cn/api/v1/skills/global/task-decomposition/download",
+            404,
+            r#"{"error":"Skill 不存在"}"#,
+        );
+        assert!(matches!(
+            err,
+            AppError::HubSkillGone {
+                ref skill_id,
+                ref group,
+            } if skill_id == "task-decomposition" && group == "global"
+        ));
+        let dto = err.to_dto();
+        assert_eq!(dto.code, "hubSkillGone");
+    }
+
+    #[test]
+    fn parse_download_path_ids_decodes_url_components() {
+        let parsed = parse_download_path_ids(
+            "https://hub/api/v1/skills/my%20ns/skill%2Fid/download",
+        );
+        assert_eq!(
+            parsed,
+            Some(("my ns".to_string(), "skill/id".to_string()))
+        );
     }
 }
