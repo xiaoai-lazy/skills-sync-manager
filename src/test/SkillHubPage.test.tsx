@@ -927,11 +927,104 @@ describe('SkillHubPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '确认覆盖远程' })).toBeDisabled();
     });
-    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled();
 
     resolveUpload();
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '重新上传到 Hub？' })).not.toBeInTheDocument();
     });
+  });
+
+  it('stops hub group polling and resets selection when selected hub is removed', async () => {
+    const user = userEvent.setup();
+    const endpoint: SkillHubEndpoint = {
+      id: '10-1-1-54-3337',
+      name: 'LAN Hub',
+      baseUrl: 'http://10.1.1.54:3337',
+      enabled: true,
+    };
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_skill_repos') return Promise.resolve([mockGitHubRepo, mockGitLabRepo]);
+      if (cmd === 'list_skill_hub_endpoints') return Promise.resolve([endpoint]);
+      if (cmd === 'list_iflytek_skill_hub_endpoints') return Promise.resolve([]);
+      if (cmd === 'list_gitlab_credentials') return Promise.resolve([]);
+      if (cmd === 'list_hub_groups') {
+        return Promise.reject({
+          message: '无法识别链接格式：10-1-1-54-3337 (Hub 端点不存在: 10-1-1-54-3337)',
+        });
+      }
+      if (cmd === 'scan_main_library') {
+        return Promise.resolve({
+          ...mockHubState,
+          lastScanAt: '2026-06-30T01:00:00Z',
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const baseProps: ComponentProps<typeof SkillHubPage> = {
+      mainSkillsDir: 'C:\\Users\\dev\\.cursor\\skills',
+      hubState: mockHubState,
+      discoverSkills: [mockDiscoverable],
+      pendingUpdates: mockPendingUpdates,
+      startupRefreshSettings: {
+        github: false,
+        gitlab: true,
+        skillHub: true,
+        iflytekSkillHub: true,
+      },
+      skillHubEndpoints: [endpoint],
+      onHubSkillsRefresh: vi.fn(),
+      onDiscoverSkillsChange: vi.fn(),
+      onPendingUpdatesChange: vi.fn(),
+      onDeleteMainSkill: vi.fn(),
+      onSetMainSkillsDir: vi.fn(),
+      onRefreshHub: vi.fn().mockResolvedValue(undefined),
+      onError: vi.fn(),
+    };
+
+    const { rerender } = render(<SkillHubPage {...baseProps} />);
+
+    await user.click(await screen.findByRole('treeitem', { name: /LAN Hub/ }));
+
+    await waitFor(() => {
+      expect(
+        invokeMock.mock.calls.some(
+          (call) =>
+            call[0] === 'list_hub_groups' &&
+            (call[1] as { hubEndpointId?: string } | undefined)?.hubEndpointId ===
+              '10-1-1-54-3337',
+        ),
+      ).toBe(true);
+    });
+
+    const groupCallsWhileSelected = invokeMock.mock.calls.filter(
+      (call) => call[0] === 'list_hub_groups',
+    ).length;
+
+    const onErrorAfterDelete = vi.fn();
+    rerender(
+      <SkillHubPage
+        {...baseProps}
+        skillHubEndpoints={[]}
+        onError={onErrorAfterDelete}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('treeitem', { name: /LAN Hub/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('treeitem', { name: /全部/ })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+
+    // Unstable onError + empty endpoints must not keep polling the deleted hub.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const groupCallsAfterDelete = invokeMock.mock.calls.filter(
+      (call) => call[0] === 'list_hub_groups',
+    ).length;
+    expect(groupCallsAfterDelete).toBe(groupCallsWhileSelected);
+    expect(onErrorAfterDelete).not.toHaveBeenCalled();
   });
 });

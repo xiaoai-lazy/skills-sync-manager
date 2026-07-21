@@ -55,6 +55,7 @@ import {
   nodeTitle,
   parseHubNodeId,
   parseIflytekNodeId,
+  parseRepoNodeId,
   resolveEffectiveFilterNodeId,
   resolveSkillRecord,
   findPendingUpdate,
@@ -80,6 +81,9 @@ export interface SkillHubPageProps {
   iflytekSkillHubEndpoints?: IflytekSkillHubEndpoint[];
   startupRefreshSettings: StartupRefreshSettings;
   onStartupRefreshSettingsChange?: (settings: StartupRefreshSettings) => void;
+  /** Keep app config in sync when Skill 中心 mutates endpoint lists. */
+  onSkillHubEndpointsChange?: (endpoints: SkillHubEndpoint[]) => void;
+  onIflytekSkillHubEndpointsChange?: (endpoints: IflytekSkillHubEndpoint[]) => void;
   /** Optional fallback when onRefreshHub is absent; receives skills only (no skillRecords write-back). */
   onHubSkillsRefresh?: (skills: SkillView[]) => void;
   onDiscoverSkillsChange: (skills: DiscoverableSkill[]) => void;
@@ -113,6 +117,8 @@ function SkillHubPage(props: SkillHubPageProps) {
     iflytekSkillHubEndpoints: initialIflytekEndpoints,
     startupRefreshSettings,
     onStartupRefreshSettingsChange,
+    onSkillHubEndpointsChange,
+    onIflytekSkillHubEndpointsChange,
     onHubSkillsRefresh,
     onDiscoverSkillsChange,
     onPendingUpdatesChange,
@@ -124,6 +130,9 @@ function SkillHubPage(props: SkillHubPageProps) {
     onPreviewSkill,
     onCloseSkillPreview,
   } = props;
+
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   const openPreview = (request: SkillMarkdownRequest) => {
     setSourceDrawerOpen(false);
@@ -159,6 +168,22 @@ function SkillHubPage(props: SkillHubPageProps) {
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
+  const applyEndpoints = useCallback(
+    (next: SkillHubEndpoint[]) => {
+      setEndpoints(next);
+      onSkillHubEndpointsChange?.(next);
+    },
+    [onSkillHubEndpointsChange],
+  );
+
+  const applyIflytekEndpoints = useCallback(
+    (next: IflytekSkillHubEndpoint[]) => {
+      setIflytekEndpoints(next);
+      onIflytekSkillHubEndpointsChange?.(next);
+    },
+    [onIflytekSkillHubEndpointsChange],
+  );
+
   const discoverInFlight = useRef(false);
   const checkInFlight = useRef(false);
   const confirmBusyRef = useRef(false);
@@ -180,32 +205,59 @@ function SkillHubPage(props: SkillHubPageProps) {
   }, []);
 
   useEffect(() => {
-    if (initialEndpoints && initialEndpoints.length > 0) {
+    if (initialEndpoints !== undefined) {
       setEndpoints(initialEndpoints);
       return;
     }
-    // `[]` / undefined from appState must not skip the IPC load — SourceManageDrawer
-    // was the only place that refreshed endpoints, which hid configured hubs until opened.
+    // App did not pass endpoints — load once from backend.
     void listSkillHubEndpoints()
       .then((list) => setEndpoints(list ?? []))
-      .catch((err) => onError?.(errorMessage(err)));
-  }, [initialEndpoints, onError]);
+      .catch((err) => onErrorRef.current?.(errorMessage(err)));
+  }, [initialEndpoints]);
 
   useEffect(() => {
-    if (initialIflytekEndpoints && initialIflytekEndpoints.length > 0) {
+    if (initialIflytekEndpoints !== undefined) {
       setIflytekEndpoints(initialIflytekEndpoints);
       return;
     }
     void listIflytekSkillHubEndpoints()
       .then((list) => setIflytekEndpoints(list ?? []))
-      .catch((err) => onError?.(errorMessage(err)));
-  }, [initialIflytekEndpoints, onError]);
+      .catch((err) => onErrorRef.current?.(errorMessage(err)));
+  }, [initialIflytekEndpoints]);
 
   useEffect(() => {
     void getSkillRepos()
       .then(setRepos)
-      .catch((err) => onError?.(errorMessage(err)));
-  }, [onError]);
+      .catch((err) => onErrorRef.current?.(errorMessage(err)));
+  }, []);
+
+  useEffect(() => {
+    const hub = parseHubNodeId(selectedNodeId);
+    if (hub) {
+      if (!endpoints.some((endpoint) => endpoint.id === hub.endpointId)) {
+        setSelectedNodeId(ALL_NODE_ID);
+        setSelectedHubGroup(ALL_HUB_GROUP);
+      }
+      return;
+    }
+    const iflytek = parseIflytekNodeId(selectedNodeId);
+    if (iflytek) {
+      if (!iflytekEndpoints.some((endpoint) => endpoint.id === iflytek.endpointId)) {
+        setSelectedNodeId(ALL_NODE_ID);
+        setSelectedHubGroup(ALL_HUB_GROUP);
+      }
+      return;
+    }
+    const repo = parseRepoNodeId(selectedNodeId);
+    if (repo) {
+      const stillThere = repos.some(
+        (item) => item.host === repo.host && item.projectPath === repo.projectPath,
+      );
+      if (!stillThere) {
+        setSelectedNodeId(ALL_NODE_ID);
+      }
+    }
+  }, [endpoints, iflytekEndpoints, repos, selectedNodeId]);
 
   const handleCheckUpdates = async () => {
     if (checkInFlight.current) {
@@ -464,16 +516,14 @@ function SkillHubPage(props: SkillHubPageProps) {
   const hubFilterLabel = showIflytekNamespaceFilter ? '命名空间' : '分组';
 
   const selectedHubEndpointId = useMemo(() => {
-    const hub = parseHubNodeId(selectedNodeId);
-    if (hub && !hub.group) return hub.endpointId;
-    return null;
-  }, [selectedNodeId]);
+    if (!isHubRootNode(selectedNodeId, endpoints)) return null;
+    return parseHubNodeId(selectedNodeId)?.endpointId ?? null;
+  }, [selectedNodeId, endpoints]);
 
   const selectedIflytekEndpointId = useMemo(() => {
-    const iflytek = parseIflytekNodeId(selectedNodeId);
-    if (iflytek && !iflytek.namespace) return iflytek.endpointId;
-    return null;
-  }, [selectedNodeId]);
+    if (!isIflytekRootNode(selectedNodeId, iflytekEndpoints)) return null;
+    return parseIflytekNodeId(selectedNodeId)?.endpointId ?? null;
+  }, [selectedNodeId, iflytekEndpoints]);
 
   const localHubGroups = useMemo(() => {
     if (selectedHubEndpointId) {
@@ -516,14 +566,14 @@ function SkillHubPage(props: SkillHubPageProps) {
       .catch((err) => {
         if (!cancelled) {
           setHubGroupsFromServer([]);
-          onError?.(errorMessage(err));
+          onErrorRef.current?.(errorMessage(err));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [selectedHubEndpointId, discoverList, onError]);
+  }, [selectedHubEndpointId]);
 
   const handleSelectNode = (nodeId: string) => {
     const hub = parseHubNodeId(nodeId);
@@ -1095,8 +1145,8 @@ function SkillHubPage(props: SkillHubPageProps) {
         onError={onError}
         onToast={onToast}
         onDiscoverSkillsChange={onDiscoverSkillsChange}
-        onEndpointsChange={setEndpoints}
-        onIflytekEndpointsChange={setIflytekEndpoints}
+        onEndpointsChange={applyEndpoints}
+        onIflytekEndpointsChange={applyIflytekEndpoints}
         onReposChange={setRepos}
         startupRefreshSettings={startupRefreshSettings}
         onStartupRefreshSettingsChange={onStartupRefreshSettingsChange}

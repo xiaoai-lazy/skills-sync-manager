@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { selectDirectory } from './api/dialog';
 
@@ -59,6 +59,42 @@ function App() {
     mainView,
     setMainView,
   } = useAppState();
+
+  const handleHubError = useCallback((err: unknown) => {
+    setAppToast({ message: errorMessage(err), kind: 'error' });
+  }, []);
+
+  const handleHubToast = useCallback((message: string) => {
+    setAppToast({ message, kind: 'success' });
+  }, []);
+
+  const handleSkillHubEndpointsChange = useCallback(
+    (skillHubEndpoints: import('./model/types').SkillHubEndpoint[]) => {
+      setAppState((previous) =>
+        previous
+          ? {
+              ...previous,
+              config: { ...previous.config, skillHubEndpoints },
+            }
+          : previous,
+      );
+    },
+    [setAppState],
+  );
+
+  const handleIflytekSkillHubEndpointsChange = useCallback(
+    (iflytekSkillHubEndpoints: import('./model/types').IflytekSkillHubEndpoint[]) => {
+      setAppState((previous) =>
+        previous
+          ? {
+              ...previous,
+              config: { ...previous.config, iflytekSkillHubEndpoints },
+            }
+          : previous,
+      );
+    },
+    [setAppState],
+  );
 
   const {
     promptDialogOpen,
@@ -386,6 +422,10 @@ function App() {
                 )
               }
 
+              onSkillHubEndpointsChange={handleSkillHubEndpointsChange}
+
+              onIflytekSkillHubEndpointsChange={handleIflytekSkillHubEndpointsChange}
+
               onDiscoverSkillsChange={setDiscoverSkillsList}
 
               onPendingUpdatesChange={setPendingUpdates}
@@ -396,9 +436,9 @@ function App() {
 
               onRefreshHub={refreshHub}
 
-              onError={(err) => setAppToast({ message: errorMessage(err), kind: 'error' })}
+              onError={handleHubError}
 
-              onToast={(message) => setAppToast({ message, kind: 'success' })}
+              onToast={handleHubToast}
 
               onPreviewSkill={setSkillPreview}
 
