@@ -95,6 +95,17 @@ fn execute_discover(
         warnings.extend(hub_warnings);
     }
 
+    if config
+        .iflytek_skill_hub_endpoints
+        .iter()
+        .any(|endpoint| endpoint.enabled)
+    {
+        let (iflytek_skills, iflytek_warnings) =
+            crate::iflytek_skill_hub_discover::discover_all(config);
+        all.extend(iflytek_skills);
+        warnings.extend(iflytek_warnings);
+    }
+
     let skills = deduplicate_discoverable_skills(filter_uninstalled_discoverable_skills(
         all,
         main_dir,

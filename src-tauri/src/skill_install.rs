@@ -1,6 +1,8 @@
 use crate::models::{AppConfig, AppError, DiscoverableSkill, RepoRef, SkillRecord, default_github_host};
 use crate::skill_discover::iso8601_timestamp_now;
 use crate::skill_downloader::{self, copy_dir_recursive};
+use crate::iflytek_skill_hub_client;
+use crate::iflytek_skill_hub_endpoints;
 use crate::skill_hub_client;
 use crate::skill_hub_endpoints;
 use crate::skill_storage;
@@ -95,10 +97,23 @@ pub fn install_to_main(
             skill_hub_client::download_archive(base_url, group, skill_id)
         });
     }
+    if skill.source == "iflytek" {
+        return install_hub_to_main_with_download(config, skill, main_dir, |base_url, group, skill_id| {
+            iflytek_skill_hub_client::download_skill_zip(base_url, group, skill_id)
+        });
+    }
 
     install_to_main_with_download(config, skill, main_dir, |repo_ref| {
         skill_downloader::download_repo_ref(repo_ref)
     })
+}
+
+fn hub_install_base_url(config: &AppConfig, skill: &DiscoverableSkill) -> Result<String, AppError> {
+    if skill.source == "iflytek" {
+        iflytek_skill_hub_endpoints::iflytek_endpoint_base_url(config, &skill.hub_endpoint_id)
+    } else {
+        skill_hub_endpoints::hub_endpoint_base_url(config, &skill.hub_endpoint_id)
+    }
 }
 
 pub fn install_hub_to_main_with_download<F>(
@@ -117,8 +132,7 @@ where
         });
     }
 
-    let base_url =
-        skill_hub_endpoints::hub_endpoint_base_url(config, &skill.hub_endpoint_id)?;
+    let base_url = hub_install_base_url(config, skill)?;
     let zip_path = match download_archive(
         &base_url,
         &skill.hub_skill_group,
@@ -446,6 +460,24 @@ mod tests {
         }
     }
 
+    fn sample_iflytek_skill(skill_id: &str) -> DiscoverableSkill {
+        let storage_key = skill_storage::storage_key_for_hub("xkw", "global", skill_id);
+        DiscoverableSkill {
+            key: format!("xkw:global/{skill_id}"),
+            name: skill_id.to_string(),
+            description: "iFlytek skill.".to_string(),
+            directory: format!("global/{skill_id}"),
+            install_dir_name: skill_id.to_string(),
+            source: "iflytek".to_string(),
+            storage_key,
+            link_name: skill_id.to_string(),
+            hub_endpoint_id: "xkw".to_string(),
+            hub_skill_group: "global".to_string(),
+            hub_skill_id: skill_id.to_string(),
+            ..Default::default()
+        }
+    }
+
     fn create_hub_skill_zip(dir: &Path, skill_name: &str) -> PathBuf {
         use std::io::Write;
         use zip::write::SimpleFileOptions;
@@ -569,6 +601,50 @@ mod tests {
             .join("tools")
             .join("brainstorming")
             .exists());
+    }
+
+    #[test]
+    fn install_iflytek_uses_namespace_slug_download_and_source() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let main_dir = temp.path().join("main");
+        fs::create_dir_all(&main_dir).expect("create main dir");
+
+        let zip_path = create_hub_skill_zip(temp.path(), "x");
+        let skill = sample_iflytek_skill("x");
+        let mut config = AppConfig {
+            skill_discover_cache: SkillDiscoverCache {
+                fetched_at: Some("2026-06-30T00:00:00Z".to_string()),
+                skills: vec![skill.clone()],
+            },
+            iflytek_skill_hub_endpoints: vec![crate::models::IflytekSkillHubEndpoint {
+                id: "xkw".to_string(),
+                name: "XKW Hub".to_string(),
+                base_url: "https://iflytek.example.com".to_string(),
+                enabled: true,
+            }],
+            ..Default::default()
+        };
+
+        install_hub_to_main_with_download(&mut config, &skill, &main_dir, |base_url, namespace, slug| {
+            assert_eq!(base_url, "https://iflytek.example.com");
+            assert_eq!(namespace, "global");
+            assert_eq!(slug, "x");
+            Ok(zip_path.clone())
+        })
+        .expect("install iflytek skill");
+
+        let installed = main_dir.join("hub").join("xkw").join("global").join("x");
+        assert!(installed.join("SKILL.md").is_file());
+
+        let record = config
+            .skill_records
+            .get("hub/xkw/global/x")
+            .expect("skill record");
+        assert_eq!(record.source, "iflytek");
+        assert_eq!(record.hub_endpoint_id, "xkw");
+        assert_eq!(record.hub_skill_group, "global");
+        assert_eq!(record.hub_skill_id, "x");
+        assert!(config.skill_discover_cache.skills.is_empty());
     }
 
 }

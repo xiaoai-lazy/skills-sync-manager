@@ -1,4 +1,6 @@
 use crate::gitlab_client;
+use crate::iflytek_skill_hub_client;
+use crate::iflytek_skill_hub_endpoints;
 use crate::models::{
     AppConfig, AppError, DiscoverableSkill, SkillMarkdownPreviewDto, SkillMarkdownRequestDto,
 };
@@ -89,15 +91,34 @@ pub fn read_skill_markdown(
     app_data_dir: &Path,
     request: SkillMarkdownRequestDto,
 ) -> Result<SkillMarkdownPreviewDto, AppError> {
+    let download_archive = default_hub_archive_downloader(config, &request);
     read_skill_markdown_with_hooks(
         config,
         app_data_dir,
         request,
         |skill, relative_path| fetch_remote_skill_md(skill, relative_path),
-        |base_url, group, skill_id| {
-            skill_hub_client::download_archive(base_url, group, skill_id)
-        },
+        download_archive,
     )
+}
+
+fn default_hub_archive_downloader(
+    config: &AppConfig,
+    request: &SkillMarkdownRequestDto,
+) -> impl FnOnce(&str, &str, &str) -> Result<PathBuf, AppError> {
+    let use_iflytek = matches!(request, SkillMarkdownRequestDto::Discover { discover_key }
+        if config
+            .skill_discover_cache
+            .skills
+            .iter()
+            .any(|skill| skill.key == *discover_key && skill.source == "iflytek"));
+
+    move |base_url, group, skill_id| {
+        if use_iflytek {
+            iflytek_skill_hub_client::download_skill_zip(base_url, group, skill_id)
+        } else {
+            skill_hub_client::download_archive(base_url, group, skill_id)
+        }
+    }
 }
 
 pub(crate) fn read_skill_markdown_with_hooks<F, G>(
@@ -148,11 +169,19 @@ where
     F: FnOnce(&DiscoverableSkill, &str) -> Result<String, AppError>,
     G: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
 {
-    if skill.source == "skillhub" {
+    if skill.source == "skillhub" || skill.source == "iflytek" {
         return read_hub_discover_skill_markdown(config, skill, download_hub_archive);
     }
 
     read_git_discover_skill_markdown(app_data_dir, skill, fetch_remote_file)
+}
+
+fn hub_archive_base_url(config: &AppConfig, skill: &DiscoverableSkill) -> Result<String, AppError> {
+    if skill.source == "iflytek" {
+        iflytek_skill_hub_endpoints::iflytek_endpoint_base_url(config, &skill.hub_endpoint_id)
+    } else {
+        skill_hub_endpoints::hub_endpoint_base_url(config, &skill.hub_endpoint_id)
+    }
 }
 
 fn read_hub_discover_skill_markdown<G>(
@@ -163,7 +192,7 @@ fn read_hub_discover_skill_markdown<G>(
 where
     G: FnOnce(&str, &str, &str) -> Result<PathBuf, AppError>,
 {
-    let base_url = skill_hub_endpoints::hub_endpoint_base_url(config, &skill.hub_endpoint_id)?;
+    let base_url = hub_archive_base_url(config, skill)?;
     let zip_path = download_hub_archive(
         &base_url,
         &skill.hub_skill_group,
@@ -430,7 +459,7 @@ fn trim_non_empty(value: Option<String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{SkillDiscoverCache, SkillHubEndpoint};
+    use crate::models::{IflytekSkillHubEndpoint, SkillDiscoverCache, SkillHubEndpoint};
     use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use zip::write::SimpleFileOptions;
@@ -501,6 +530,23 @@ mod tests {
             hub_endpoint_id: "company-hub".to_string(),
             hub_skill_group: "common".to_string(),
             hub_skill_id: "tdd".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn sample_iflytek_skill() -> DiscoverableSkill {
+        DiscoverableSkill {
+            key: "xkw:global/x".to_string(),
+            name: "x".to_string(),
+            description: "iFlytek skill.".to_string(),
+            directory: "global/x".to_string(),
+            install_dir_name: "x".to_string(),
+            source: "iflytek".to_string(),
+            storage_key: skill_storage::storage_key_for_hub("xkw", "global", "x"),
+            link_name: "x".to_string(),
+            hub_endpoint_id: "xkw".to_string(),
+            hub_skill_group: "global".to_string(),
+            hub_skill_id: "x".to_string(),
             ..Default::default()
         }
     }
@@ -661,6 +707,52 @@ mod tests {
         assert_eq!(preview.origin, "hubArchive");
         assert_eq!(preview.title, "tdd");
         assert_eq!(preview.description, "From archive.");
+        assert!(preview.markdown_body.contains("# Archive Body"));
+    }
+
+    #[test]
+    fn read_iflytek_discover_uses_namespace_slug_download() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_data = temp.path().join("app-data");
+        let skill = sample_iflytek_skill();
+        let zip_path = create_hub_skill_zip(temp.path(), "x");
+        let config = AppConfig {
+            skill_discover_cache: SkillDiscoverCache {
+                fetched_at: Some("2026-07-15T00:00:00Z".to_string()),
+                skills: vec![skill.clone()],
+            },
+            iflytek_skill_hub_endpoints: vec![IflytekSkillHubEndpoint {
+                id: "xkw".to_string(),
+                name: "XKW Hub".to_string(),
+                base_url: "https://iflytek.example.com".to_string(),
+                enabled: true,
+            }],
+            ..Default::default()
+        };
+
+        let preview = read_skill_markdown_with_hooks(
+            &config,
+            &app_data,
+            SkillMarkdownRequestDto::Discover {
+                discover_key: skill.key.clone(),
+            },
+            |_skill, _path| {
+                Err(AppError::Io {
+                    path: None,
+                    message: "should not fetch git".into(),
+                })
+            },
+            |base_url, namespace, slug| {
+                assert_eq!(base_url, "https://iflytek.example.com");
+                assert_eq!(namespace, "global");
+                assert_eq!(slug, "x");
+                Ok(zip_path.clone())
+            },
+        )
+        .expect("read iflytek archive");
+
+        assert_eq!(preview.origin, "hubArchive");
+        assert_eq!(preview.title, "x");
         assert!(preview.markdown_body.contains("# Archive Body"));
     }
 
