@@ -227,7 +227,7 @@ fn expand_tilde(path_template: &str) -> Result<PathBuf, AppError> {
     Ok(normalize_platform_path(PathBuf::from(path_template)))
 }
 
-fn home_dir() -> Option<PathBuf> {
+pub(crate) fn home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         std::env::var_os("USERPROFILE").map(PathBuf::from)

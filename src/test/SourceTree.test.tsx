@@ -77,12 +77,12 @@ describe('SourceTree', () => {
       />,
     );
 
-    expect(screen.getByRole('treeitem', { name: /Skills Sync Hub/ })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: /Skills Sync Hub/ })).not.toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /停用 Hub/ })).toBeInTheDocument();
   });
 
-  it('nests Skills Sync and iFlytek under dual category roots', () => {
+  it('lists Skills Sync and iFlytek endpoints flat without category roots or namespaces', () => {
     const endpoints: SkillHubEndpoint[] = [
       {
         id: 'company-hub',
@@ -135,12 +135,11 @@ describe('SourceTree', () => {
       />,
     );
 
-    expect(screen.getByRole('treeitem', { name: /Skills Sync Hub/ })).toBeInTheDocument();
-    expect(screen.getByRole('treeitem', { name: /iFlytek Skill Hub/ })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: /Skills Sync Hub/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: /iFlytek Skill Hub/ })).not.toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: /讯飞 Skill Hub/ })).toBeInTheDocument();
-    expect(screen.getByRole('treeitem', { name: /^global$/ })).toBeInTheDocument();
-    expect(screen.queryByText(/ued/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: /^global$/ })).not.toBeInTheDocument();
   });
 
   it('renders nodeCountLabel after tree labels when provided', () => {

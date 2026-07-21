@@ -12,6 +12,7 @@ pub mod skill_hub_endpoints;
 pub mod skill_hub_upload;
 pub mod fs_adapter;
 pub mod link_installer;
+pub mod main_skills_defaults;
 pub mod models;
 pub mod project_registry;
 pub mod remote_head;

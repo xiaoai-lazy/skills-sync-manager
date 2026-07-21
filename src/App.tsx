@@ -420,6 +420,8 @@ function App() {
 
             endpoints={appState?.config.skillHubEndpoints ?? []}
 
+            iflytekEndpoints={appState?.config.iflytekSkillHubEndpoints ?? []}
+
             repos={appState?.config.skillRepos ?? []}
 
             pendingSkillKey={pendingSkillKey}

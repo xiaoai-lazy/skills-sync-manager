@@ -443,14 +443,12 @@ describe('SkillHubPage', () => {
     expect(screen.getByText('3 有效')).toBeInTheDocument();
     expect(screen.getByText('1 无效')).toBeInTheDocument();
     expect(screen.getByText('1 待更新')).toBeInTheDocument();
-    expect(screen.getByText(/Skills Sync/)).toBeInTheDocument();
-    expect(screen.getByText(/iFlytek/)).toBeInTheDocument();
     expect(screen.getByText('C:\\Users\\dev\\.cursor\\skills')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /已安装 \(4\)/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /可安装 \(1\)/ })).toBeInTheDocument();
   });
 
-  it('shows enabled Skills Sync and iFlytek endpoint counts in hero pills', async () => {
+  it('renders dual-track source tree roots for Skills Sync and iFlytek endpoints', async () => {
     const skillHubEndpoints: SkillHubEndpoint[] = [
       {
         id: 'sync-1',
@@ -487,8 +485,8 @@ describe('SkillHubPage', () => {
     ];
     renderHub({ skillHubEndpoints, iflytekSkillHubEndpoints: iflytekEndpoints });
 
-    expect(await screen.findByText('Skills Sync 1')).toBeInTheDocument();
-    expect(screen.getByText('iFlytek 2')).toBeInTheDocument();
+    expect(screen.queryByText('Skills Sync 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('iFlytek 2')).not.toBeInTheDocument();
 
     const tree = screen.getByRole('tree');
     expect(within(tree).getByRole('treeitem', { name: /Company Sync/ })).toBeInTheDocument();

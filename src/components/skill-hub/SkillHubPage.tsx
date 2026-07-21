@@ -42,8 +42,11 @@ import {
   ALL_NODE_ID,
   hubGroupsForEndpoint,
   hubRootNodeId,
+  iflytekNamespacesForEndpoint,
+  iflytekRootNodeId,
   isEnabledHubRootNode,
   isHubRootNode,
+  isIflytekRootNode,
   matchesDiscoverNode,
   matchesInstalledNode,
   countDiscoverForNode,
@@ -51,6 +54,7 @@ import {
   dedupeInstalledSkills,
   nodeTitle,
   parseHubNodeId,
+  parseIflytekNodeId,
   resolveEffectiveFilterNodeId,
   resolveSkillRecord,
   findPendingUpdate,
@@ -444,26 +448,59 @@ function SkillHubPage(props: SkillHubPageProps) {
   );
 
   const effectiveFilterNodeId = useMemo(
-    () => resolveEffectiveFilterNodeId(selectedNodeId, selectedHubGroup, endpoints),
-    [selectedNodeId, selectedHubGroup, endpoints],
+    () =>
+      resolveEffectiveFilterNodeId(
+        selectedNodeId,
+        selectedHubGroup,
+        endpoints,
+        iflytekEndpoints,
+      ),
+    [selectedNodeId, selectedHubGroup, endpoints, iflytekEndpoints],
   );
 
-  const showHubGroupFilter = isHubRootNode(selectedNodeId, endpoints);
+  const showSkillsSyncGroupFilter = isHubRootNode(selectedNodeId, endpoints);
+  const showIflytekNamespaceFilter = isIflytekRootNode(selectedNodeId, iflytekEndpoints);
+  const showHubGroupFilter = showSkillsSyncGroupFilter || showIflytekNamespaceFilter;
+  const hubFilterLabel = showIflytekNamespaceFilter ? '命名空间' : '分组';
+
   const selectedHubEndpointId = useMemo(() => {
     const hub = parseHubNodeId(selectedNodeId);
     if (hub && !hub.group) return hub.endpointId;
     return null;
   }, [selectedNodeId]);
 
+  const selectedIflytekEndpointId = useMemo(() => {
+    const iflytek = parseIflytekNodeId(selectedNodeId);
+    if (iflytek && !iflytek.namespace) return iflytek.endpointId;
+    return null;
+  }, [selectedNodeId]);
+
   const localHubGroups = useMemo(() => {
-    if (!selectedHubEndpointId) return [];
-    return hubGroupsForEndpoint(selectedHubEndpointId, discoverList, installedRecords);
-  }, [selectedHubEndpointId, discoverList, installedRecords]);
+    if (selectedHubEndpointId) {
+      return hubGroupsForEndpoint(selectedHubEndpointId, discoverList, installedRecords);
+    }
+    if (selectedIflytekEndpointId) {
+      return iflytekNamespacesForEndpoint(
+        selectedIflytekEndpointId,
+        discoverList,
+        installedRecords,
+      );
+    }
+    return [];
+  }, [
+    selectedHubEndpointId,
+    selectedIflytekEndpointId,
+    discoverList,
+    installedRecords,
+  ]);
 
   const availableHubGroups = useMemo(() => {
-    const merged = new Set([...hubGroupsFromServer, ...localHubGroups]);
+    const merged = new Set([
+      ...(showSkillsSyncGroupFilter ? hubGroupsFromServer : []),
+      ...localHubGroups,
+    ]);
     return [...merged].sort();
-  }, [hubGroupsFromServer, localHubGroups]);
+  }, [hubGroupsFromServer, localHubGroups, showSkillsSyncGroupFilter]);
 
   useEffect(() => {
     if (!selectedHubEndpointId) {
@@ -493,6 +530,12 @@ function SkillHubPage(props: SkillHubPageProps) {
     if (hub?.group) {
       setSelectedNodeId(hubRootNodeId(hub.endpointId));
       setSelectedHubGroup(hub.group);
+      return;
+    }
+    const iflytek = parseIflytekNodeId(nodeId);
+    if (iflytek?.namespace) {
+      setSelectedNodeId(iflytekRootNodeId(iflytek.endpointId));
+      setSelectedHubGroup(iflytek.namespace);
       return;
     }
     setSelectedNodeId(nodeId);
@@ -590,7 +633,6 @@ function SkillHubPage(props: SkillHubPageProps) {
 
   const listHeader = nodeTitle(selectedNodeId, endpoints, repos, iflytekEndpoints);
   const enabledHubs = endpoints.filter((e) => e.enabled);
-  const enabledIflytekHubs = iflytekEndpoints.filter((e) => e.enabled);
   const showUploadButton =
     enabledHubs.length > 0 &&
     isEnabledHubRootNode(selectedNodeId, endpoints);
@@ -614,18 +656,19 @@ function SkillHubPage(props: SkillHubPageProps) {
       };
     }
     if (selectedHubGroup !== ALL_HUB_GROUP) {
+      const bucketWord = showIflytekNamespaceFilter ? '命名空间' : '分组';
       if (tab === 'installed') {
         return {
           title: `「${selectedHubGroup}」暂无已安装 Skill`,
-          description: '可切换到「可安装」安装，或查看全部分组。',
-          actionLabel: '查看全部分组',
+          description: `可切换到「可安装」安装，或查看全部${bucketWord}。`,
+          actionLabel: `查看全部${bucketWord}`,
           action: 'resetGroup',
         };
       }
       return {
         title: `「${selectedHubGroup}」暂无可安装 Skill`,
-        description: '可上传 Skill 到 Hub，或切换到其他分组。',
-        actionLabel: '查看全部分组',
+        description: `可上传 Skill 到 Hub，或切换到其他${bucketWord}。`,
+        actionLabel: `查看全部${bucketWord}`,
         action: 'resetGroup',
       };
     }
@@ -664,6 +707,7 @@ function SkillHubPage(props: SkillHubPageProps) {
     tab,
     discoverList.length,
     selectedHubGroup,
+    showIflytekNamespaceFilter,
     search,
     installedChip,
     pendingCount,
@@ -707,8 +751,6 @@ function SkillHubPage(props: SkillHubPageProps) {
               {pendingCount > 0 && (
                 <span className="pill hub-pill update">{pendingCount} 待更新</span>
               )}
-              <span className="pill hub-pill">Skills Sync {enabledHubs.length}</span>
-              <span className="pill hub-pill">iFlytek {enabledIflytekHubs.length}</span>
             </div>
             <div className="hub-path-inline" title={mainSkillsDir ?? undefined}>
               <span className="hub-path-text">{mainSkillsDir ?? '未设置主库目录'}</span>
@@ -826,7 +868,7 @@ function SkillHubPage(props: SkillHubPageProps) {
                 {showHubGroupFilter && (
                   <div className="hub-filter-control">
                     <span className="hub-filter-control-label" id="hub-group-label">
-                      分组
+                      {hubFilterLabel}
                     </span>
                     <div className="hub-filter-select">
                       <select

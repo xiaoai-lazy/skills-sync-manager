@@ -73,16 +73,16 @@ const STARTUP_REFRESH_OPTIONS = [
 ] as const;
 
 const ADD_SOURCE_TABS: { id: AddSourceTab; label: string }[] = [
-  { id: 'skillsSync', label: 'Skills Sync Hub' },
-  { id: 'iflytek', label: 'iFlytek Skill Hub' },
+  { id: 'skillsSync', label: 'Skills Sync' },
+  { id: 'iflytek', label: 'iFlytek' },
   { id: 'github', label: 'GitHub' },
   { id: 'gitlab', label: 'GitLab' },
 ];
 
 const LIST_FILTER_TABS: { id: ListFilterTab; label: string }[] = [
   { id: 'all', label: '全部' },
-  { id: 'skillsSync', label: 'Skills Sync Hub' },
-  { id: 'iflytek', label: 'iFlytek Skill Hub' },
+  { id: 'skillsSync', label: 'Skills Sync' },
+  { id: 'iflytek', label: 'iFlytek' },
   { id: 'github', label: 'GitHub' },
   { id: 'gitlab', label: 'GitLab' },
 ];
@@ -505,6 +505,9 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
     filteredEndpoints.length > 0 || filteredIflytek.length > 0 || filteredRepos.length > 0;
 
   const isHubForm = addTab === 'skillsSync' || addTab === 'iflytek';
+  const canSubmitAdd = isHubForm
+    ? hubName.trim().length > 0 && hubBaseUrl.trim().length > 0
+    : repoUrl.trim().length > 0;
 
   return (
     <>
@@ -525,9 +528,6 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
           <div className="drawer-header-row">
             <div>
               <h2>来源管理</h2>
-              <p className="drawer-subtitle">
-                管理 Skills Sync Hub、iFlytek Skill Hub、GitHub 与 GitLab 来源
-              </p>
             </div>
             <div className="drawer-header-actions">
               <button type="button" className="btn-keys-link" onClick={() => setKeysDialogOpen(true)}>
@@ -905,7 +905,7 @@ function SourceManageDrawer(props: SourceManageDrawerProps) {
                 type="button"
                 className="btn-primary"
                 onClick={handleAddSubmit}
-                disabled={adding}
+                disabled={adding || !canSubmitAdd}
               >
                 {adding ? '添加中…' : '添加'}
               </button>

@@ -128,6 +128,7 @@ export function resolveEffectiveFilterNodeId(
   selectedNodeId: string,
   hubGroup: string,
   endpoints: SkillHubEndpoint[],
+  iflytekEndpoints: IflytekSkillHubEndpoint[] = [],
 ): string {
   if (hubGroup === ALL_HUB_GROUP) {
     return selectedNodeId;
@@ -135,6 +136,14 @@ export function resolveEffectiveFilterNodeId(
   const hub = parseHubNodeId(selectedNodeId);
   if (hub && !hub.group && isHubRootNode(selectedNodeId, endpoints)) {
     return hubGroupNodeId(hub.endpointId, hubGroup);
+  }
+  const iflytek = parseIflytekNodeId(selectedNodeId);
+  if (
+    iflytek &&
+    !iflytek.namespace &&
+    isIflytekRootNode(selectedNodeId, iflytekEndpoints)
+  ) {
+    return iflytekNamespaceNodeId(iflytek.endpointId, hubGroup);
   }
   return selectedNodeId;
 }
@@ -173,6 +182,15 @@ export function isHubRootNode(nodeId: string, endpoints: SkillHubEndpoint[]): bo
   const parsed = parseHubNodeId(nodeId);
   if (!parsed || parsed.group) return false;
   return endpoints.some((e) => e.id === parsed.endpointId);
+}
+
+export function isIflytekRootNode(
+  nodeId: string,
+  iflytekEndpoints: IflytekSkillHubEndpoint[],
+): boolean {
+  const parsed = parseIflytekNodeId(nodeId);
+  if (!parsed || parsed.namespace) return false;
+  return iflytekEndpoints.some((e) => e.id === parsed.endpointId);
 }
 
 export function isEnabledHubRootNode(nodeId: string, endpoints: SkillHubEndpoint[]): boolean {

@@ -29,6 +29,39 @@ struct SkillsListEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
+struct VersionObject {
+    #[serde(default)]
+    version: Option<String>,
+}
+
+/// Accepts either a plain version string or `{ "version": "..." }` (ClawHub / SkillHub).
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum FlexibleVersion {
+    String(String),
+    Object(VersionObject),
+}
+
+impl FlexibleVersion {
+    fn into_string(self) -> Option<String> {
+        match self {
+            FlexibleVersion::String(value) => {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            FlexibleVersion::Object(obj) => obj
+                .version
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct RawIflytekSkill {
     slug: String,
     #[serde(default)]
@@ -42,9 +75,9 @@ struct RawIflytekSkill {
     #[serde(default)]
     namespace: Option<String>,
     #[serde(default, rename = "latestVersion")]
-    latest_version: Option<String>,
+    latest_version: Option<FlexibleVersion>,
     #[serde(default)]
-    version: Option<String>,
+    version: Option<FlexibleVersion>,
 }
 
 pub fn normalize_base_url(url: &str) -> String {
@@ -95,14 +128,17 @@ fn map_raw_skill(raw: RawIflytekSkill) -> IflytekSkillDto {
     };
 
     IflytekSkillDto {
-        slug,
+        slug: slug.clone(),
         name: raw
             .display_name
             .or(raw.name)
-            .unwrap_or_else(|| namespace.clone()),
+            .unwrap_or_else(|| slug.clone()),
         description: raw.summary.or(raw.description).unwrap_or_default(),
         namespace,
-        latest_version: raw.latest_version.or(raw.version),
+        latest_version: raw
+            .latest_version
+            .and_then(FlexibleVersion::into_string)
+            .or_else(|| raw.version.and_then(FlexibleVersion::into_string)),
     }
 }
 
@@ -311,6 +347,25 @@ mod tests {
         let list = parse_skills_list(json).unwrap();
         assert_eq!(list[0].namespace, "global");
         assert_eq!(list[0].slug, "task-decomposition");
+        assert_eq!(list[0].latest_version.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn parse_skills_list_accepts_latest_version_object() {
+        let json = r#"{
+          "items":[{
+            "slug":"task-decomposition",
+            "displayName":"task-decomposition",
+            "summary":"x",
+            "latestVersion":{"version":"20260408.063033","createdAt":1,"changelog":"","license":null}
+          }],
+          "nextCursor":null
+        }"#;
+        let list = parse_skills_list(json).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].slug, "task-decomposition");
+        assert_eq!(list[0].namespace, "global");
+        assert_eq!(list[0].latest_version.as_deref(), Some("20260408.063033"));
     }
 
     #[test]

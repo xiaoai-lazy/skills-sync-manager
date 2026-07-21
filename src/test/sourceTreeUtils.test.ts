@@ -100,6 +100,28 @@ describe('sourceTreeUtils hub grouping', () => {
     ).toBe('hub:oxygen-skill-hub:common');
   });
 
+  it('resolveEffectiveFilterNodeId applies namespace filter on iflytek root', () => {
+    const iflytekEndpoints = [
+      {
+        id: 'xkw',
+        name: '讯飞',
+        baseUrl: 'https://iflytek.example.com',
+        enabled: true,
+      },
+    ];
+    expect(
+      resolveEffectiveFilterNodeId(
+        'iflytek:xkw',
+        ALL_HUB_GROUP,
+        endpoints,
+        iflytekEndpoints,
+      ),
+    ).toBe('iflytek:xkw');
+    expect(
+      resolveEffectiveFilterNodeId('iflytek:xkw', 'global', endpoints, iflytekEndpoints),
+    ).toBe('iflytek:xkw:global');
+  });
+
   it('shows only hub copy under hub common node', () => {
     const hubNode = 'hub:oxygen-skill-hub:common';
 

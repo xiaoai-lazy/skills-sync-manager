@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  IflytekSkillHubEndpoint,
   SkillHubEndpoint,
   SkillRecord,
   SkillRepo,
@@ -27,6 +28,7 @@ export interface TargetDetailProps {
   skills: SkillWithTargetState[];
   skillRecords: Record<string, SkillRecord>;
   endpoints: SkillHubEndpoint[];
+  iflytekEndpoints?: IflytekSkillHubEndpoint[];
   repos: SkillRepo[];
   pendingSkillKey: string | null;
   onToggleSkill: (skillKey: string, state: import('../model/types').SkillInstallState) => void;
@@ -56,6 +58,7 @@ function TargetDetail(props: TargetDetailProps) {
     skills,
     skillRecords,
     endpoints,
+    iflytekEndpoints = [],
     repos,
     pendingSkillKey,
     onToggleSkill,
@@ -75,8 +78,8 @@ function TargetDetail(props: TargetDetailProps) {
   );
 
   const listHeader = useMemo(
-    () => nodeTitle(selectedNodeId, endpoints, repos),
-    [selectedNodeId, endpoints, repos],
+    () => nodeTitle(selectedNodeId, endpoints, repos, iflytekEndpoints),
+    [selectedNodeId, endpoints, repos, iflytekEndpoints],
   );
 
   const validSkills = useMemo(
@@ -136,6 +139,7 @@ function TargetDetail(props: TargetDetailProps) {
         <SourceTree
           tab="installed"
           endpoints={endpoints}
+          iflytekEndpoints={iflytekEndpoints}
           repos={repos}
           discoverSkills={[]}
           installedSkills={installedSkills}

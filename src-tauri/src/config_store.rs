@@ -124,6 +124,9 @@ impl ConfigStore {
                 changed = true;
             }
         }
+        if crate::main_skills_defaults::ensure_default_main_skills_dir(&mut config)? {
+            changed = true;
+        }
         if changed {
             self.save_unlocked(&config)?;
         }

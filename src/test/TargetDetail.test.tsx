@@ -260,4 +260,36 @@ describe('TargetDetail', () => {
     const allNode = screen.getByRole('treeitem', { name: /全部/ });
     expect(allNode).toHaveTextContent('1/2');
   });
+
+  it('shows iFlytek Skill Hub endpoints in the source tree', () => {
+    render(
+      <TargetDetail
+        target={target}
+        skills={[validSkill]}
+        skillRecords={{}}
+        endpoints={[
+          {
+            id: 'company-hub',
+            name: 'oxygen 团队 hub',
+            baseUrl: 'http://127.0.0.1:3337',
+            enabled: true,
+          },
+        ]}
+        iflytekEndpoints={[
+          {
+            id: 'xkw',
+            name: '讯飞 Skill Hub',
+            baseUrl: 'https://iflytek.example.com',
+            enabled: true,
+          },
+        ]}
+        repos={[]}
+        pendingSkillKey={null}
+        onToggleSkill={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('treeitem', { name: /oxygen 团队 hub/ })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /讯飞 Skill Hub/ })).toBeInTheDocument();
+  });
 });

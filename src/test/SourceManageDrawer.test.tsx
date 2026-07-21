@@ -78,11 +78,27 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('SourceManageDrawer dual-track UI', () => {
-  it('shows dual-track subtitle covering Skills Sync and iFlytek', () => {
+  it('shows dual-track filter tabs for Skills Sync and iFlytek', () => {
     renderDrawer();
-    expect(
-      screen.getByText('管理 Skills Sync Hub、iFlytek Skill Hub、GitHub 与 GitLab 来源'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '来源管理' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Skills Sync' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'iFlytek' })).toBeInTheDocument();
+  });
+
+  it('disables add until required hub fields are filled', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await user.click(screen.getByRole('button', { name: '添加来源' }));
+    const dialog = screen.getByRole('dialog', { name: '添加来源' });
+    const addButton = within(dialog).getByRole('button', { name: '添加' });
+
+    expect(addButton).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText('名称'), '公司 Hub');
+    expect(addButton).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText('Base URL'), 'https://hub.example.com');
+    expect(addButton).toBeEnabled();
   });
 
   it('shows iFlytek Skill Hub tab when opening add source modal', async () => {
@@ -90,8 +106,8 @@ describe('SourceManageDrawer dual-track UI', () => {
     renderDrawer();
     await user.click(screen.getByRole('button', { name: '添加来源' }));
     const dialog = screen.getByRole('dialog', { name: '添加来源' });
-    expect(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('tab', { name: 'Skills Sync Hub' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('tab', { name: 'iFlytek' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('tab', { name: 'Skills Sync' })).toBeInTheDocument();
   });
 
   it('shows iFlytek Skill Hub startup refresh checkbox', () => {
@@ -120,7 +136,7 @@ describe('SourceManageDrawer dual-track UI', () => {
     const { onToast, onClose } = renderDrawer({ onIflytekEndpointsChange });
     await user.click(screen.getByRole('button', { name: '添加来源' }));
     const dialog = screen.getByRole('dialog', { name: '添加来源' });
-    await user.click(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' }));
+    await user.click(within(dialog).getByRole('tab', { name: 'iFlytek' }));
     await user.type(within(dialog).getByLabelText('名称'), '讯飞 Hub');
     await user.type(within(dialog).getByLabelText('Base URL'), 'https://iflytek.example.com');
     await user.click(within(dialog).getByRole('button', { name: '添加' }));
@@ -182,8 +198,9 @@ describe('SourceManageDrawer add flow', () => {
     renderDrawer();
     await user.click(screen.getByRole('button', { name: '添加来源' }));
     const dialog = screen.getByRole('dialog', { name: '添加来源' });
-    const first = within(dialog).getByRole('tab', { name: 'Skills Sync Hub' });
-    const last = within(dialog).getByRole('button', { name: '添加' });
+    const first = within(dialog).getByRole('tab', { name: 'Skills Sync' });
+    // 「添加」在必填未齐前禁用，最后可聚焦控件为「取消」
+    const last = within(dialog).getByRole('button', { name: '取消' });
 
     last.focus();
     await user.tab();
@@ -209,8 +226,8 @@ describe('SourceManageDrawer add flow', () => {
     await user.type(within(dialog).getByLabelText('仓库链接'), 'https://github.com/acme/skills');
     await user.click(within(dialog).getByRole('button', { name: '添加' }));
 
-    expect(within(dialog).getByRole('tab', { name: 'Skills Sync Hub' })).toBeDisabled();
-    expect(within(dialog).getByRole('tab', { name: 'iFlytek Skill Hub' })).toBeDisabled();
+    expect(within(dialog).getByRole('tab', { name: 'Skills Sync' })).toBeDisabled();
+    expect(within(dialog).getByRole('tab', { name: 'iFlytek' })).toBeDisabled();
     expect(within(dialog).getByRole('tab', { name: 'GitLab' })).toBeDisabled();
     await user.keyboard('{Escape}');
     expect(screen.getByRole('dialog', { name: '添加来源' })).toBeInTheDocument();

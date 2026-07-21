@@ -213,6 +213,47 @@
   margin-bottom: 8px;
 }
 
+/* add-source-modal：覆盖上方 .modal label/input，恢复 label→输入框垂直间距 */
+.modal.add-source-modal .add-source-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.modal.add-source-modal .add-source-form > label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  margin-bottom: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.modal.add-source-modal .add-source-form input {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--font-size-md);
+  color: var(--text);
+  background: var(--surface-muted);
+  box-sizing: border-box;
+}
+
+.modal.add-source-modal .add-source-form input:focus {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.35);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  background: var(--surface);
+}
+
 .modal-error {
   display: none;
   font-size: 12px;

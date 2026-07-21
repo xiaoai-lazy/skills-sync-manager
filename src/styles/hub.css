@@ -400,13 +400,22 @@
 }
 
 .source-manage-drawer {
-  width: 420px;
+  width: 480px;
 }
 
 .source-list-filter-tabs {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin: 0 0 12px;
   margin-right: 0;
+  gap: 4px;
+}
+
+.source-list-filter-tabs .text-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .startup-refresh-settings {
@@ -520,7 +529,12 @@
 }
 
 .add-source-modal {
-  max-width: 480px;
+  max-width: 520px;
+  width: min(520px, 100%);
+}
+
+.add-source-modal h3 {
+  margin: 0 0 var(--space-4);
 }
 
 .add-source-error-slot {
@@ -532,31 +546,19 @@
 }
 
 .add-source-tabs {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
+  margin-right: 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
 }
 
-.add-source-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.add-source-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.add-source-form input {
-  height: 38px;
+.add-source-tabs .text-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 0 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  font: inherit;
-  background: var(--surface-muted);
+  height: 32px;
+  line-height: 32px;
 }
 
 .upload-hub-overlay {

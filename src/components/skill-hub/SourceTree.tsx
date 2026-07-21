@@ -9,14 +9,10 @@ import type {
 } from '../../model/types';
 import {
   ALL_NODE_ID,
-  IFLYTEK_ROOT_NODE_ID,
   LOCAL_NODE_ID,
-  SKILLS_SYNC_NODE_ID,
   hasLocalInstalledSkills,
   hubEndpointVisible,
   hubRootNodeId,
-  iflytekNamespaceNodeId,
-  iflytekNamespacesForEndpoint,
   iflytekRootNodeId,
   repoNodeId,
   repoVisible,
@@ -44,7 +40,6 @@ function SourceTree(props: SourceTreeProps) {
     endpoints,
     iflytekEndpoints = [],
     repos,
-    discoverSkills,
     installedSkills,
     skillRecords,
     selectedNodeId,
@@ -159,78 +154,37 @@ function SourceTree(props: SourceTreeProps) {
           })}
         </li>
 
-        {visibleEndpoints.length > 0 && (
-          <li className="tree-node">
-            {renderRow(SKILLS_SYNC_NODE_ID, 'Skills Sync Hub', {
-              icon: hubIcon,
-              onClick: () => onSelectNode(SKILLS_SYNC_NODE_ID),
-            })}
-            <ul className="tree-children">
-              {visibleEndpoints.map((endpoint) => {
-                const rootId = hubRootNodeId(endpoint.id);
-                const muted = !endpoint.enabled;
+        {visibleEndpoints.map((endpoint) => {
+          const rootId = hubRootNodeId(endpoint.id);
+          const muted = !endpoint.enabled;
 
-                return (
-                  <li key={endpoint.id} className="tree-node">
-                    {renderRow(rootId, endpoint.name, {
-                      muted,
-                      title: muted ? `${endpoint.name}（发现已关闭）` : endpoint.name,
-                      icon: hubIcon,
-                      onClick: () => onSelectNode(rootId),
-                    })}
-                  </li>
-                );
+          return (
+            <li key={endpoint.id} className="tree-node">
+              {renderRow(rootId, endpoint.name, {
+                muted,
+                title: muted ? `${endpoint.name}（发现已关闭）` : endpoint.name,
+                icon: hubIcon,
+                onClick: () => onSelectNode(rootId),
               })}
-            </ul>
-          </li>
-        )}
+            </li>
+          );
+        })}
 
-        {visibleIflytekEndpoints.length > 0 && (
-          <li className="tree-node">
-            {renderRow(IFLYTEK_ROOT_NODE_ID, 'iFlytek Skill Hub', {
-              icon: hubIcon,
-              onClick: () => onSelectNode(IFLYTEK_ROOT_NODE_ID),
-            })}
-            <ul className="tree-children">
-              {visibleIflytekEndpoints.map((endpoint) => {
-                const rootId = iflytekRootNodeId(endpoint.id);
-                const muted = !endpoint.enabled;
-                const namespaces = iflytekNamespacesForEndpoint(
-                  endpoint.id,
-                  discoverSkills,
-                  skillRecords,
-                );
+        {visibleIflytekEndpoints.map((endpoint) => {
+          const rootId = iflytekRootNodeId(endpoint.id);
+          const muted = !endpoint.enabled;
 
-                return (
-                  <li key={endpoint.id} className="tree-node">
-                    {renderRow(rootId, endpoint.name, {
-                      muted,
-                      title: muted ? `${endpoint.name}（发现已关闭）` : endpoint.name,
-                      icon: hubIcon,
-                      onClick: () => onSelectNode(rootId),
-                    })}
-                    {namespaces.length > 0 && (
-                      <ul className="tree-children">
-                        {namespaces.map((namespace) => {
-                          const nsId = iflytekNamespaceNodeId(endpoint.id, namespace);
-                          return (
-                            <li key={nsId} className="tree-node">
-                              {renderRow(nsId, namespace, {
-                                muted,
-                                icon: folderIcon,
-                                onClick: () => onSelectNode(nsId),
-                              })}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </li>
-                );
+          return (
+            <li key={`iflytek-${endpoint.id}`} className="tree-node">
+              {renderRow(rootId, endpoint.name, {
+                muted,
+                title: muted ? `${endpoint.name}（发现已关闭）` : endpoint.name,
+                icon: hubIcon,
+                onClick: () => onSelectNode(rootId),
               })}
-            </ul>
-          </li>
-        )}
+            </li>
+          );
+        })}
 
         {visibleRepos.map((repo) => {
           const nodeId = repoNodeId(repo.host, repo.projectPath);
