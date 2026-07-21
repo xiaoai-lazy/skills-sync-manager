@@ -37,11 +37,11 @@ function ConfirmDialog(props: ConfirmDialogProps) {
     }
   }, [open]);
 
+  // Reset sync guard when the dialog closes, busy clears, or the confirm
+  // action identity changes (e.g. delete → force-delete on the same instance).
   useEffect(() => {
-    if (!open || !busy) {
-      busyGuardRef.current = false;
-    }
-  }, [open, busy]);
+    busyGuardRef.current = false;
+  }, [open, busy, title, confirmLabel]);
 
   const handleConfirm = () => {
     if (busy || busyGuardRef.current) return;
