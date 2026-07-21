@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config_store;
 pub mod credential_store;
 pub mod gitlab_client;
+pub mod iflytek_skill_hub_client;
 pub mod skill_hub_client;
 pub mod skill_hub_discover;
 pub mod skill_hub_endpoints;
