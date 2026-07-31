@@ -2,7 +2,40 @@
 
 给团队的 Skills 一份可信来源——统一维护，安全同步到 Cursor、Claude Code、Codex 等多个 Agent，告别复制粘贴和版本混乱。
 
-**[下载安装](https://github.com/xiaoai-lazy/skills-sync-manager/releases)** · [5 分钟上手](#5-分钟上手) · [English](README.en.md)
+**[下载安装](https://github.com/xiaoai-lazy/skills-sync-manager/releases)** · [安装注意](#安装注意未签名构建) · [5 分钟上手](#5-分钟上手) · [English](README.en.md)
+
+---
+
+## 安装注意（未签名构建）
+
+当前发布包**尚未使用** Apple / Microsoft 开发者证书签名，首次安装或打开时，各系统可能提示风险或无法打开。这是签名缺失导致的系统保护行为，**不是安装包损坏**。按下列方式处理后即可正常使用。
+
+### macOS — 提示「应用已损坏」/ 无法打开
+
+安装到「应用程序」后，打开「终端」执行：
+
+```bash
+xattr -cr "/Applications/Skills Sync Manager.app"
+```
+
+执行完成后重新打开应用即可。
+
+若仍被拦截，可到 **系统设置 → 隐私与安全性**，在提示旁点击「仍要打开」。
+
+### Windows — SmartScreen /「未知发布者」
+
+若出现「Windows 已保护你的电脑」或 SmartScreen 警告：
+
+1. 点击 **更多信息**
+2. 再点击 **仍要运行**
+
+若被杀毒软件误报隔离，在安全软件中将本应用加入信任/白名单后重新安装或打开。
+
+### Linux — 无法运行 / 权限不足
+
+- **AppImage**：首次运行前赋予执行权限，例如  
+  `chmod +x Skills-Sync-Manager-*.AppImage`，再双击或在终端启动。
+- **.deb**：用系统包管理器安装即可；若提示来自未知来源，按发行版指引确认安装。
 
 ---
 
@@ -57,7 +90,7 @@ GitLab / 私有 Skill 中心负责「团队哪份算数」；本机主库负责�
 - **macOS**：`.dmg`
 - **Linux**：`.AppImage` / `.deb`
 
-若系统提示「不明来源」或 SmartScreen 警告，按系统指引允许打开即可。
+首次打开若被系统拦截（macOS「应用已损坏」、Windows SmartScreen 等），请按文首 [安装注意](#安装注意未签名构建) 处理。
 
 ---
 

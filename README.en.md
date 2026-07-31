@@ -6,6 +6,33 @@ Give your team one trusted source for Skills — maintain them in a shared GitLa
 
 **Download:** [GitHub Releases](https://github.com/xiaoai-lazy/skills-sync-manager/releases)
 
+---
+
+## Install notes (unsigned builds)
+
+Release packages are **not yet** signed with Apple / Microsoft developer certificates. On first launch, the OS may block the app — this is Gatekeeper / SmartScreen protection, **not** a corrupt download.
+
+### macOS — “App is damaged” / can’t be opened
+
+After installing to Applications, run in Terminal:
+
+```bash
+xattr -cr "/Applications/Skills Sync Manager.app"
+```
+
+Then open the app again. If still blocked: **System Settings → Privacy & Security** → **Open Anyway**.
+
+### Windows — SmartScreen / “Unknown publisher”
+
+On “Windows protected your PC”: click **More info** → **Run anyway**. If antivirus quarantines the file, add an exception / whitelist and retry.
+
+### Linux — won’t run / permission denied
+
+- **AppImage**: `chmod +x Skills-Sync-Manager-*.AppImage`, then launch.
+- **.deb**: install via your package manager; confirm if the distro warns about an unknown source.
+
+---
+
 ### In one minute
 
 1. Set a **local main library** on your machine (distribution hub).
